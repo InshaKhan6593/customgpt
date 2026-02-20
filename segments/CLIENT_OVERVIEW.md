@@ -1,0 +1,50 @@
+# WebletGPT — System Overview & Build Plan
+
+## What Is WebletGPT?
+
+WebletGPT is a SaaS platform where creators build, monetize, and orchestrate AI agents called **Weblets**. Creators use a visual no-code builder to configure AI agents with custom instructions, knowledge bases, and tools. End users discover Weblets in a public marketplace, chat with them, and subscribe for premium access.
+
+## Tech Stack
+
+Next.js 15 (React 19, TypeScript) · Tailwind CSS + shadcn/ui · PostgreSQL + pgvector via Prisma + prisma-extension-pgvector · Auth.js (passwordless email OTP) · Vercel AI SDK + OpenRouter (GPT-4o, Claude, etc.) · LlamaParse API · Inngest · Stripe (subscriptions) · PayPal (creator payouts) · Ably (real-time WebSockets)
+
+---
+
+## Build Phases
+
+### Phase 1 — Foundation & Auth
+Set up the Next.js project with TypeScript strict mode, Tailwind CSS v4, and shadcn/ui as the design system. Implement passwordless authentication using Auth.js — users enter their email, receive a 6-digit OTP via Resend, and verify to create a session. Build the protected dashboard shell with sidebar navigation. Middleware handles route protection, redirecting unauthenticated users away from protected pages. Establish all foundational coding patterns (Prisma singleton, auth helpers, API response utilities) that every future phase builds on.
+
+### Phase 2 — Database & API Layer
+Expand the database from the initial auth models to a full 14-model schema using Prisma ORM — covering Weblets, chat sessions, messages, subscriptions, analytics events, transactions, payouts, knowledge files, knowledge chunks (with pgvector embeddings), and weblet versions for A/B testing. Create all RESTful API routes (CRUD for weblets, knowledge files, subscriptions, payouts, chat sessions, analytics) with authentication guards and Zod input validation on every endpoint. Build a seed script with sample data for development testing.
+
+### Phase 3 — Weblet Builder
+Build a visual no-code builder using a split-screen layout — configuration panel on the left, live chat preview on the right. The left panel has four tabs: **Configure** (name, instructions, model selector with cost indicators, conversation starters), **Capabilities** (toggle switches for each tool type), **Knowledge** (drag-and-drop file upload), and **Actions** (OpenAPI schema editor with JSON/YAML syntax highlighting and validation). Implement the full RAG pipeline for knowledge files: text extraction from PDF/DOCX/TXT using the LlamaParse API (preventing serverless OOM crashes), chunking at 500-token windows with 50-token overlap, embedding generation via the embedding model, and pgvector storage for similarity search using prisma-extension-pgvector. Auto-save with debounce on every field change.
+
+### Phase 4 — Chat Engine & Tools
+Build the core user-facing chat experience using the Vercel AI SDK. Implement streaming AI responses via Server-Sent Events through OpenRouter, which provides access to 100+ models with a single API key. Build five tool types that the AI can invoke during conversations: **Web Search** (Tavily API for clean search results), **Code Interpreter** (E2B cloud sandboxes for secure Python execution), **Image Generation** (DALL-E 3 API), **Knowledge Search** (pgvector cosine similarity queries against the weblet's embedded knowledge), and **Custom Actions** (dynamically generated from OpenAPI schemas). Build the chat UI with markdown rendering, syntax-highlighted code blocks, collapsible tool call displays, conversation starter chips, and a 1-5 star rating dialog. Implement model fallback — if OpenRouter is down, fall back to direct Anthropic or OpenAI APIs.
+
+### Phase 5 — Monetization & Stripe
+Integrate Stripe for subscription payments. When a creator sets a monthly price in the builder, create a Stripe Product and Price via the API. Build a paywall UI that appears when unpaid users try to chat with a premium Weblet — showing price, trial days, and a subscribe button. Implement Stripe Checkout (hosted, PCI-compliant) for payment collection with saved payment methods. Handle the full subscription lifecycle through Stripe webhooks: checkout completion creates the subscription record, invoice payments credit the creator's balance (minus 15% platform fee), subscription updates sync status changes, and cancellations/failures update access accordingly. Provide a Stripe Customer Portal for users to manage their subscriptions.
+
+### Phase 6 — Creator Dashboard & Analytics
+Build the creator dashboard using Recharts for data visualization. The overview page shows aggregate stats across all weblets (total revenue, total chats, active subscribers, average rating) with a revenue trend line chart. A weblet list table shows per-weblet summary stats with sortable columns. Per-weblet analytics pages display seven key metrics: total chats (counter card), cumulative chat count (daily bar chart), average rating (star display), platform search rank, latest chat topics (keyword extraction from conversation metadata), hourly/daily usage patterns (bar charts), and revenue details (breakdown with transaction table). All charts support date range filtering (7d, 30d, 90d, all time, custom). The analytics API uses Prisma queries with PostgreSQL JSON operators for metadata field aggregation.
+
+### Phase 7 — Payouts
+Enable creators to withdraw earnings to PayPal. Build a balance page showing available balance, pending balance, total earned, and total withdrawn. Implement PayPal email verification (OTP code sent via Resend) before the first withdrawal. The withdrawal flow validates minimum amount ($10), sufficient balance, and no existing pending payouts, then calls the PayPal Payouts API. Balance is deducted immediately on request; if the PayPal API call fails, it's automatically restored. PayPal webhooks update payout status (completed or failed, with balance restoration on failure). Include a paginated transaction history table with CSV export for accounting.
+
+### Phase 8 — Multi-Agent Orchestration
+Build a multi-agent system where multiple Weblets collaborate on complex tasks. An LLM-powered planner breaks the user's task into steps and assigns each step to the best-suited Weblet. Three execution modes: **Sequential** (Agent A finishes, output passed to Agent B), **Concurrent** (independent agents run in parallel via Promise.all, grouped by dependency level), and **Hybrid** (mix based on step dependencies). To bypass Vercel serverless timeouts, the execution engine runs as an Inngest background workflow. Real-time progress updates are pushed via Ably pub/sub since Vercel's serverless architecture doesn't support persistent WebSockets. Build human-in-the-loop controls with three modes — auto-trigger (pauses at high-risk steps), manual review (pauses after every agent), and override required (specific steps flagged). The approval dialog lets users approve, edit and resubmit, or reject each step. Include an auto-team suggestion feature (LLM recommends the best weblet combination with reasoning) and a simulation preview (dry-run showing planned steps with estimated time and cost before execution).
+
+### Phase 9 — Self-Improving Loop (RSIL)
+Build an automated prompt optimization engine. Enhanced data collection captures per-version metrics — ratings, completion rates, abandonment detection, and topic extraction from every chat. A variant generator uses GPT-4o to analyze performance data (low-rated conversations, abandonment patterns) and produce improved system prompt versions. Implement A/B testing with deterministic hash-based traffic splitting (same user always sees the same version). Statistical significance is calculated using a two-proportion z-test (p < 0.05 threshold). Winners are auto-promoted to 100% traffic; losers are discarded. Auto-rollback triggers if the average rating drops below a configurable floor. Governance settings let creators control optimization frequency (daily/weekly/manual), minimum data thresholds, test duration, and whether to require creator approval before deployment. The whole cycle runs as a scheduled Inngest background workflow to ensure complex data processing completes without serverless timeouts.
+
+### Phase 10 — Composability & MCP
+Build two features: **Weblet Composability** — creators can compose higher-level Weblets from existing ones. Child weblets are exposed as callable tools to the parent's LLM at runtime, with each child call going through the full chat engine (including its own tools and knowledge). Cycle detection via BFS prevents circular dependencies, with a hard limit of 3 nesting levels. The builder gets a "Compose" tab with a visual dependency graph. **MCP Integration** — creators add MCP (Model Context Protocol) server URLs in the builder. The platform discovers available tools from the server, caches their definitions, and makes them callable by the weblet's LLM at runtime. This lets weblets connect to external services like GitHub, Slack, Google Drive, and databases without custom code.
+
+### Phase 11 — Marketplace & Launch
+Build the public-facing marketplace where users browse, search, and filter Weblets by category, rating, price, and popularity. Individual weblet landing pages show full details, reviews, capabilities, and pricing with a subscribe/try button. Implement security hardening: rate limiting via Upstash Redis on all endpoints, CSP headers, input sanitization, GDPR compliance (data export and account deletion endpoints), cookie consent, and content moderation. Optimize performance targeting Core Web Vitals (LCP < 2.5s) — lazy-load heavy components, add database indexes, implement Redis caching for frequently accessed data. Set up monitoring with Sentry for error tracking, health check endpoints, and uptime alerts. Publish documentation (creator guide, user guide, API reference) as MDX pages. Deploy to production on Vercel with custom domain, production API keys, and configured cron jobs.
+
+---
+
+Each phase is built incrementally, producing working and testable functionality on top of the previous one.
