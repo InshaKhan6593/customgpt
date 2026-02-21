@@ -134,7 +134,7 @@ For RSIL A/B testing (fully implemented in Segment 15), the chat engine includes
 ## Files to Create
 
 ```
-app/(chat)/
+app/(user)/chat/
 ├── [webletId]/
 │   └── page.tsx                    ← Chat page (loads weblet config, shows chat UI)
 └── [webletId]/[sessionId]/

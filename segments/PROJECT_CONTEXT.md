@@ -11,10 +11,10 @@
 6. **Recursive Self-Improvement (RSIL):** System auto-optimizes prompts based on user ratings and A/B testing.
 
 ## Tech Stack
-- **Frontend:** Next.js 15 (App Router), React, Tailwind CSS v4, shadcn/ui
+- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4, shadcn/ui
 - **Backend:** Next.js Server Actions / API Routes + **Inngest** (for reliable background jobs/workflows)
-- **Database:** PostgreSQL + pgvector (Supabase/Neon) via Prisma ORM + **prisma-extension-pgvector**
-- **Auth:** Auth.js (NextAuth v5) with Passwordless Email OTP
+- **Database:** PostgreSQL + pgvector (Neon) via Prisma ORM v5.x + **prisma-extension-pgvector**
+- **Auth:** Auth.js (NextAuth v5) with Passwordless Email OTP (6-digit code) via Resend + Google/GitHub social login
 - **AI:** Vercel AI SDK 4.x + OpenRouter (access to GPT-4o, Claude 3.5, etc.) + **LlamaParse API** (for document parsing)
 - **Payments:** Stripe (Subscriptions/Connect) + PayPal (Payouts)
 - **Real-time:** Ably (WebSockets) for multi-agent updates

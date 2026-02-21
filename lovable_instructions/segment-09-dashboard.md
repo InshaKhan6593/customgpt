@@ -1,4 +1,4 @@
-# Lovable Prompt: Segment 08 - Developer Dashboard & Analytics
+# Lovable Prompt: Segment 09 - Developer Dashboard & Analytics
 
 **Context:** The Developer Dashboard is a complex analytics and control center where developers review the performance of their AI agents across thousands of user interactions.
 
@@ -54,7 +54,7 @@
 *   **Tab 3: Monetization**
     *   Subscriber List (Table of user emails, subscription date, status).
     *   Revenue History (Line chart).
-*   **Tab 4: Execution Logs (Observability - Segment 16)**
+*   **Tab 4: Execution Logs (Observability - Segment 15)**
     *   Powered by Langfuse.
     *   A list of recent chat sessions showing Session ID, Date, User ID, and Latency.
     *   When a developer clicks a session, show a timeline trace view:
@@ -63,7 +63,7 @@
         *   Step 3: Tool Calls (e.g., "Called WebSearch with payload {...}").
         *   Step 4: Tool Response.
         *   Step 5: Final LLM Markdown Response.
-*   **Tab 5: Developer Billing & Credits (Segment 14)**
+*   **Tab 5: Developer Billing & Credits (Segment 08)**
     *   **Current Balance Card:** Shows "Available Platform Credits" (e.g., "4,500 Credits").
     *   **Auto-Reload Setting:** Shadcn Switch. Label "Auto-reload credits when balance falls below 1,000".
     *   **Refill Button:** "Buy More Credits" (opens a modal to purchase $10, $50, or $100 packages via Stripe).

@@ -6,12 +6,13 @@ This document outlines the complete technology stack used to build the WebletGPT
 
 ## 1. Core Framework & Language
 
-### **Next.js 15 (App Router)**
+### **Next.js 16 (App Router)**
 *   **What it is:** A React framework for building fast, full-stack web applications.
 *   **What it is used for:** The foundation of the entire platform. Handles routing, server-side rendering (SSR), static site generation (SSG), and API routes.
 *   **Where it plays a role (Examples):**
     *   **Frontend UI:** Rendering the builder interface, chat UI, and dashboard pages.
     *   **Backend Logic:** API routes (`/api/weblets`, `/api/chat`) use Next.js server actions to handle database updates and AI interactions securely on the server.
+*   **Note:** Next.js 16 uses `proxy.ts` instead of `middleware.ts` for route interception.
 
 ### **React 19**
 *   **What it is:** A JavaScript library for building user interfaces.
@@ -50,10 +51,11 @@ This document outlines the complete technology stack used to build the WebletGPT
     *   **Relational Data:** Storing User profiles, Weblet configurations, and Chat Histories.
     *   **Vector Data:** Storing chunked document embeddings (Knowledge files) uploaded in the Weblet Builder (Segment 04) so the AI can search them during chat.
 
-### **Prisma ORM**
+### **Prisma ORM (v5.x)**
 *   **What it is:** A next-generation Object-Relational Mapper (ORM) for Node.js and TypeScript.
 *   **What it is used for:** Providing a type-safe API to interact with the PostgreSQL database.
 *   **Where it plays a role (Examples):** Used in Server Actions and API routes to query the database (e.g., `db.weblet.findUnique(...)`).
+*   **Note:** Pinned to v5.x for compatibility with `@auth/prisma-adapter@1`. Prisma v6+/v7 have breaking `PrismaClient()` constructor changes.
 
 ### **prisma-extension-pgvector**
 *   **What it is:** A Prisma extension specifically built to support `pgvector` operations.
@@ -68,7 +70,7 @@ This document outlines the complete technology stack used to build the WebletGPT
 ### **Resend**
 *   **What it is:** An email API for developers.
 *   **What it is used for:** Sending transactional emails reliably.
-*   **Where it plays a role (Examples):** Sending the Magic Link / OTP codes during user login (Segment 01).
+*   **Where it plays a role (Examples):** Sending verification code emails during user login (Segment 01) and future transactional emails.
 
 ---
 

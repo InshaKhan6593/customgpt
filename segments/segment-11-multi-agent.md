@@ -1,4 +1,4 @@
-# Segment 12: Multi-Agent Orchestration
+# Segment 11: Multi-Agent Orchestration
 
 **Estimated effort:** 4 weeks
 **Depends on:** Segment 05 (Chat Engine & Tools)

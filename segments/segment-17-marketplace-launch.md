@@ -200,7 +200,7 @@ export async function GET(req: Request) {
 ### Rate Limiting Implementation
 
 ```typescript
-// middleware.ts — add rate limiting
+// proxy.ts — add rate limiting (Next.js 16 convention)
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 

@@ -50,6 +50,12 @@
         *   "Cooldown Hours" (Number input, default 6).
         *   "Require Developer Approval" (Switch, default false. Description: "If checked, all automated improvements will be sent to your inbox as Suggestions instead of auto-deploying.")
 
+*   **Tab 5: Actions & Integrations (MCP)**
+    *   **Description text:** "Connect external APIs or MCP (Model Context Protocol) servers to give your Weblet custom abilities."
+    *   **Button:** "+ Add MCP Server" (Opens a modal with "Server Name" and "Server URL" inputs).
+    *   **List Area:** Display connected MCP servers with a status dot (Green = Connected, Red = Offline) and a "Remove" button icon.
+    *   **Button:** "+ Add Custom OpenAPI Action" (Opens a large textarea modal to paste an OpenAPI JSON/YAML schema).
+
 **Required UI Elements - Right Pane (Live Preview):**
 *   **Header:** "Live Preview Mode".
 *   **Chat Window:** Standard chat interface (message history area that scrolls, input field at the bottom).

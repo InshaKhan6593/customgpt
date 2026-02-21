@@ -58,7 +58,7 @@ Every API route and page is protected based on role:
 
 | Route Group | Who Can Access | What It Contains |
 |-------------|---------------|-----------------|
-| `/(auth)/` | Anyone (unauthenticated) | Login page, OTP verification page |
+| `/(auth)/` | Anyone (unauthenticated) | Login page (email OTP + social login) |
 | `/(public)/` | Anyone (no login needed) | Marketplace browse, weblet landing pages, pricing page, documentation |
 | `/(user)/` | Any authenticated user (USER, DEVELOPER, ADMIN) | Chat interface, saved flows, flow builder, profile, subscription management |
 | `/(dashboard)/` | DEVELOPER and ADMIN only | Weblet builder, weblet management, analytics, RSIL settings, payout management |
@@ -95,23 +95,23 @@ The auth guard function checks if the current user's role level meets the requir
 
 This is implemented as a single utility function (`requireRole`) that every API route and server component calls. If the role check fails, the user gets a 403 Forbidden response (API) or is redirected to the appropriate page (UI).
 
-### Step 5 — Configure Middleware for Route Protection
+### Step 5 — Configure Route Protection (proxy.ts)
 
-The Next.js middleware intercepts every request and:
+The Next.js 16 `proxy.ts` (replaces `middleware.ts`) intercepts every request and:
 
 1. Checks if the route requires authentication (everything except `/(auth)/` and `/(public)/`)
 2. If authenticated, checks the user's role against the route group requirements
 3. Redirects unauthorized users:
    - Not logged in → `/login`
-   - USER trying to access `/(dashboard)/` → `/explore` (marketplace) with a toast: "Upgrade to Developer to access this feature"
-   - Non-ADMIN trying to access `/(admin)/` → `/dashboard` or `/explore` depending on role
+   - USER trying to access `/(dashboard)/` → `/marketplace` with a toast: "Upgrade to Developer to access this feature"
+   - Non-ADMIN trying to access `/(admin)/` → `/dashboard` or `/marketplace` depending on role
 
 ### Step 6 — Adapt the UI Based on Role
 
 The header navigation and sidebar change depending on the user's role:
 
 **USER sees:**
-- Explore (marketplace)
+- Marketplace
 - My Chats (chat history)
 - My Flows (saved sequential flows)
 - Profile (with "Become a Developer" option)

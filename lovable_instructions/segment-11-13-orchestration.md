@@ -1,4 +1,4 @@
-# Lovable Prompt: Segment 12 - Multi-Agent Orchestration & Workflow Builder
+# Lovable Prompt: Segments 11 & 13 - Multi-Agent Orchestration & Workflow Builder
 
 **Context:** Users can string multiple Weblets together into a "Flow". For example, passing the output of a "Research Agent" directly into a "Writing Agent".
 
@@ -27,8 +27,9 @@
 **Purpose:** The visual studio where users map out how agents pass data to each other.
 
 **Required UI Elements:**
-*   **Top Bar:** Flow Name Input, Save Button, Run Button.
+*   **Top Bar:** Flow Name Input, Save Button, "Run Flow" Button, "Simulate Run" Button (Secondary style).
 *   **Execution Mode Toggle:** A radio group or toggle for "Sequential" (A → B → C) vs "Hybrid" (Master Agent delegates to others).
+*   **Auto-Suggest Team Button:** A magic wand icon button labeled "Auto-Suggest Team" (Description: "Let the LLM pick the best agents for your flow goal").
 *   **Main Area (Sequential Mode):**
     *   A vertical list of "Steps". Users can click "Add Step" to append a new agent to the chain.
 *   **Main Area (Hybrid Mode):**

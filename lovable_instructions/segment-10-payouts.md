@@ -1,4 +1,4 @@
-# Lovable Prompt: Segment 09 - Developer Payouts
+# Lovable Prompt: Segment 10 - Developer Payouts
 
 **Context:** Developers who charge for their Weblets need a way to withdraw their earnings to their PayPal accounts. 
 

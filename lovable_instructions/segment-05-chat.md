@@ -22,6 +22,7 @@
     *   Hovering over a historical chat should reveal a small "Trash" icon to delete it.
 *   **Main Chat Area (Center/Right Panel):**
     *   **Header:** Displays the Name and Icon of the Weblet currently being chatted with (e.g., "💻 Codebot 3000").
+        *   **Header Actions:** A three-dots 'More' dropdown menu on the right side containing "Clear Chat" and "Report Weblet".
     *   **Message List (Scrollable Area):**
         *   User Messages: Aligned right, distinct background color (e.g., standard blue bubble or subtle gray).
         *   Assistant Messages: Aligned left, clean white/transparent background. Must support Markdown rendering (bold, lists, code blocks with syntax highlighting).
