@@ -103,7 +103,18 @@ This document outlines the complete technology stack used to build the WebletGPT
 
 ---
 
-## 5. Tool Integrations (Capabilities)
+## 5. Observability & Evaluations
+
+### **Langfuse**
+*   **What it is:** An open-source LLM engineering platform for tracing, evaluations, and prompt management.
+*   **What it is used for:** Capturing the exact execution trace of every LLM call (prompts, tool calls, latencies) and running automated evaluations (Evals) on outputs.
+*   **Where it plays a role (Examples):** 
+    *   **Developer Debugging:** Powers the "Execution Logs" tab in the Developer Dashboard, allowing creators to see exactly why their composite weblet failed or hallucinated (Segment 17).
+    *   **RSIL Evals:** Automatically scores chat conversations (1-5 scale) using model-based evaluations to feed the Recursive Self-Improving Loop (Segment 13).
+
+---
+
+## 6. Tool Integrations (Capabilities)
 
 ### **Tavily Search API**
 *   **What it is:** A search engine optimized specifically for LLMs.
@@ -136,7 +147,7 @@ This document outlines the complete technology stack used to build the WebletGPT
 
 ---
 
-## 7. Storage
+## 8. Storage
 
 ### **Vercel Blob**
 *   **What it is:** Managed cloud storage for Vercel applications.

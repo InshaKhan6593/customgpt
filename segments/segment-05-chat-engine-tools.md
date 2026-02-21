@@ -25,11 +25,12 @@ The core streaming endpoint (`POST /api/chat`) handles every chat interaction:
 1. Verify the user is authenticated
 2. Load the weblet's configuration (instructions, model, capabilities, actions)
 3. Check access — if `ENABLE_PAYMENT_ENFORCEMENT` is `true` and the weblet is paid, verify the user has an active subscription. If the flag is `false`, skip this check entirely (everyone gets access).
-4. Get the active prompt version (for RSIL A/B testing — returns the default instructions until Segment 13 implements version routing)
+4. Get the active prompt version (for RSIL A/B testing — returns the default instructions until Segment 15 implements version routing)
 5. Build the tools array based on the weblet's enabled capabilities
 6. Add any custom action tools parsed from the weblet's OpenAPI schemas
-7. Stream the LLM response via the Vercel AI SDK through OpenRouter
-8. On completion, save messages to the database and log analytics events
+7. Wrap the AI call with Langfuse Telemetry to capture the execution trace (Segment 16)
+8. Stream the LLM response via the Vercel AI SDK through OpenRouter
+9. On completion, save messages to the database, log usage for billing, and log analytics events
 
 ### Step 2 — Implement the Payment Feature Flag
 
@@ -45,7 +46,7 @@ The `checkAccess()` function in `lib/chat/access.ts` checks this flag:
 
 This means:
 - Developers CAN set prices in the builder (the fields exist)
-- The Stripe product/price CAN be created (Segment 06)
+- The Stripe product/price CAN be created (Segment 07)
 - But users will NOT see the paywall until the flag is flipped
 - All the payment UI is hidden behind conditional checks on this same flag
 
@@ -122,11 +123,11 @@ The chat interface includes:
 - **Starter Chips** — When the conversation is empty, show clickable chips with the weblet's conversation starters
 - **Input Bar** — Text input with Send button. Supports Ctrl+Enter to send. Disabled while the AI is streaming.
 - **Typing Indicator** — Animated dots while the response is streaming
-- **Rating Dialog** — After 3+ messages in a conversation, a subtle prompt appears: "Rate this conversation" with 1-5 stars. Rating is saved to AnalyticsEvent (feeds RSIL in Segment 13).
+- **Rating Dialog** — After 3+ messages in a conversation, a subtle prompt appears: "Rate this conversation" with 1-5 stars. Rating is saved to AnalyticsEvent and sent to Langfuse to feed RSIL evaluations (Segment 15/17).
 
 ### Step 7 — Implement Version Routing Stub
 
-For RSIL A/B testing (fully implemented in Segment 13), the chat engine includes a stub function `getActiveVersion()` that returns the currently active prompt version. In this segment, it simply returns the weblet's default instructions. Segment 13 will add deterministic hash-based traffic splitting.
+For RSIL A/B testing (fully implemented in Segment 15), the chat engine includes a stub function `getActiveVersion()` that returns the currently active prompt version. In this segment, it simply returns the weblet's default instructions. Segment 15 will add deterministic hash-based traffic splitting.
 
 ---
 
@@ -160,6 +161,9 @@ lib/ai/
 ├── openrouter.ts                   ← OpenRouter client setup with fallback
 └── embeddings.ts                   ← OpenAI embedding client (reused from Segment 04)
 
+lib/observability/
+└── langfuse.ts                     ← Langfuse OTEL initialization and score pushing (Segment 16)
+
 components/chat/
 ├── chat-container.tsx              ← Full chat layout (header + messages + input)
 ├── chat-header.tsx                 ← Weblet name, model badge, back button
@@ -190,8 +194,9 @@ components/chat/
 - [ ] **ENABLE_PAYMENT_ENFORCEMENT flag is set to false** — all weblets are free
 - [ ] When flag is false, checkAccess() always passes (no paywall shown)
 - [ ] When flag is true (tested manually), paid weblets show 402 response
+- [ ] Vercel AI SDK call is wrapped in Langfuse OpenTelemetry
 - [ ] Analytics event logged after each chat completion (eventType, metadata with tokens, tools, rating)
-- [ ] Rating saved to AnalyticsEvent with eventType "rating_given"
+- [ ] Rating saved to AnalyticsEvent and sent to Langfuse `/scores` API
 - [ ] LLM fallback works — if OpenRouter is down, direct provider is used
 - [ ] Rate limiting: max 5 tool calls per message, max 3 code executions per session
 - [ ] Markdown rendered correctly in assistant messages

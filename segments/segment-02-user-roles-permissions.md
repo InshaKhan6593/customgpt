@@ -149,7 +149,7 @@ The header navigation and sidebar change depending on the user's role:
 
 - **Segment 01** implements the auth system and adds the role enum to the User model
 - **Segment 03** includes the role field in the database schema and seed data
-- **Segment 08** (Developer Dashboard) is gated to DEVELOPER role
-- **Segment 10** (Multi-Agent) flow builder is available to all authenticated users
-- **Segment 15** (Marketplace) is public — no role required to browse
+- **Segment 09** (Developer Dashboard) is gated to DEVELOPER role
+- **Segment 11** (Multi-Agent) flow builder is available to all authenticated users
+- **Segment 17** (Marketplace) is public — no role required to browse
 - **MODULE-orchestration-workflows** references this module for flow creation permissions

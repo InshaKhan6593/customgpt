@@ -11,7 +11,7 @@
 
 This segment builds the entire data foundation and API layer for the platform. Every table, every relationship, every API endpoint that the rest of the platform depends on is defined here. No UI is built in this segment — it is purely backend.
 
-Think of it as building all the plumbing and wiring before putting up the walls. The builder (Segment 04), chat engine (Segment 05), dashboard (Segment 08), orchestration (Segment 10), and marketplace (Segment 15) all call the APIs created here.
+Think of it as building all the plumbing and wiring before putting up the walls. The builder (Segment 04), chat engine (Segment 05), dashboard (Segment 09), orchestration (Segment 11), and marketplace (Segment 17) all call the APIs created here.
 
 > **Example:** When a developer later creates a weblet in the builder, the builder UI will call `POST /api/weblets` built here. When a user browses the marketplace, it calls `GET /api/marketplace/weblets` built here. When a user saves a sequential flow, it calls `POST /api/flows` built here. This segment makes all of that possible.
 
@@ -52,11 +52,11 @@ The schema uses these enums to enforce valid states:
 
 | Field | Purpose | Used By |
 |-------|---------|---------|
-| `category` (WebletCategory) | Developer picks a category — used for marketplace filtering and ranking | Segment 04 (builder), Segment 15 (marketplace), MODULE-categories-discovery |
-| `rsilEnabled` (Boolean, default false) | Developer opts in to automatic prompt optimization | Segment 13 (RSIL) |
-| `rsilGovernance` (JSON, optional) | RSIL configuration: frequency, thresholds, approval requirements | Segment 13 (RSIL) |
-| `accessType` (AccessType) | FREE or SUBSCRIBERS_ONLY — enforced only when payment flag is on | Segment 05 (chat), Segment 06 (payments) |
-| `monthlyPrice`, `stripePriceId`, `stripeProductId` | Pricing fields — populated by developer but not enforced initially | Segment 06 (payments), MODULE-payment-subscription |
+| `category` (WebletCategory) | Developer picks a category — used for marketplace filtering and ranking | Segment 04 (builder), Segment 17 (marketplace), Segment 06 |
+| `rsilEnabled` (Boolean, default false) | Developer opts in to automatic prompt optimization | Segment 15 (RSIL) |
+| `rsilGovernance` (JSON, optional) | RSIL configuration: frequency, thresholds, approval requirements | Segment 15 (RSIL) |
+| `accessType` (AccessType) | FREE or SUBSCRIBERS_ONLY — enforced only when payment flag is on | Segment 05 (chat), Segment 07 (payments) |
+| `monthlyPrice`, `stripePriceId`, `stripeProductId` | Pricing fields — populated by developer but not enforced initially | Segment 07 (payments), Segment 07 |
 | `capabilities` (JSON) | Which tools are enabled: web search, code interpreter, image gen, file search | Segment 05 (chat engine tools) |
 
 **On the UserFlow model (new):**
@@ -149,7 +149,7 @@ Every API route follows the same pattern:
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/api/subscriptions` | GET | List user's active subscriptions |
-| `/api/subscriptions` | POST | Create subscription (triggers Stripe Checkout — Segment 06) |
+| `/api/subscriptions` | POST | Create subscription (triggers Stripe Checkout — Segment 07) |
 | `/api/subscriptions/[id]` | DELETE | Cancel subscription |
 
 **Payouts (DEVELOPER role required — built but deferred):**
