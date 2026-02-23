@@ -31,15 +31,6 @@ import {
   Wallet,
   Settings,
 } from "lucide-react"
-import { NavHeader } from "@/components/nav-header"
-import type { UserRole } from "@/lib/types"
-
-const DEMO_USER = {
-  name: "Jane Doe",
-  email: "user@example.com",
-  role: "DEVELOPER" as UserRole,
-}
-
 const developerToolsItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Builder", href: "/dashboard/builder", icon: Hammer },

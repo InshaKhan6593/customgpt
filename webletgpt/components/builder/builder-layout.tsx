@@ -12,6 +12,7 @@ export type BuilderState = {
   name: string
   slug: string
   description: string
+  iconUrl: string
   category: string
   instructions: string
   model: string
@@ -26,6 +27,7 @@ const defaultState: BuilderState = {
   name: "",
   slug: "",
   description: "",
+  iconUrl: "",
   category: "",
   instructions: "",
   model: "anthropic/claude-3.5-sonnet",
@@ -66,6 +68,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           body: JSON.stringify({
             name: updatedState.name || undefined,
             description: updatedState.description || undefined,
+            iconUrl: updatedState.iconUrl || undefined,
             category: updatedState.category || undefined,
             accessType: updatedState.accessType,
             capabilities: updatedState.capabilities,
@@ -81,7 +84,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
     [webletId, isNewWeblet]
   )
 
-  const debouncedSave = useDebounce(autoSave, 800)
+  const debouncedSave = useDebounce(autoSave, 300)
 
   const updateState = (partial: Partial<BuilderState>) => {
     setState((prev) => {
@@ -100,6 +103,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
         body: JSON.stringify({
           name: state.name || undefined,
           description: state.description || undefined,
+          iconUrl: state.iconUrl || undefined,
           category: state.category || undefined,
           accessType: state.accessType,
           capabilities: state.capabilities,
@@ -138,6 +142,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
         body: JSON.stringify({
           name: state.name,
           description: state.description,
+          iconUrl: state.iconUrl || undefined,
           category: state.category,
           accessType: state.accessType,
           capabilities: state.capabilities,

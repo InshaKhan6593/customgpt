@@ -27,7 +27,7 @@ export default function BuilderPage() {
         throw new Error(err.error || "Failed to create weblet")
       }
       const json = await res.json()
-      router.push(`/dashboard/builder/${json.data.id}`)
+      router.push(`/dashboard/builder/${json.id}`)
     } catch (err: any) {
       toast.error(err.message || "Failed to create weblet")
       setCreating(false)

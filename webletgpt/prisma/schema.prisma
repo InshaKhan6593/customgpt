@@ -1,0 +1,369 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  DEVELOPER
+  ADMIN
+}
+
+enum WebletCategory {
+  WRITING
+  CODE
+  DATA_ANALYSIS
+  MARKETING
+  EDUCATION
+  CUSTOMER_SUPPORT
+  RESEARCH
+  CREATIVE
+  PRODUCTIVITY
+  FINANCE
+  HEALTH
+  LEGAL
+  OTHER
+}
+
+enum AccessType {
+  FREE
+  SUBSCRIBERS_ONLY
+}
+
+enum FlowMode {
+  SEQUENTIAL
+  HYBRID
+}
+
+enum VersionStatus {
+  DRAFT
+  TESTING
+  ACTIVE
+  ROLLED_BACK
+  ARCHIVED
+}
+
+enum SubStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum TxType {
+  SUBSCRIPTION_PAYMENT
+  PAYOUT
+  REFUND
+}
+
+enum TxStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ----------------------------------------------------------------------------
+// Core Foundation Models (Segment 1)
+// ----------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+  accounts      Account[]
+  sessions      Session[]
+
+  // Relations developed in Segment 3
+  weblets        Weblet[]        @relation("DeveloperWeblets")
+  flows          UserFlow[]
+  chatSessions   ChatSession[]
+  subscriptions  Subscription[]
+  transactions   Transaction[]
+  payouts        Payout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ----------------------------------------------------------------------------
+// Weblet & Knowledge Models (Segment 3)
+// ----------------------------------------------------------------------------
+
+model Weblet {
+  id               String         @id @default(cuid())
+  developerId      String
+  name             String
+  slug             String         @unique
+  description      String?
+  iconUrl          String?
+  category         WebletCategory
+  isActive         Boolean        @default(true)
+  isPublic         Boolean        @default(false)
+  
+  // RSIL Fields
+  rsilEnabled      Boolean        @default(false)
+  rsilGovernance   Json?          // Frequency, thresholds, approval
+  
+  // Monetization
+  accessType       AccessType     @default(FREE)
+  monthlyPrice     Float?
+  stripePriceId    String?
+  stripeProductId  String?
+  
+  // Capabilities config (tools like web search, code interpreter, etc.)
+  capabilities     Json?
+
+  developer        User           @relation("DeveloperWeblets", fields: [developerId], references: [id], onDelete: Cascade)
+
+  versions         WebletVersion[]
+  knowledgeFiles   KnowledgeFile[]
+  analyticsEvents  AnalyticsEvent[]
+  chatSessions     ChatSession[]
+
+  // Self-Relations for Agent Composability
+  parentCompositions WebletComposition[] @relation("ParentWeblet")
+  childCompositions  WebletComposition[] @relation("ChildWeblet")
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([developerId])
+  @@index([category])
+  @@index([isPublic, isActive])
+}
+
+model WebletVersion {
+  id           String        @id @default(cuid())
+  webletId     String
+  versionNum   Int
+  prompt       String        @db.Text
+  status       VersionStatus @default(DRAFT)
+  commitMsg    String?
+  
+  weblet       Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime      @default(now())
+
+  @@unique([webletId, versionNum])
+}
+
+model KnowledgeFile {
+  id           String           @id @default(cuid())
+  webletId     String
+  filename     String
+  fileSize     Int
+  mimeType     String
+  storageKey   String           @unique
+  
+  weblet       Weblet           @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  chunks       KnowledgeChunk[]
+
+  createdAt    DateTime         @default(now())
+}
+
+model KnowledgeChunk {
+  id              String         @id @default(cuid())
+  knowledgeFileId String
+  content         String         @db.Text
+  embedding       Unsupported("vector(1536)")? // Requires pgvector
+
+  knowledgeFile   KnowledgeFile  @relation(fields: [knowledgeFileId], references: [id], onDelete: Cascade)
+  
+  @@index([knowledgeFileId])
+}
+
+// ----------------------------------------------------------------------------
+// Orchestration & Composability Models (Segment 3)
+// ----------------------------------------------------------------------------
+
+model UserFlow {
+  id             String      @id @default(cuid())
+  userId         String
+  name           String
+  description    String?
+  mode           FlowMode    @default(SEQUENTIAL)
+  steps          Json        // Array: [{ webletId, order, inputMapping, hitlGate }]
+  masterWebletId String?     // For HYBRID mode
+  isPublic       Boolean     @default(false)
+  
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([userId])
+}
+
+model WebletComposition {
+  id              String   @id @default(cuid())
+  parentWebletId  String
+  childWebletId   String
+  triggerCondition String?
+  passingContext  Json?
+
+  parentWeblet    Weblet   @relation("ParentWeblet", fields: [parentWebletId], references: [id], onDelete: Cascade)
+  childWeblet     Weblet   @relation("ChildWeblet", fields: [childWebletId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now())
+
+  @@unique([parentWebletId, childWebletId])
+}
+
+// ----------------------------------------------------------------------------
+// Chat & Analytics Models (Segment 3)
+// ----------------------------------------------------------------------------
+
+model ChatSession {
+  id           String        @id @default(cuid())
+  userId       String
+  webletId     String
+  title        String?
+  
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weblet       Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([webletId])
+}
+
+model ChatMessage {
+  id            String      @id @default(cuid())
+  chatSessionId String
+  role          String      // e.g. "user", "assistant", "system"
+  content       String      @db.Text
+  tokensUsed    Int?        // Optional logging of token usage
+
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime    @default(now())
+
+  @@index([chatSessionId])
+}
+
+model AnalyticsEvent {
+  id            String   @id @default(cuid())
+  webletId      String
+  eventType     String   // e.g., "chat_started", "chat_completed", "rating_given"
+  eventData     Json?    // Optional metadata
+
+  weblet        Weblet   @relation(fields: [webletId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+
+  @@index([webletId, createdAt])
+  @@index([eventType])
+}
+
+// ----------------------------------------------------------------------------
+// Monetization, Subscriptions & Payouts Models (Segment 3)
+// ----------------------------------------------------------------------------
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?   @unique
+  status               SubStatus
+  currentPeriodEnd     DateTime?
+  
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  userId          String
+  amount          Float
+  currency        String   @default("USD")
+  type            TxType
+  status          TxStatus
+  stripePaymentId String?  @unique
+  metadata        Json?
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Payout {
+  id               String       @id @default(cuid())
+  developerId      String
+  amount           Float
+  currency         String       @default("USD")
+  status           PayoutStatus @default(PENDING)
+  stripeTransferId String?      @unique
+  notes            String?
+
+  developer        User         @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([developerId])
+}

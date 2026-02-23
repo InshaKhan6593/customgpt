@@ -33,7 +33,7 @@ export default function BuilderStudioPage({
           return res.json()
         })
         .then((json) => {
-          const w = json.data
+          const w = json
           setInitialState({
             name: w.name || "",
             slug: w.slug || "",

@@ -3,12 +3,13 @@ import { requireRole } from "@/lib/utils/auth-guard";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await requireRole("USER");
     
     const session = await prisma.chatSession.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         weblet: { select: { name: true, slug: true, developerId: true } },
         messages: { orderBy: { createdAt: "asc" } }

@@ -31,12 +31,13 @@ The layout is responsive — on mobile, it switches to a single-column view with
 
 The first tab contains all core settings. Fields appear in this order:
 
-1. **Name** — Text input. Required. Auto-generates a URL slug (e.g., "Blog Writer" → "blog-writer")
-2. **Category** — Searchable dropdown showing all 13 categories with icons and descriptions. Required before publishing, optional for drafts. See segment-14-categories-discovery.md for the full taxonomy.
-3. **Description** — Textarea. A short description shown on the marketplace card (max 300 characters)
-4. **Instructions** — Large textarea for the system prompt. This is what defines the weblet's personality and behavior. Shows character count. Supports markdown formatting.
-5. **Model Selector** — Dropdown with curated LLM models from OpenRouter. Each option shows the provider name, model name, cost indicator ($, $$, $$$), and a one-line description.
-6. **Conversation Starters** — Editable list. Developer adds suggested opening messages. Users see these as clickable chips in the chat interface. Can add, remove, and reorder.
+1. **Icon / Profile Picture** — Circular avatar preview with URL input. Shows the uploaded icon or the first letter of the name. Used on marketplace cards. Stored as `iconUrl` on the Weblet model.
+2. **Name** — Text input. Required. Auto-generates a URL slug (e.g., "Blog Writer" → "blog-writer")
+3. **Category** — Searchable dropdown showing all 13 categories with icons and descriptions. Required before publishing, optional for drafts. See segment-14-categories-discovery.md for the full taxonomy.
+4. **Description** — Textarea. A short description shown on the marketplace card (max 300 characters)
+5. **Instructions** — Large textarea for the system prompt. This is what defines the weblet's personality and behavior. Shows character count with color-coded indicator (green < 6,000, yellow 6,000–7,500, red > 7,500). **Max 8,000 characters** (aligned with OpenAI GPT Builder).
+6. **Model Selector** — Dropdown with curated LLM models from OpenRouter. Each option shows the provider name, model name, cost indicator ($, $$, $$$), and a one-line description.
+7. **Conversation Starters** — Editable list. Developer adds suggested opening messages. Users see these as clickable chips in the chat interface. Can add, remove, and reorder. **Max 4 starters** (aligned with OpenAI GPT Builder). "Add" button disables at limit.
 7. **Privacy Policy** — Optional. URL or text field for the weblet's privacy policy.
 
 > **Example of the model selector:**
@@ -154,7 +155,10 @@ lib/knowledge/
 - [ ] **Category selector** shows all 13 categories with icons and descriptions
 - [ ] **Category is required** before publishing (validation error if missing)
 - [ ] Category can be changed after publishing
-- [ ] Name, description, instructions, model, starters, privacy policy fields save correctly
+- [ ] Name, description, icon URL, instructions, model, starters, privacy policy fields save correctly
+- [ ] Icon preview shows uploaded image or first-letter fallback
+- [ ] Instructions textarea enforces 8,000-character limit with color-coded counter
+- [ ] Conversation starters capped at 4 — "Add" button disables at limit
 - [ ] Capability toggles update the weblet's capabilities JSON
 - [ ] Knowledge files upload via drag-and-drop (PDF, DOCX, TXT, CSV, MD — max 20MB)
 - [ ] Upload shows progress: Uploading → Extracting → Chunking → Embedding → Done

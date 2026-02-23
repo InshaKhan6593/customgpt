@@ -5,7 +5,7 @@
 **Design Guidance:** Split-pane layout (Resizable if possible, otherwise fixed 50/50 or 40/60). On mobile, it switches to a single-column view with a tab to toggle between config and preview. Use Shadcn Tabs for the left-side configuration panel. Provide a polished, IDE-like experience.
 
 ## Core Directives (CRITICAL)
-1. **NO EXTRA FIELDS:** Our database schema is strict. Do not add generic "Agent Greeting" or "Agent Avatar" fields. Stick EXACTLY to the fields outlined below.
+1. **NO EXTRA FIELDS:** Our database schema is strict. Stick EXACTLY to the fields outlined below. The only image field is `iconUrl` for the weblet's profile picture.
 2. **NO EXTRA ROUTES:** Only build the `/builder/[id]` route.
 
 ---
@@ -25,12 +25,13 @@
 **Required UI Elements - Left Pane (Configuration Panel):**
 
 *   **Tab 1: Configure (Default active)**
+    *   **Icon / Profile Picture:** Circular avatar preview (64×64). Shows uploaded image or first letter of name as fallback. URL text input below it. Helper text: "Enter a URL for your weblet's icon (PNG, JPG, or WebP). Shown on marketplace cards." Uses Lucide `ImageIcon` for empty state.
     *   **Name:** Text input. Required.
     *   **Category Dropdown:** Searchable Shadcn Select component. Options MUST BE EXACTLY: `WRITING`, `CODE`, `DATA_ANALYSIS`, `MARKETING`, `EDUCATION`, `CUSTOMER_SUPPORT`, `RESEARCH`, `CREATIVE`, `PRODUCTIVITY`, `FINANCE`, `HEALTH`, `LEGAL`, `OTHER`. (Show icons and descriptions for each if possible).
     *   **Description:** Textarea. (Max 300 characters).
-    *   **Agent Instructions / System Prompt:** Large Textarea (monospaced font if possible). Shows character count. Supports markdown formatting.
+    *   **Agent Instructions / System Prompt:** Large Textarea (monospaced font if possible). **Max 8,000 characters.** Shows color-coded character counter: green (< 6,000), yellow (6,000–7,500), red (> 7,500). Input blocked at limit.
     *   **Model Selector:** Dropdown showing LLM models from OpenRouter (Provider Name, Model Name, Cost Indicator ($, $$, $$$), and one-line description).
-    *   **Conversation Starters:** Editable list of chips. User can add, remove, and reorder.
+    *   **Conversation Starters:** Editable list of chips. User can add, remove, and reorder. **Max 4 starters.** Shows counter (e.g. "2/4"). "Add" button and input disable when limit is reached. Shows amber warning text: "Maximum 4 conversation starters reached".
     *   **Privacy Policy:** Text input for a URL.
     *   **Access Toggle:** Shadcn Switch. Label: "Subscribers Only". (Default: false / Free).
 

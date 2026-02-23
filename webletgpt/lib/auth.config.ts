@@ -31,6 +31,12 @@ export const authConfig = {
       }
       return session
     },
+    async redirect({ url, baseUrl }) {
+      // If there's a callback URL, honour it
+      if (url.startsWith(baseUrl)) return url
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      return baseUrl
+    },
   },
   session: { strategy: "jwt" },
 } satisfies NextAuthConfig

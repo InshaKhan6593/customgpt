@@ -12,9 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { X, Plus, GripVertical } from "lucide-react"
+import { X, Plus, GripVertical, ImageIcon } from "lucide-react"
 import { useState } from "react"
 import type { BuilderState } from "../builder-layout"
+import {
+  MAX_INSTRUCTIONS_LENGTH,
+  MAX_CONVERSATION_STARTERS,
+} from "@/lib/constants"
 
 const CATEGORIES = [
   { value: "WRITING", label: "Writing", icon: "✍️", desc: "Blog posts, emails, copy" },
@@ -46,11 +50,18 @@ type ConfigureTabProps = {
   onUpdate: (partial: Partial<BuilderState>) => void
 }
 
+function getInstructionsColor(length: number): string {
+  if (length > 7500) return "text-red-500"
+  if (length > 6000) return "text-amber-500"
+  return "text-muted-foreground"
+}
+
 export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
   const [newStarter, setNewStarter] = useState("")
 
   const addStarter = () => {
     if (!newStarter.trim()) return
+    if (state.conversationStarters.length >= MAX_CONVERSATION_STARTERS) return
     onUpdate({
       conversationStarters: [...state.conversationStarters, newStarter.trim()],
     })
@@ -63,8 +74,40 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
     })
   }
 
+  const startersAtLimit = state.conversationStarters.length >= MAX_CONVERSATION_STARTERS
+
   return (
     <div className="flex flex-col gap-5">
+      {/* Icon / Avatar */}
+      <div className="space-y-2">
+        <Label>Icon / Profile Picture</Label>
+        <div className="flex items-center gap-4">
+          <div className="relative size-16 rounded-full bg-muted border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden shrink-0">
+            {state.iconUrl ? (
+              <img
+                src={state.iconUrl}
+                alt="Weblet icon"
+                className="size-full object-cover"
+              />
+            ) : (
+              <span className="text-2xl font-semibold text-muted-foreground">
+                {state.name ? state.name[0].toUpperCase() : <ImageIcon className="size-6" />}
+              </span>
+            )}
+          </div>
+          <div className="flex-1 space-y-1">
+            <Input
+              placeholder="https://example.com/icon.png"
+              value={state.iconUrl}
+              onChange={(e) => onUpdate({ iconUrl: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enter a URL for your weblet's icon (PNG, JPG, or WebP). Shown on marketplace cards.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Name */}
       <div className="space-y-2">
         <Label htmlFor="name">Name *</Label>
@@ -126,12 +169,16 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
           id="instructions"
           placeholder="You are a helpful assistant that..."
           value={state.instructions}
-          onChange={(e) => onUpdate({ instructions: e.target.value })}
+          onChange={(e) => {
+            if (e.target.value.length <= MAX_INSTRUCTIONS_LENGTH) {
+              onUpdate({ instructions: e.target.value })
+            }
+          }}
           rows={8}
           className="font-mono text-sm"
         />
-        <p className="text-xs text-muted-foreground text-right">
-          {state.instructions.length} characters
+        <p className={`text-xs text-right ${getInstructionsColor(state.instructions.length)}`}>
+          {state.instructions.length.toLocaleString()}/{MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters
         </p>
       </div>
 
@@ -162,7 +209,12 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
 
       {/* Conversation Starters */}
       <div className="space-y-2">
-        <Label>Conversation Starters</Label>
+        <div className="flex items-center justify-between">
+          <Label>Conversation Starters</Label>
+          <span className="text-xs text-muted-foreground">
+            {state.conversationStarters.length}/{MAX_CONVERSATION_STARTERS}
+          </span>
+        </div>
         <div className="flex flex-col gap-2">
           {state.conversationStarters.map((starter, i) => (
             <div
@@ -181,9 +233,10 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
           ))}
           <div className="flex gap-2">
             <Input
-              placeholder="Add a conversation starter..."
+              placeholder={startersAtLimit ? "Maximum reached" : "Add a conversation starter..."}
               value={newStarter}
               onChange={(e) => setNewStarter(e.target.value)}
+              disabled={startersAtLimit}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault()
@@ -191,10 +244,20 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
                 }
               }}
             />
-            <Button variant="outline" size="icon" onClick={addStarter}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={addStarter}
+              disabled={startersAtLimit || !newStarter.trim()}
+            >
               <Plus className="size-4" />
             </Button>
           </div>
+          {startersAtLimit && (
+            <p className="text-xs text-amber-500">
+              Maximum {MAX_CONVERSATION_STARTERS} conversation starters reached
+            </p>
+          )}
         </div>
       </div>
 

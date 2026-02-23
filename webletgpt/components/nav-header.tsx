@@ -34,9 +34,12 @@ function getInitials(user?: any): string {
 
 function getNavLinks(role?: UserRole) {
   if (!role) {
-    return [{ label: "Marketplace", href: "/marketplace" }]
+    return [
+      { label: "Marketplace", href: "/marketplace" },
+      { label: "Pricing", href: "/pricing" },
+      { label: "For Developers", href: "/become-developer" },
+    ]
   }
-
   const links: { label: string; href: string }[] = []
 
   if (role === "ADMIN") {
