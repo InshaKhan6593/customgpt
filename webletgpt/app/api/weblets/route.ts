@@ -14,6 +14,9 @@ const createWebletSchema = z.object({
   category: z.nativeEnum(WebletCategory),
   isPublic: z.boolean().default(false),
   prompt: z.string().min(10).max(8000),
+  model: z.string().optional(),
+  privacyPolicy: z.string().optional().or(z.literal("")),
+  conversationStarters: z.any().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
       return errorResponse("Invalid input data", 400, result.error.errors);
     }
 
-    const { name, description, category, isPublic, prompt } = result.data;
+    const { name, description, category, isPublic, prompt, model, privacyPolicy, conversationStarters } = result.data;
     
     // Generate unique slug
     let slug = sanitizeSlug(name);
@@ -69,10 +72,13 @@ export async function POST(req: NextRequest) {
           description,
           category,
           isPublic,
+          privacyPolicy,
+          conversationStarters,
           versions: {
             create: {
               versionNum: 1,
               prompt,
+              model,
               status: "ACTIVE"
             }
           }

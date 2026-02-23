@@ -8,11 +8,15 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import type { User } from "@/lib/types"
 
+import { toast } from "sonner"
+import { useSession } from "next-auth/react"
+
 interface SettingsGeneralProps {
   user: User
 }
 
 export function SettingsGeneral({ user }: SettingsGeneralProps) {
+  const { update } = useSession()
   const [name, setName] = useState(user.name || "")
   const [isLoading, setIsLoading] = useState(false)
   const [nameError, setNameError] = useState("")
@@ -27,9 +31,26 @@ export function SettingsGeneral({ user }: SettingsGeneralProps) {
     }
 
     setIsLoading(true)
-    // Simulate saving
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setIsLoading(false)
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Failed to update profile")
+      }
+
+      await update({ name }) // Refresh NextAuth session
+      toast.success("Profile updated successfully")
+    } catch (err: any) {
+      setNameError(err.message)
+      toast.error("Failed to update profile")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

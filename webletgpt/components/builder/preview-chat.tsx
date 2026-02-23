@@ -1,41 +1,44 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useChat } from "@ai-sdk/react"
+import { DefaultChatTransport, UIMessage } from "ai"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, RotateCcw, Bot, User } from "lucide-react"
+import { Send, RotateCcw, Bot, User, Loader2 } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import type { BuilderState } from "./builder-layout"
 
-type Message = {
-  id: string
-  role: "user" | "assistant"
-  content: string
-}
-
-export function PreviewChat({ state }: { state: BuilderState }) {
-  const [messages, setMessages] = useState<Message[]>([])
+export function PreviewChat({ state, webletId }: { state: BuilderState, webletId: string }) {
+  const isNew = webletId === "new"
   const [input, setInput] = useState("")
 
-  const handleSend = () => {
-    if (!input.trim()) return
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-    }
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content:
-          "This is a preview placeholder. The live chat engine will be connected in Segment 05.",
+  const { messages, setMessages, sendMessage, status } = useChat({
+    id: "preview-chat-session",
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      body: {
+        webletId: isNew ? undefined : webletId,
       },
-    ])
+    }),
+  })
+
+  // Clear messages if weblet id changes just to be safe
+  useEffect(() => {
+    setMessages([])
+  }, [webletId, setMessages])
+
+  const handleSend = () => {
+    if (!input.trim() || isNew) return
+    sendMessage({
+      text: input,
+    })
     setInput("")
   }
+
+  const isLoading = status === "submitted" || status === "streaming"
 
   return (
     <div className="flex flex-col h-full">
@@ -48,7 +51,8 @@ export function PreviewChat({ state }: { state: BuilderState }) {
           variant="ghost"
           size="icon"
           onClick={() => setMessages([])}
-          title="Reset chat"
+          title="Reset chat preview"
+          disabled={messages.length === 0}
         >
           <RotateCcw className="size-4" />
         </Button>
@@ -64,18 +68,16 @@ export function PreviewChat({ state }: { state: BuilderState }) {
                 {state.name || "Your Weblet"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Send a message to preview the chat experience
+                {isNew ? "Save your Weblet first to enable live chat preview." : "Send a message to preview your setup"}
               </p>
             </div>
             {/* Conversation Starters */}
-            {state.conversationStarters.length > 0 && (
-              <div className="flex flex-wrap gap-2 max-w-sm">
+            {!isNew && state.conversationStarters.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-2 max-w-sm mt-4">
                 {state.conversationStarters.map((starter, i) => (
                   <button
                     key={i}
-                    onClick={() => {
-                      setInput(starter)
-                    }}
+                    onClick={() => setInput(starter)}
                     className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
                   >
                     {starter}
@@ -86,12 +88,12 @@ export function PreviewChat({ state }: { state: BuilderState }) {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {messages.map((msg) => (
+            {messages.map((msg: UIMessage) => (
               <div
                 key={msg.id}
                 className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
               >
-                {msg.role === "assistant" && (
+                {msg.role !== "user" && (
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                     <Bot className="size-4" />
                   </div>
@@ -103,15 +105,51 @@ export function PreviewChat({ state }: { state: BuilderState }) {
                       : "bg-muted text-foreground"
                   }`}
                 >
-                  {msg.content}
+                  {msg.parts.map((part, i) => {
+                    if (part.type === "text") {
+                      if (msg.role === "user") {
+                        return <span key={i}>{part.text}</span>
+                      }
+                      return (
+                        <div key={i} className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {part.text}
+                          </ReactMarkdown>
+                        </div>
+                      )
+                    }
+                    if (part.type === "tool-invocation") {
+                      return (
+                        <div key={i} className="text-xs text-muted-foreground italic">
+                          🔧 Using {(part as any).toolInvocation?.toolName || "tool"}...
+                        </div>
+                      )
+                    }
+                    return null
+                  })}
                 </div>
                 {msg.role === "user" && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted border">
                     <User className="size-4" />
                   </div>
                 )}
               </div>
             ))}
+            
+            {status === "submitted" && (
+              <div className="flex gap-3">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Bot className="size-4" />
+                </div>
+                <div className="rounded-lg bg-muted px-4 py-3">
+                  <span className="flex gap-1">
+                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
+                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-.15s]" />
+                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-.3s]" />
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </ScrollArea>
@@ -121,18 +159,19 @@ export function PreviewChat({ state }: { state: BuilderState }) {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            handleSend()
+            if (!isNew) handleSend()
           }}
           className="flex gap-2"
         >
           <Input
-            placeholder="Type a message..."
+            placeholder={isNew ? "Save Weblet first..." : "Type a message..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             className="flex-1"
+            disabled={isNew || isLoading}
           />
-          <Button type="submit" size="icon" disabled={!input.trim()}>
-            <Send className="size-4" />
+          <Button type="submit" size="icon" disabled={isNew || isLoading || !input.trim()}>
+            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Button>
         </form>
       </div>

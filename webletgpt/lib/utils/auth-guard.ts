@@ -34,3 +34,5 @@ export async function requireRole(minimumRole: UserRole = "USER") {
 
   return session.user
 }
+
+export const requireUser = () => requireRole("USER")

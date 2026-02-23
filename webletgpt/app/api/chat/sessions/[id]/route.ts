@@ -1,31 +1,34 @@
-import { NextRequest } from "next/server";
-import { requireRole } from "@/lib/utils/auth-guard";
-import { successResponse, errorResponse } from "@/lib/utils/api-response";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = await params;
-    const user = await requireRole("USER");
-    
-    const session = await prisma.chatSession.findUnique({
-      where: { id },
-      include: {
-        weblet: { select: { name: true, slug: true, developerId: true } },
-        messages: { orderBy: { createdAt: "asc" } }
-      }
-    });
-
-    if (!session) return errorResponse("Chat session not found", 404);
-
-    // Only the user who created it, or the developer investigating logs, can view it (simplified for Segment 3)
-    if (session.userId !== user.id && user.role !== "ADMIN") {
-      return errorResponse("Forbidden", 403);
+    const session = await auth()
+    if (!session?.user?.id) {
+      return new NextResponse("Unauthorized", { status: 401 })
     }
 
-    return successResponse(session);
-  } catch (err: any) {
-    if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
-    return errorResponse("Internal server error", 500);
+    const { id } = await params
+
+    const chatSession = await prisma.chatSession.findUnique({
+      where: { id }
+    })
+
+    if (!chatSession || chatSession.userId !== session.user.id) {
+      return new NextResponse("Not Found", { status: 404 })
+    }
+
+    await prisma.chatSession.delete({
+      where: { id }
+    })
+
+    return new NextResponse("OK", { status: 200 })
+  } catch (error) {
+    console.error("Failed to delete chat session:", error)
+    return new NextResponse("Internal Server Error", { status: 500 })
   }
 }

@@ -7,7 +7,8 @@ import { VersionStatus } from "@prisma/client";
 
 const createVersionSchema = z.object({
   prompt: z.string().min(10),
-  commitMsg: z.string().optional()
+  commitMsg: z.string().optional(),
+  model: z.string().optional()
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = createVersionSchema.safeParse(body);
     if (!result.success) return errorResponse("Invalid input", 400, result.error.errors);
 
-    const { prompt, commitMsg } = result.data;
+    const { prompt, commitMsg, model } = result.data;
 
     // Get the latest version number
     const latestVersion = await prisma.webletVersion.findFirst({
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           versionNum: nextVersionNum,
           prompt,
           commitMsg,
+          model,
           status: "ACTIVE"
         }
       });

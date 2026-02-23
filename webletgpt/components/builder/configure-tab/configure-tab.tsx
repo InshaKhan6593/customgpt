@@ -40,8 +40,8 @@ const MODELS = [
   { value: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet", provider: "Anthropic", cost: "$$", desc: "Best for complex reasoning" },
   { value: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI", cost: "$$", desc: "Fast multimodal" },
   { value: "openai/gpt-4o-mini", label: "GPT-4o Mini", provider: "OpenAI", cost: "$", desc: "Affordable and fast" },
-  { value: "google/gemini-2.0-flash", label: "Gemini 2.0 Flash", provider: "Google", cost: "$", desc: "Fast and cheap" },
-  { value: "meta-llama/llama-3.3-70b", label: "Llama 3.3 70B", provider: "Meta", cost: "$", desc: "Open source, strong" },
+  { value: "google/gemini-2.0-flash-001", label: "Gemini 2.0 Flash", provider: "Google", cost: "$", desc: "Fast and cheap" },
+  { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", provider: "Meta", cost: "Free", desc: "Open source, strong" },
   { value: "deepseek/deepseek-r1", label: "DeepSeek R1", provider: "DeepSeek", cost: "$", desc: "Reasoning specialist" },
 ]
 

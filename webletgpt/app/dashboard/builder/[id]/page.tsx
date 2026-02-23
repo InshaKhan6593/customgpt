@@ -38,9 +38,13 @@ export default function BuilderStudioPage({
             name: w.name || "",
             slug: w.slug || "",
             description: w.description || "",
+            iconUrl: w.iconUrl || "",
             category: w.category || "",
             instructions: w.versions?.[0]?.prompt || "",
+            model: w.versions?.[0]?.model || "anthropic/claude-3.5-sonnet",
             accessType: w.accessType || "FREE",
+            conversationStarters: w.conversationStarters || [],
+            privacyPolicy: w.privacyPolicy || "",
             capabilities: w.capabilities || {
               webSearch: false,
               codeInterpreter: false,

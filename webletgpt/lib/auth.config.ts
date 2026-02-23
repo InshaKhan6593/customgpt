@@ -15,11 +15,13 @@ export const authConfig = {
       if (user) {
         token.id = user.id
         token.role = user.role
+        if (user.name) token.name = user.name
       }
       
-      // Handle the session update when role is upgraded
-      if (trigger === "update" && session?.role) {
-        token.role = session.role
+      // Handle the session update when role or name is changed
+      if (trigger === "update") {
+        if (session?.role) token.role = session.role
+        if (session?.name) token.name = session.name
       }
       
       return token
@@ -28,6 +30,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as "USER" | "DEVELOPER" | "ADMIN"
+        if (token.name) session.user.name = token.name as string
       }
       return session
     },

@@ -17,6 +17,10 @@ const updateSchema = z.object({
   rsilEnabled: z.boolean().optional(),
   rsilGovernance: z.any().optional(),
   capabilities: z.any().optional(),
+  privacyPolicy: z.string().optional().or(z.literal("")),
+  conversationStarters: z.any().optional(),
+  instructions: z.string().optional(),
+  model: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -60,17 +64,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!result.success) return errorResponse("Invalid input", 400, result.error.errors);
 
     const data = result.data as any;
-    if (data.name && data.name !== weblet.name) {
-      let slug = sanitizeSlug(data.name);
+    const { instructions, model, ...webletData } = data;
+    
+    if (webletData.name && webletData.name !== weblet.name) {
+      let slug = sanitizeSlug(webletData.name);
       const existing = await prisma.weblet.findUnique({ where: { slug } });
-      if (existing) slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
-      data.slug = slug;
+      if (existing && existing.id !== id) slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
+      webletData.slug = slug;
     }
 
     const updated = await prisma.weblet.update({
       where: { id },
-      data
+      data: webletData
     });
+
+    // Handle Version updates seamlessly during auto-saves and publishes
+    if (instructions !== undefined || model !== undefined) {
+      const activeVersion = await prisma.webletVersion.findFirst({
+        where: { webletId: id, status: "ACTIVE" },
+        orderBy: { versionNum: "desc" }
+      });
+
+      if (activeVersion) {
+        await prisma.webletVersion.update({
+          where: { id: activeVersion.id },
+          data: {
+            prompt: instructions !== undefined ? instructions : activeVersion.prompt,
+            model: model !== undefined ? model : activeVersion.model,
+          }
+        });
+      } else {
+        await prisma.webletVersion.create({
+          data: {
+            webletId: id,
+            versionNum: 1,
+            prompt: instructions || "You are a helpful assistant.",
+            model: model || "anthropic/claude-3.5-sonnet",
+            status: "ACTIVE"
+          }
+        });
+      }
+    }
 
     return successResponse(updated);
   } catch (err: any) {

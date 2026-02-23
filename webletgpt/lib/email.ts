@@ -20,8 +20,16 @@ export async function sendVerificationRequest(params: {
   // magic link URLs `/api/auth/callback/resend?token=CODE`, we will extract the token
   // from the URL to display it.
   
-  const tokenUrl = new URL(url);
-  const token = tokenUrl.searchParams.get("token");
+  let token = "";
+  try {
+    const tokenUrl = new URL(url, process.env.NEXTAUTH_URL || 'http://localhost:3000');
+    token = tokenUrl.searchParams.get("token") || "";
+  } catch (e) {
+    console.error("URL parse error in sendVerificationRequest:", e);
+    // Fallback parsing just in case
+    const match = url.match(/token=([^&]+)/);
+    if (match) token = match[1];
+  }
 
   try {
     const data = await resend.emails.send({

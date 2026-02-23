@@ -73,6 +73,10 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
             accessType: updatedState.accessType,
             capabilities: updatedState.capabilities,
             isActive: updatedState.isActive,
+            instructions: updatedState.instructions || undefined,
+            model: updatedState.model || undefined,
+            conversationStarters: updatedState.conversationStarters,
+            privacyPolicy: updatedState.privacyPolicy || undefined,
           }),
         })
         if (!res.ok) throw new Error("Save failed")
@@ -108,6 +112,10 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           accessType: state.accessType,
           capabilities: state.capabilities,
           isActive: false,
+          instructions: state.instructions || undefined,
+          model: state.model || undefined,
+          conversationStarters: state.conversationStarters,
+          privacyPolicy: state.privacyPolicy || undefined,
         }),
       })
       if (!res.ok) throw new Error("Save failed")
@@ -148,6 +156,10 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           capabilities: state.capabilities,
           isActive: true,
           isPublic: true,
+          instructions: state.instructions,
+          model: state.model,
+          conversationStarters: state.conversationStarters,
+          privacyPolicy: state.privacyPolicy || undefined,
         }),
       })
       if (!res.ok) throw new Error("Publish failed")
@@ -189,7 +201,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
 
         {/* Right Pane - Live Preview */}
         <div className="w-1/2 overflow-y-auto">
-          <PreviewChat state={state} />
+          <PreviewChat state={state} webletId={webletId} />
         </div>
       </div>
 

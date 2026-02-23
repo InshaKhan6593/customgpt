@@ -6,19 +6,19 @@
 
 ## Core Directives (CRITICAL)
 1. **NO EXTRA FIELDS:** Stick exactly to the UI elements requested.
-2. **NO EXTRA ROUTES:** Only build the `/chat` and `/chat/[id]` routes.
+2. **NO EXTRA ROUTES:** Only build the `/chat/[webletId]` and `/chat/[webletId]/[sessionId]` routes. Do not build a generic `/chat` route.
 3. **USE SHADCN:** Use Shadcn Textareas, Buttons, and ScrollAreas.
 
 ---
 
-## 1. Route: `/chat/[id]` (The Main Chat Interface)
+## 1. Route: `/chat/[webletId]` (The Main Chat Interface)
 
 **Purpose:** Allows users to talk to the AI.
 
 **Required UI Elements - Layout:**
 *   **Left Sidebar (History):**
     *   "New Chat" Button (Primary action at the top).
-    *   List of recent chat sessions. Each item should show a truncated title (e.g., "Help with Next.js code...").
+    *   List of recent chat sessions **for this specific Weblet only**. Each item should show a truncated title (e.g., "Help with Next.js code...").
     *   Hovering over a historical chat should reveal a small "Trash" icon to delete it.
 *   **Main Chat Area (Center/Right Panel):**
     *   **Header:** Displays the Name and Icon of the Weblet currently being chatted with (e.g., "💻 Codebot 3000").
@@ -37,7 +37,7 @@
 **Logic / State (What Lovable needs to build):**
 *   **Streaming State:** Show a pulsing cursor or a "typing..." indicator while the AI is responding.
 *   **Disabled State:** Disable the input box and send button while the AI is currently generating a response.
-*   **Empty State:** If it's a brand new chat with no messages, show a nice welcome screen in the center: "How can I help you today?" with 3 suggestion chips.
+*   **Empty State:** If it's a brand new chat with no messages, show a nice welcome screen in the center: "How can I help you today?" and render the Weblet's dynamic `conversationStarters` as clickable suggestion chips.
 
 ## 2. Global Feedback Modal (For RSIL)
 **Purpose:** When a user clicks "Thumbs Down" on an AI message, we need to know why to feed the RSIL optimization engine.

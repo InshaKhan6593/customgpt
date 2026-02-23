@@ -29,7 +29,7 @@ The core streaming endpoint (`POST /api/chat`) handles every chat interaction:
 5. Build the tools array based on the weblet's enabled capabilities
 6. Add any custom action tools parsed from the weblet's OpenAPI schemas
 7. Wrap the AI call with Langfuse Telemetry to capture the execution trace (Segment 16)
-8. Stream the LLM response via the Vercel AI SDK through OpenRouter
+8. Stream the LLM response via the Vercel AI SDK through OpenRouter. **Implementation note (AI SDK v6):** Use `result.toUIMessageStreamResponse()` as the return value — this is the only streaming format compatible with the `useChat` hook's `DefaultChatTransport`. Do NOT use `toTextStreamResponse()` or `toDataStreamResponse()` as they are incompatible.
 9. On completion, save messages to the database, log usage for billing, and log analytics events
 
 ### Step 2 — Implement the Payment Feature Flag
@@ -115,15 +115,16 @@ This prevents a single point of failure — users should almost never see "servi
 
 The chat interface includes:
 
-- **Chat Header** — Weblet name, model badge, and a back button to the marketplace
-- **Message List** — Scrollable area with user and assistant messages. Auto-scrolls to the latest message.
+- **Chat Header** — Weblet name, icon, model badge, and a back button to the marketplace. Right side has a "More" dropdown with "Clear Chat" and "Report Weblet".
+- **Message List** — Scrollable area with user and assistant messages (for current weblet only). Auto-scrolls to the latest message.
 - **Message Rendering** — Assistant messages render markdown (bold, italic, lists, links, code blocks with syntax highlighting)
 - **Tool Call Display** — When the AI calls a tool, it appears as a collapsible section: "Searching the web..." → expands to show query, results, and sources
 - **Image Display** — Generated images appear inline in the message
 - **Starter Chips** — When the conversation is empty, show clickable chips with the weblet's conversation starters
-- **Input Bar** — Text input with Send button. Supports Ctrl+Enter to send. Disabled while the AI is streaming.
+- **Input Bar** — Text input with Send button. Supports Ctrl+Enter to send. Disabled while the AI is streaming. Includes an "Attach File" paperclip icon (UI stub only for now, functional in later segments).
 - **Typing Indicator** — Animated dots while the response is streaming
-- **Rating Dialog** — After 3+ messages in a conversation, a subtle prompt appears: "Rate this conversation" with 1-5 stars. Rating is saved to AnalyticsEvent and sent to Langfuse to feed RSIL evaluations (Segment 15/17).
+- **Message Actions** — On hover of an Assistant message, show a "Copy" icon button and a "Thumbs Up / Thumbs Down" rating widget.
+- **Rating Dialog** — Clicking "Thumbs Down" opens a modal to provide written feedback (why it was bad). This rating and feedback is saved to AnalyticsEvent and sent to Langfuse to feed RSIL evaluations (Segment 15/17).
 
 ### Step 7 — Implement Version Routing Stub
 
@@ -196,7 +197,7 @@ components/chat/
 - [ ] When flag is true (tested manually), paid weblets show 402 response
 - [ ] Vercel AI SDK call is wrapped in Langfuse OpenTelemetry
 - [ ] Analytics event logged after each chat completion (eventType, metadata with tokens, tools, rating)
-- [ ] Rating saved to AnalyticsEvent and sent to Langfuse `/scores` API
+- [ ] Rating saved to AnalyticsEvent and sent to Langfuse `/scores` API (Up/Down + text feedback)
 - [ ] LLM fallback works — if OpenRouter is down, direct provider is used
 - [ ] Rate limiting: max 5 tool calls per message, max 3 code executions per session
 - [ ] Markdown rendered correctly in assistant messages
@@ -228,6 +229,12 @@ npm install react-markdown               # Markdown rendering
 npm install remark-gfm                   # GitHub-flavored markdown
 npm install rehype-highlight             # Code syntax highlighting
 ```
+
+> **AI SDK v6 Implementation Notes:**
+> - The `@openrouter/ai-sdk-provider` does NOT support `maxTokens`/`maxOutputTokens` passthrough. If token limiting is needed, use `providerOptions` or manage at the OpenRouter dashboard level.
+> - The `@ai-sdk/openai` provider defaults to the `/responses` API endpoint. OpenRouter only supports `/chat/completions`. This is why `@openrouter/ai-sdk-provider` is used as the primary provider.
+> - Use `result.toUIMessageStreamResponse()` in route handlers — this is the only format `useChat` with `DefaultChatTransport` can parse in SDK v6.
+> - Frontend model IDs must exactly match OpenRouter's naming (e.g., `meta-llama/llama-3.3-70b-instruct` NOT `meta-llama/llama-3.3-70b`).
 
 ---
 
