@@ -1,35 +1,64 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Plus, Loader2, Bot } from "lucide-react"
+import { toast } from "sonner"
 
-// This page creates a new weblet and redirects to the builder studio.
-// For now, it redirects to a placeholder ID. Once wired, it will POST /api/weblets first.
 export default function BuilderPage() {
   const router = useRouter()
+  const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
-    // TODO: POST /api/weblets to create a new weblet, then redirect to /dashboard/builder/[id]
-    // For now, show a landing page
-  }, [router])
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      const res = await fetch("/api/weblets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Untitled Weblet",
+          category: "OTHER",
+          prompt: "You are a helpful assistant.",
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to create weblet")
+      }
+      const json = await res.json()
+      router.push(`/dashboard/builder/${json.data.id}`)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create weblet")
+      setCreating(false)
+    }
+  }
 
   return (
     <div className="flex flex-col items-center justify-center gap-6 py-20">
-      <h1 className="text-3xl font-bold text-foreground">Weblet Builder</h1>
-      <p className="text-muted-foreground max-w-md text-center">
-        Create powerful AI agents with a visual no-code interface. Configure
-        instructions, capabilities, knowledge, and custom actions.
-      </p>
-      <button
-        onClick={async () => {
-          // TODO: Replace with actual API call to create weblet
-          const tempId = "new"
-          router.push(`/dashboard/builder/${tempId}`)
-        }}
-        className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
-      >
-        + Create New Weblet
-      </button>
+      <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
+        <Bot className="size-8 text-primary" />
+      </div>
+      <div className="text-center">
+        <h1 className="text-3xl font-bold text-foreground">Weblet Builder</h1>
+        <p className="text-muted-foreground max-w-md mt-2">
+          Create powerful AI agents with a visual no-code interface. Configure
+          instructions, capabilities, knowledge, and custom actions.
+        </p>
+      </div>
+      <Button onClick={handleCreate} disabled={creating} size="lg">
+        {creating ? (
+          <>
+            <Loader2 className="size-4 mr-2 animate-spin" />
+            Creating...
+          </>
+        ) : (
+          <>
+            <Plus className="size-4 mr-2" />
+            Create New Weblet
+          </>
+        )}
+      </Button>
     </div>
   )
 }

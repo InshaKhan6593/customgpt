@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { BuilderTabs } from "./builder-tabs"
 import { PublishBar } from "./publish-bar"
 import { PreviewChat } from "./preview-chat"
+import { useDebounce } from "@/hooks/use-debounce"
+import { toast } from "sonner"
 import type { WebletCapabilities } from "@/lib/types/api"
 
 export type BuilderState = {
@@ -39,14 +41,136 @@ const defaultState: BuilderState = {
   isActive: false,
 }
 
-export function BuilderLayout({ webletId }: { webletId: string }) {
-  const [state, setState] = useState<BuilderState>(defaultState)
+type BuilderLayoutProps = {
+  webletId: string
+  initialState?: Partial<BuilderState>
+}
+
+export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
+  const [state, setState] = useState<BuilderState>({
+    ...defaultState,
+    ...initialState,
+  })
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const isNewWeblet = webletId === "new"
+
+  // Auto-save: debounced PATCH to /api/weblets/[id]
+  const autoSave = useCallback(
+    async (updatedState: BuilderState) => {
+      if (isNewWeblet) return // Don't auto-save if weblet hasn't been created yet
+      setSaveStatus("saving")
+      try {
+        const res = await fetch(`/api/weblets/${webletId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: updatedState.name || undefined,
+            description: updatedState.description || undefined,
+            category: updatedState.category || undefined,
+            accessType: updatedState.accessType,
+            capabilities: updatedState.capabilities,
+            isActive: updatedState.isActive,
+          }),
+        })
+        if (!res.ok) throw new Error("Save failed")
+        setSaveStatus("saved")
+      } catch {
+        setSaveStatus("error")
+      }
+    },
+    [webletId, isNewWeblet]
+  )
+
+  const debouncedSave = useDebounce(autoSave, 800)
 
   const updateState = (partial: Partial<BuilderState>) => {
-    setState((prev) => ({ ...prev, ...partial }))
-    // TODO: debounce auto-save PATCH to /api/weblets/[id]
-    setSaveStatus("saved")
+    setState((prev) => {
+      const next = { ...prev, ...partial }
+      debouncedSave(next)
+      return next
+    })
+  }
+
+  const handleSaveDraft = async () => {
+    setSaveStatus("saving")
+    try {
+      const res = await fetch(`/api/weblets/${webletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: state.name || undefined,
+          description: state.description || undefined,
+          category: state.category || undefined,
+          accessType: state.accessType,
+          capabilities: state.capabilities,
+          isActive: false,
+        }),
+      })
+      if (!res.ok) throw new Error("Save failed")
+      setSaveStatus("saved")
+      toast.success("Draft saved")
+    } catch {
+      setSaveStatus("error")
+      toast.error("Failed to save draft")
+    }
+  }
+
+  const handlePublish = async () => {
+    // Validate required fields
+    if (!state.name.trim()) {
+      toast.error("Name is required to publish")
+      return
+    }
+    if (!state.category) {
+      toast.error("Category is required to publish")
+      return
+    }
+    if (!state.instructions.trim()) {
+      toast.error("Instructions are required to publish")
+      return
+    }
+
+    setSaveStatus("saving")
+    try {
+      const res = await fetch(`/api/weblets/${webletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: state.name,
+          description: state.description,
+          category: state.category,
+          accessType: state.accessType,
+          capabilities: state.capabilities,
+          isActive: true,
+          isPublic: true,
+        }),
+      })
+      if (!res.ok) throw new Error("Publish failed")
+      setSaveStatus("saved")
+      updateState({ isActive: true })
+      toast.success("Weblet published!")
+    } catch {
+      setSaveStatus("error")
+      toast.error("Failed to publish")
+    }
+  }
+
+  const handleUnpublish = async () => {
+    setSaveStatus("saving")
+    try {
+      const res = await fetch(`/api/weblets/${webletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false, isPublic: false }),
+      })
+      if (!res.ok) throw new Error("Unpublish failed")
+      setSaveStatus("saved")
+      updateState({ isActive: false })
+      toast.success("Weblet unpublished")
+    } catch {
+      setSaveStatus("error")
+      toast.error("Failed to unpublish")
+    }
   }
 
   return (
@@ -68,18 +192,9 @@ export function BuilderLayout({ webletId }: { webletId: string }) {
       <PublishBar
         state={state}
         saveStatus={saveStatus}
-        onSaveDraft={() => {
-          setSaveStatus("saving")
-          // TODO: PATCH /api/weblets/[id]
-          setTimeout(() => setSaveStatus("saved"), 500)
-        }}
-        onPublish={() => {
-          // TODO: PATCH /api/weblets/[id] { isActive: true, isPublic: true }
-          updateState({ isActive: true })
-        }}
-        onUnpublish={() => {
-          updateState({ isActive: false })
-        }}
+        onSaveDraft={handleSaveDraft}
+        onPublish={handlePublish}
+        onUnpublish={handleUnpublish}
       />
     </div>
   )
