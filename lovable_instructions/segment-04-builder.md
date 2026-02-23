@@ -2,7 +2,7 @@
 
 **Context:** The Weblet Builder is the most complex UI in the app. It is a no-code split-screen interface where developers configure their AI agent on the left, and immediately test it in a live chat preview on the right.
 
-**Design Guidance:** Split-pane layout (Resizable if possible, otherwise fixed 50/50 or 40/60). Use Shadcn Tabs for the left-side configuration panel. Provide a polished, IDE-like experience.
+**Design Guidance:** Split-pane layout (Resizable if possible, otherwise fixed 50/50 or 40/60). On mobile, it switches to a single-column view with a tab to toggle between config and preview. Use Shadcn Tabs for the left-side configuration panel. Provide a polished, IDE-like experience.
 
 ## Core Directives (CRITICAL)
 1. **NO EXTRA FIELDS:** Our database schema is strict. Do not add generic "Agent Greeting" or "Agent Avatar" fields. Stick EXACTLY to the fields outlined below.
@@ -15,52 +15,46 @@
 **Purpose:** Where developers create, configure, and test their AI agents.
 
 **Required UI Elements - Global Layout:**
-*   **Top Nav Bar:**
-    *   Left: Back arrow, Editable Weblet Name (input field embedded in header, default: "Untitled Weblet").
-    *   Right: Status badge ("Draft" or "Active"), "Save Draft" button (secondary), "Publish Weblet" button (primary).
 *   **Split Screen Container:**
     *   **Left Pane:** Configuration Panel (using Shadcn Tabs).
     *   **Right Pane:** Live Preview Chat Interface.
+*   **Sticky Bottom Publish Bar:**
+    *   Left: Status indicator ("Draft", "Saving..." with spinner, or "Saved" with checkmark).
+    *   Right: "Save Draft" button (secondary), "Publish" button (primary, or "Unpublish" if already active).
 
 **Required UI Elements - Left Pane (Configuration Panel):**
 
-*   **Tab 1: Configuration (Default active)**
-    *   **Category Dropdown:** Shadcn Select component. Options MUST BE EXACTLY: `WRITING`, `CODE`, `DATA_ANALYSIS`, `MARKETING`, `EDUCATION`, `CUSTOMER_SUPPORT`, `RESEARCH`, `CREATIVE`, `PRODUCTIVITY`, `FINANCE`, `HEALTH`, `LEGAL`, `OTHER`.
-    *   **System Prompt (Instructions):** 
-        *   Type: Large Textarea (monospaced font if possible).
-        *   Label: "Agent Instructions / System Prompt".
-        *   Placeholder: "You are a helpful assistant..."
+*   **Tab 1: Configure (Default active)**
+    *   **Name:** Text input. Required.
+    *   **Category Dropdown:** Searchable Shadcn Select component. Options MUST BE EXACTLY: `WRITING`, `CODE`, `DATA_ANALYSIS`, `MARKETING`, `EDUCATION`, `CUSTOMER_SUPPORT`, `RESEARCH`, `CREATIVE`, `PRODUCTIVITY`, `FINANCE`, `HEALTH`, `LEGAL`, `OTHER`. (Show icons and descriptions for each if possible).
+    *   **Description:** Textarea. (Max 300 characters).
+    *   **Agent Instructions / System Prompt:** Large Textarea (monospaced font if possible). Shows character count. Supports markdown formatting.
+    *   **Model Selector:** Dropdown showing LLM models from OpenRouter (Provider Name, Model Name, Cost Indicator ($, $$, $$$), and one-line description).
+    *   **Conversation Starters:** Editable list of chips. User can add, remove, and reorder.
+    *   **Privacy Policy:** Text input for a URL.
     *   **Access Toggle:** Shadcn Switch. Label: "Subscribers Only". (Default: false / Free).
 
 *   **Tab 2: Capabilities**
-    *   **Web Search:** Shadcn Switch with description ("Allow this agent to search the live web for current information").
+    *   **Web Search:** Shadcn Switch with description ("Search the internet for current information").
     *   **Code Interpreter:** Shadcn Switch with description ("Allow this agent to write and execute Python code in a secure sandbox").
-    *   **Image Generation:** Shadcn Switch with description ("Allow this agent to generate images using DALL-E 3").
+    *   **Image Generation:** Shadcn Switch with description ("Generate images from text descriptions").
+    *   **Knowledge Search:** Shadcn Switch with description ("Search uploaded knowledge files using AI").
 
-*   **Tab 3: Knowledge Base (RAG)**
-    *   **Upload Area:** Drag-and-drop zone or file input button. Accepts `.pdf`, `.docx`, `.txt`, `.csv`.
-    *   **Uploaded Files List:** A list displaying uploaded files displaying filename, size, and a "Delete" trash icon next to each.
+*   **Tab 3: Knowledge (RAG)**
+    *   **Upload Area:** Drag-and-drop zone. Accepts `.pdf`, `.docx`, `.txt`, `.csv`, and `.md` (Max 20MB each).
+    *   **Uploaded Files List:** A list displaying filename, file size, chunk count, and a "Delete" button.
+    *   **Progress Indicator:** Show status during upload: "Uploading... -> Extracting text... -> Chunking... -> Generating embeddings... -> Done".
 
-*   **Tab 4: Optimization (RSIL)**
-    *   **Enable RSIL:** Shadcn Switch. Label: "Enable Automatic Prompt Optimization (RSIL)".
-    *   **Settings Form (Hidden if RSIL is off):**
-        *   "Min Interactions Before Optimize" (Number input, default 100).
-        *   "Optimization Frequency" (Select: Daily, Weekly, Manual).
-        *   "Max Updates Per Day" (Number input, default 3).
-        *   "Cooldown Hours" (Number input, default 6).
-        *   "Require Developer Approval" (Switch, default false. Description: "If checked, all automated improvements will be sent to your inbox as Suggestions instead of auto-deploying.")
-
-*   **Tab 5: Actions & Integrations (MCP)**
-    *   **Description text:** "Connect external APIs or MCP (Model Context Protocol) servers to give your Weblet custom abilities."
-    *   **Button:** "+ Add MCP Server" (Opens a modal with "Server Name" and "Server URL" inputs).
-    *   **List Area:** Display connected MCP servers with a status dot (Green = Connected, Red = Offline) and a "Remove" button icon.
-    *   **Button:** "+ Add Custom OpenAPI Action" (Opens a large textarea modal to paste an OpenAPI JSON/YAML schema).
+*   **Tab 4: Actions**
+    *   **Editor:** Syntax-highlighted JSON/YAML code editor for defining OpenAPI schemas.
+    *   **Input/Import:** Support pasting a URL to fetch an existing OpenAPI schema.
+    *   **Endpoint Preview:** After successful validation, display a clean list of discovered endpoints below the editor (method, path, and description).
 
 **Required UI Elements - Right Pane (Live Preview):**
 *   **Header:** "Live Preview Mode".
-*   **Chat Window:** Standard chat interface (message history area that scrolls, input field at the bottom).
+*   **Chat Window:** Standard chat interface. Shows a placeholder until Segment 05 makes it functional.
 *   **Input Area:** Text input and a "Send" button icon. Must have a clear/reset chat button to start the test over.
 
 **Logic / State:**
-*   When editing the System Prompt or toggling Capabilities, it should feel like the Right Pane (Preview) is instantly aware of the new rules (even if we just handle this via a placeholder "Changes pending... click refresh" state for now).
-*   File Upload should show a loading progress bar for realism.
+*   **Auto-Save:** Every field change triggers an auto-save (visual "Saving..." / "Saved" indicator in the bottom bar).
+*   **Validation:** Publish validates that Name, Category, and Instructions are filled out. Displays toasts clearly identifying any missing required fields.
