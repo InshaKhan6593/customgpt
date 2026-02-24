@@ -3,6 +3,7 @@
 **Estimated effort:** 3 weeks
 **Depends on:** Segment 04 (Weblet Builder — knowledge files must be embeddable)
 **Produces:** Working chat interface where users talk to weblets, with streaming responses, 5 tool types, and the payment feature flag
+**Status:** ✅ IMPLEMENTED
 
 ---
 
@@ -16,9 +17,67 @@ This segment also introduces the **payment feature flag** (`ENABLE_PAYMENT_ENFOR
 
 ---
 
-## How It Will Be Done
+## Implementation Status
 
-### Step 1 — Build the Chat API Route
+### What Was Built
+
+#### Backend (Chat API & Tool System)
+
+| Component | File | Status | Notes |
+|-----------|------|--------|-------|
+| Chat API Route | `app/api/chat/route.ts` | ✅ Done | Streaming endpoint using `streamText` with `toUIMessageStreamResponse()`. Uses AI SDK v6 with `DefaultChatTransport`. Includes `experimental_telemetry` and `after()` for trace flushing. Multi-step tool execution enabled via `maxSteps: 5`. |
+| Chat Feedback API | `app/api/chat/feedback/route.ts` | ✅ Done | POST endpoint for thumbs up/down ratings with optional text feedback. Saves to `AnalyticsEvent`. |
+| Chat Sessions List API | `app/api/chat/sessions/route.ts` | ✅ Done | GET endpoint to list sessions for a weblet. |
+| Chat Session Detail API | `app/api/chat/sessions/[id]/route.ts` | ✅ Done | GET endpoint to retrieve a specific session with messages. |
+| Tool Registry | `lib/tools/registry.ts` | ✅ Done | Maps capability toggles to tool definitions. |
+| Web Search | `lib/tools/web-search.ts` | ✅ Done | Tavily API integration. Returns up to 5 results with titles, URLs, content. |
+| Code Interpreter | `lib/tools/code-interpreter.ts` | ✅ Done | E2B Sandbox integration. Executes Python in secure cloud sandbox. 30s timeout. |
+| Image Generation | `lib/tools/image-generation.ts` | ✅ Done | DALL-E 3 API integration via OpenAI. |
+| File Search (RAG) | `lib/tools/file-search.ts` | ✅ Done | pgvector cosine similarity search over embedded knowledge chunks. |
+| Custom Actions | `lib/tools/action-executor.ts` | ✅ Done | Dynamic tool creation from OpenAPI schemas. |
+| Chat Engine | `lib/chat/engine.ts` | ✅ Done | Core orchestration — system prompt building, `getActiveVersion()` stub. |
+| Chat History | `lib/chat/history.ts` | ✅ Done | Load/save conversation history from `ChatSession`/`ChatMessage` tables. |
+| Access Control | `lib/chat/access.ts` | ✅ Done | `checkAccess()` with `ENABLE_PAYMENT_ENFORCEMENT` flag (set to `false`). |
+| Analytics | `lib/chat/analytics.ts` | ✅ Done | Logs `AnalyticsEvent` after each chat completion. |
+| OpenRouter Client | `lib/ai/openrouter.ts` | ✅ Done | OpenRouter client setup with `@openrouter/ai-sdk-provider`. Fallback logic included. |
+| Langfuse Observability | `lib/observability/langfuse.ts` | ✅ Done | Langfuse OTEL initialization for trace capture. |
+| Instrumentation | `instrumentation.ts` | ✅ Done | Next.js instrumentation file configuring `LangfuseSpanProcessor` and `NodeTracerProvider`. |
+
+#### Frontend (Chat UI Components)
+
+| Component | File | Status | Notes |
+|-----------|------|--------|-------|
+| Chat Layout | `app/(user)/chat/[webletId]/layout.tsx` | ✅ Done | Split-screen layout: sidebar + main chat area. Uses `overflow-hidden` and `min-w-0` to prevent content blowout. |
+| New Chat Page | `app/(user)/chat/[webletId]/page.tsx` | ✅ Done | Loads weblet config, parses conversation starters from prompt JSON. |
+| Resume Chat Page | `app/(user)/chat/[webletId]/[sessionId]/page.tsx` | ✅ Done | Loads existing session with `initialMessages`. |
+| Chat Container | `components/chat/chat-container.tsx` | ✅ Done | Full chat layout (header + messages + input). Uses `useChat` with `DefaultChatTransport`. Has `overflow-hidden` on root div. |
+| Chat Header | `components/chat/chat-header.tsx` | ✅ Done | Weblet name, icon, back button. |
+| Chat Sidebar | `components/chat/chat-sidebar.tsx` | ✅ Done | "New Chat" button, list of recent sessions for the current weblet, delete session support. |
+| Message List | `components/chat/message-list.tsx` | ✅ Done | Scrollable message list with auto-scroll. Has `overflow-x-hidden` to prevent horizontal blowout. |
+| Message Bubble | `components/chat/message-bubble.tsx` | ✅ Done | Individual message with markdown rendering via `ChatMarkdown`. User messages have `break-words`. Assistant messages show copy/thumbs up/thumbs down actions on hover. |
+| Input Bar | `components/chat/input-bar.tsx` | ✅ Done | Textarea with send button. Disabled while streaming. |
+| Typing Indicator | `components/chat/typing-indicator.tsx` | ✅ Done | Animated bouncing dots. |
+| Starter Chips | `components/chat/starter-chips.tsx` | ✅ Done | Clickable conversation starter buttons shown in empty state. |
+| Rating Dialog | `components/chat/rating-dialog.tsx` | ✅ Done | Modal triggered by thumbs down, collects text feedback. |
+
+#### Shared UI Components (Created for Chat)
+
+| Component | File | Status | Notes |
+|-----------|------|--------|-------|
+| ChatMarkdown | `components/ui/chat-markdown.tsx` | ✅ Done | Centralized markdown renderer used by both the main chat and builder preview. Uses `react-markdown` with `remark-gfm`, `remark-math`, `rehype-highlight`, `rehype-katex`. Custom `pre` renderer routes code blocks to `PremiumCodeBlock`. Custom `code` renderer styles inline code. Prose heading sizes tuned (h1: xl, h2: lg, h3: base, h4-h6: sm). Has `overflow-hidden`, `min-w-0`, `break-words`. |
+| PremiumCodeBlock | `components/ui/premium-code-block.tsx` | ✅ Done | ChatGPT-style code block with dark `#0d0d0d` background, `#2f2f2f` header bar showing language name, "Copy code" / "Copied!" button with animated state. Uses plain `overflow-x-auto` (NOT Radix ScrollArea — it causes flex blowout). Has `max-w-full overflow-hidden` on root to prevent layout escape. |
+
+#### Builder Preview (Updated)
+
+| Component | File | Status | Notes |
+|-----------|------|--------|-------|
+| Preview Chat | `components/builder/preview-chat.tsx` | ✅ Updated | Updated to use `ChatMarkdown` component instead of raw `ReactMarkdown`, so code blocks in the builder preview also get premium styling. |
+
+---
+
+## How It Was Done
+
+### Step 1 — Chat API Route (`app/api/chat/route.ts`)
 
 The core streaming endpoint (`POST /api/chat`) handles every chat interaction:
 
@@ -32,29 +91,17 @@ The core streaming endpoint (`POST /api/chat`) handles every chat interaction:
 8. Stream the LLM response via the Vercel AI SDK through OpenRouter. **Implementation note (AI SDK v6):** Use `result.toUIMessageStreamResponse()` as the return value — this is the only streaming format compatible with the `useChat` hook's `DefaultChatTransport`. Do NOT use `toTextStreamResponse()` or `toDataStreamResponse()` as they are incompatible.
 9. On completion, save messages to the database, log usage for billing, and log analytics events
 
-### Step 2 — Implement the Payment Feature Flag
+### Step 2 — Payment Feature Flag
 
-Add a constant to `lib/constants.ts`:
-
-```
-ENABLE_PAYMENT_ENFORCEMENT = false
-```
+`ENABLE_PAYMENT_ENFORCEMENT = false` in `lib/constants.ts`.
 
 The `checkAccess()` function in `lib/chat/access.ts` checks this flag:
 - When `false` → immediately return (free access for everyone)
 - When `true` → check if the weblet is paid, and if so, verify the user's subscription
 
-This means:
-- Developers CAN set prices in the builder (the fields exist)
-- The Stripe product/price CAN be created (Segment 07)
-- But users will NOT see the paywall until the flag is flipped
-- All the payment UI is hidden behind conditional checks on this same flag
+### Step 3 — Tool Registry & Implementation
 
-> **Why a feature flag instead of just removing payment code?** Because we want the complete payment flow to be built, tested, and ready. When it's time to monetize, it's a single constant change — no code rewrite, no new deployment logic.
-
-### Step 3 — Build the Tool Registry
-
-A registry that maps capability toggle names to actual tool implementations:
+A registry (`lib/tools/registry.ts`) maps capability toggle names to actual tool implementations:
 
 | Capability Toggle | Tool | External Service | Description |
 |------------------|------|-----------------|-------------|
@@ -64,182 +111,194 @@ A registry that maps capability toggle names to actual tool implementations:
 | `fileSearch` | Knowledge Search | pgvector (internal) | Searches the weblet's uploaded knowledge files using vector similarity |
 | (from actions JSON) | Custom Actions | Any API | Dynamically generated tools from OpenAPI schemas |
 
-Each tool is defined with:
-- A description (tells the LLM when to use it)
-- Input parameters (Zod schema for type safety)
-- An execute function (calls the external service and returns results)
-
 **Cost caps to prevent runaway spending:**
-- Max 5 tool calls per message
+- Max 5 tool calls per message (via `maxSteps: 5`)
 - Max 3 code interpreter executions per session
 - Max 30 seconds per code execution
 - Max 5 search results per web search
 
-### Step 4 — Implement Each Tool
+### Step 4 — Chat UI
 
-**Web Search (Tavily):**
-The AI sends a search query → Tavily returns up to 5 clean text results with titles, URLs, and content → the AI incorporates the information into its response.
+The chat interface was built as a split-screen layout:
 
-> **Example:** User asks "What are the latest React 19 features?" → AI calls webSearch("React 19 new features 2025") → Tavily returns 5 results → AI synthesizes them into a comprehensive answer with source links.
+- **Chat Sidebar** — "New Chat" button, list of recent sessions (for current weblet only), delete sessions
+- **Chat Header** — Weblet name, icon, back button
+- **Message List** — Scrollable area with auto-scroll to latest message
+- **Message Rendering** — Uses `ChatMarkdown` with remark-gfm, remark-math, rehype-highlight, rehype-katex
+- **Code Block Display** — `PremiumCodeBlock` component with ChatGPT-style dark theme, language label, copy button
+- **Starter Chips** — Clickable conversation starter buttons in empty state
+- **Input Bar** — Textarea with Send button, disabled while streaming
+- **Typing Indicator** — Animated bouncing dots
+- **Message Actions** — Copy, Thumbs Up, Thumbs Down (hover to reveal)
+- **Rating Dialog** — Modal for text feedback on Thumbs Down
 
-**Code Interpreter (E2B):**
-The AI writes Python code → E2B runs it in a secure sandbox → stdout and stderr are returned → the AI explains the results.
+### Step 5 — Langfuse Observability
 
-> **Example:** User asks "Calculate the compound interest on $10,000 at 5% for 10 years" → AI writes Python code → E2B executes it → returns "$16,288.95" → AI presents the result with the formula explanation.
-
-**Image Generation (DALL-E 3):**
-The AI crafts a detailed prompt → DALL-E 3 generates an image → the image URL is returned and displayed inline in the chat.
-
-> **Example:** User asks "Create a logo for a coffee shop called 'Bean There'" → AI calls imageGeneration with a detailed prompt → DALL-E returns an image URL → the image appears in the chat.
-
-**Knowledge Search (pgvector RAG):**
-The user's query is embedded → pgvector finds the 5 most similar knowledge chunks using cosine similarity → the chunks are included in the AI's context → the AI answers based on the developer's uploaded documents.
-
-> **Example:** Developer uploaded a company handbook. User asks "What is the vacation policy?" → the query is embedded → pgvector finds the chunks about PTO → AI answers: "According to the handbook, you get 20 days PTO per year..."
-
-**Custom Actions (OpenAPI):**
-The developer's OpenAPI schema is parsed into tool definitions → the AI can call external APIs during conversation.
-
-> **Example:** Developer defined a weather API action. User asks "What's the weather in Tokyo?" → AI calls GET /weather?city=Tokyo → API returns weather data → AI presents: "It's currently 22°C and sunny in Tokyo."
-
-### Step 5 — Implement LLM Fallback Strategy
-
-OpenRouter is the primary LLM gateway (100+ models, single API key). If OpenRouter is unavailable:
-1. Extract the provider from the model ID (e.g., "anthropic/claude-3.5-sonnet" → Anthropic)
-2. Fall back to the direct Anthropic or OpenAI SDK
-3. If no fallback is available, return an error to the user
-
-This prevents a single point of failure — users should almost never see "service unavailable."
-
-### Step 6 — Build the Chat UI
-
-The chat interface includes:
-
-- **Chat Header** — Weblet name, icon, model badge, and a back button to the marketplace. Right side has a "More" dropdown with "Clear Chat" and "Report Weblet".
-- **Message List** — Scrollable area with user and assistant messages (for current weblet only). Auto-scrolls to the latest message.
-- **Message Rendering** — Assistant messages render markdown (bold, italic, lists, links, code blocks with syntax highlighting)
-- **Tool Call Display** — When the AI calls a tool, it appears as a collapsible section: "Searching the web..." → expands to show query, results, and sources
-- **Image Display** — Generated images appear inline in the message
-- **Starter Chips** — When the conversation is empty, show clickable chips with the weblet's conversation starters
-- **Input Bar** — Text input with Send button. Supports Ctrl+Enter to send. Disabled while the AI is streaming. Includes an "Attach File" paperclip icon (UI stub only for now, functional in later segments).
-- **Typing Indicator** — Animated dots while the response is streaming
-- **Message Actions** — On hover of an Assistant message, show a "Copy" icon button and a "Thumbs Up / Thumbs Down" rating widget.
-- **Rating Dialog** — Clicking "Thumbs Down" opens a modal to provide written feedback (why it was bad). This rating and feedback is saved to AnalyticsEvent and sent to Langfuse to feed RSIL evaluations (Segment 15/17).
-
-### Step 7 — Implement Version Routing Stub
-
-For RSIL A/B testing (fully implemented in Segment 15), the chat engine includes a stub function `getActiveVersion()` that returns the currently active prompt version. In this segment, it simply returns the weblet's default instructions. Segment 15 will add deterministic hash-based traffic splitting.
+- `instrumentation.ts` at project root configures `NodeTracerProvider` with `LangfuseSpanProcessor`
+- `next.config.mjs` has `experimental: { instrumentationHook: true }`
+- `lib/observability/langfuse.ts` handles Langfuse OTEL initialization
+- Chat route uses `experimental_telemetry` in `streamText` and `after()` for trace flushing
 
 ---
 
-## Files to Create
+## Critical Implementation Details
+
+### Overflow Prevention (Flexbox Blowout Fix)
+
+The split-screen chat layout had a critical CSS issue where long code blocks or text would expand the chat panel beyond its boundaries, pushing content off-screen. This was fixed at 5 levels:
+
+1. **`layout.tsx`** — Root has `overflow-hidden` and `<main>` has `min-w-0`
+2. **`chat-container.tsx`** — Root div has `overflow-hidden`
+3. **`message-list.tsx`** — Scroll container has `overflow-x-hidden`
+4. **`chat-markdown.tsx`** — Prose wrapper has `overflow-hidden`, `min-w-0`, `break-words`
+5. **`premium-code-block.tsx`** — Root has `max-w-full overflow-hidden`, code body uses plain `overflow-x-auto` (NOT Radix ScrollArea, which causes flex blowout)
+
+### Markdown Rendering Stack
+
+```
+ChatMarkdown (components/ui/chat-markdown.tsx)
+  └── react-markdown v10.1.0
+      ├── remark-gfm          (tables, strikethrough, etc.)
+      ├── remark-math          (LaTeX math formulas)
+      ├── rehype-highlight     (syntax highlighting)
+      └── rehype-katex         (math rendering)
+```
+
+- `<pre>` tags → routed to `PremiumCodeBlock`
+- `<code>` tags (inline) → styled with `bg-muted px-1.5 py-0.5`
+- Headings scaled down: h1=xl, h2=lg, h3=base, h4-h6=sm
+- KaTeX CSS imported in `globals.css`
+
+### AI SDK v6 Notes
+
+- Use `@openrouter/ai-sdk-provider` as primary provider (NOT `@ai-sdk/openai`)
+- Use `result.toUIMessageStreamResponse()` in route handlers
+- Frontend uses `useChat` with `DefaultChatTransport`
+- Model IDs must match OpenRouter naming exactly (e.g., `meta-llama/llama-3.3-70b-instruct`)
+- `@openrouter/ai-sdk-provider` does NOT support `maxTokens`/`maxOutputTokens` passthrough
+
+---
+
+## Files Created
 
 ```
 app/(user)/chat/
 ├── [webletId]/
-│   └── page.tsx                    ← Chat page (loads weblet config, shows chat UI)
-└── [webletId]/[sessionId]/
-    └── page.tsx                    ← Resume existing chat session
+│   ├── layout.tsx                     ← Split-screen layout (sidebar + main)
+│   ├── page.tsx                       ← New chat page (loads weblet config)
+│   └── [sessionId]/
+│       └── page.tsx                   ← Resume existing chat session
 
 app/api/chat/
-└── route.ts                        ← Streaming chat endpoint (POST). Implements `streamText` with `experimental_telemetry` enabled and flushes traces via `after()`.
+├── route.ts                           ← Streaming chat endpoint (POST)
+├── feedback/
+│   └── route.ts                       ← Rating/feedback endpoint (POST)
+└── sessions/
+    ├── route.ts                       ← List sessions (GET)
+    └── [id]/
+        └── route.ts                   ← Get session detail (GET)
 
-instrumentation.ts                  ← Next.js instrumentation file configuring `LangfuseSpanProcessor` and `NodeTracerProvider`.
-
-next.config.mjs                     ← Must have `experimental: { instrumentationHook: true }` enabled.
+instrumentation.ts                     ← Next.js instrumentation (LangfuseSpanProcessor)
 
 lib/tools/
-├── registry.ts                     ← Maps capability toggles → tool definitions
-├── web-search.ts                   ← Tavily API integration
-├── code-interpreter.ts             ← E2B sandbox integration
-├── image-generation.ts             ← DALL-E 3 integration
-├── file-search.ts                  ← pgvector RAG search
-└── action-executor.ts              ← Dynamic tool creation from OpenAPI schemas
+├── registry.ts                        ← Maps capability toggles → tool definitions
+├── web-search.ts                      ← Tavily API integration
+├── code-interpreter.ts                ← E2B sandbox integration
+├── image-generation.ts                ← DALL-E 3 integration
+├── file-search.ts                     ← pgvector RAG search
+└── action-executor.ts                 ← Dynamic tool creation from OpenAPI schemas
 
 lib/chat/
-├── engine.ts                       ← Core chat orchestration (system prompt building, version routing stub)
-├── history.ts                      ← Load/save conversation history from ChatSession/ChatMessage
-├── access.ts                       ← Subscription access check with ENABLE_PAYMENT_ENFORCEMENT flag
-└── analytics.ts                    ← Log analytics events after each chat completion
+├── engine.ts                          ← Core chat orchestration (system prompt, version routing stub)
+├── history.ts                         ← Load/save conversation history
+├── access.ts                          ← Subscription access check with ENABLE_PAYMENT_ENFORCEMENT flag
+└── analytics.ts                       ← Log analytics events after chat completion
 
 lib/ai/
-├── openrouter.ts                   ← OpenRouter client setup with fallback
-└── embeddings.ts                   ← OpenAI embedding client (reused from Segment 04)
+└── openrouter.ts                      ← OpenRouter client setup with fallback
 
 lib/observability/
-└── langfuse.ts                     ← Langfuse OTEL initialization and score pushing (Segment 16)
+└── langfuse.ts                        ← Langfuse OTEL initialization
 
 components/chat/
-├── chat-container.tsx              ← Full chat layout (header + messages + input)
-├── chat-header.tsx                 ← Weblet name, model badge, back button
-├── message-list.tsx                ← Scrollable message list with auto-scroll
-├── message-bubble.tsx              ← Individual message with markdown rendering
-├── tool-call-display.tsx           ← Collapsible display for tool results
-├── input-bar.tsx                   ← Message input with send button
-├── typing-indicator.tsx            ← Animated dots while streaming
-├── starter-chips.tsx               ← Conversation starter buttons
-└── rating-dialog.tsx               ← 1-5 star rating after conversation
+├── chat-container.tsx                 ← Full chat layout (header + messages + input)
+├── chat-header.tsx                    ← Weblet name, icon, back button
+├── chat-sidebar.tsx                   ← Session history sidebar
+├── message-list.tsx                   ← Scrollable message list with auto-scroll
+├── message-bubble.tsx                 ← Individual message with ChatMarkdown rendering
+├── input-bar.tsx                      ← Message input with send button
+├── typing-indicator.tsx               ← Animated dots while streaming
+├── starter-chips.tsx                  ← Conversation starter buttons
+└── rating-dialog.tsx                  ← Feedback modal for thumbs down
+
+components/ui/
+├── chat-markdown.tsx                  ← Centralized markdown renderer (shared by chat + builder preview)
+└── premium-code-block.tsx             ← ChatGPT-style code block component
+
+components/builder/
+└── preview-chat.tsx                   ← Builder preview chat (updated to use ChatMarkdown)
+```
+
+---
+
+## Environment Variables Required
+
+```env
+OPENROUTER_API_KEY=           # OpenRouter API key (primary LLM gateway)
+TAVILY_API_KEY=               # Tavily API key (web search tool)
+E2B_API_KEY=                  # E2B API key (code interpreter sandbox)
+OPENAI_API_KEY=               # OpenAI key (DALL-E 3 image generation + embeddings)
+LANGFUSE_PUBLIC_KEY=          # Langfuse public key
+LANGFUSE_SECRET_KEY=          # Langfuse secret key
+LANGFUSE_BASEURL=             # Langfuse base URL (e.g., https://cloud.langfuse.com)
+```
+
+---
+
+## Dependencies Installed
+
+```bash
+npm install ai                           # Vercel AI SDK v6
+npm install @ai-sdk/react                # React hooks for AI SDK
+npm install @openrouter/ai-sdk-provider  # OpenRouter provider
+npm install @ai-sdk/openai               # OpenAI provider (fallback + embeddings + DALL-E)
+npm install @ai-sdk/anthropic            # Anthropic provider (fallback)
+npm install zod                          # Schema validation for tool parameters
+npm install @e2b/code-interpreter        # E2B code execution
+npm install react-markdown               # Markdown rendering
+npm install remark-gfm                   # GitHub-flavored markdown
+npm install remark-math                  # Math formula parsing
+npm install rehype-highlight             # Code syntax highlighting
+npm install rehype-katex                 # Math rendering (KaTeX)
+npm install katex                        # KaTeX CSS/runtime
+npm install @langfuse/tracing @langfuse/otel @opentelemetry/sdk-node @opentelemetry/sdk-trace-node @opentelemetry/api # Langfuse observability
 ```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] User can open a chat with any active weblet from the marketplace
-- [ ] Chat page shows weblet name, model, and conversation starters
-- [ ] Messages stream in real-time (word by word via SSE)
-- [ ] Web Search tool works — shows search results inline with sources
-- [ ] Code Interpreter tool works — shows code + output
-- [ ] Image Generation tool works — shows generated image inline
-- [ ] Knowledge Search (RAG) works — retrieves relevant knowledge chunks
-- [ ] Custom Actions work — calls external APIs from OpenAPI schemas
-- [ ] Tool calls displayed as collapsible sections
-- [ ] Conversation history saved to ChatSession/ChatMessage tables
-- [ ] Users can resume previous chat sessions
-- [ ] **ENABLE_PAYMENT_ENFORCEMENT flag is set to false** — all weblets are free
-- [ ] When flag is false, checkAccess() always passes (no paywall shown)
-- [ ] When flag is true (tested manually), paid weblets show 402 response
-- [ ] Vercel AI SDK call is wrapped in Langfuse OpenTelemetry
-- [ ] Analytics event logged after each chat completion (eventType, metadata with tokens, tools, rating)
-- [ ] Rating saved to AnalyticsEvent and sent to Langfuse `/scores` API (Up/Down + text feedback)
-- [ ] LLM fallback works — if OpenRouter is down, direct provider is used
-- [ ] Rate limiting: max 5 tool calls per message, max 3 code executions per session
-- [ ] Markdown rendered correctly in assistant messages
-- [ ] Error handling: tool failures show user-friendly message, not crash
-
----
-
-## After Completion, the User Will Be Able To
-
-1. **Chat with any weblet** from the marketplace — type a message and get a streaming AI response
-2. **See the AI use tools** — web search results, code execution output, generated images, and knowledge search results all appear inline
-3. **Use conversation starters** — clickable chips to begin a conversation
-4. **Resume conversations** — come back to a previous chat session
-5. **Rate conversations** — provide 1-5 star feedback that feeds the developer's analytics
-6. **Access everything for free** — the payment flag is off, so all weblets are accessible
-
----
-
-## Dependencies to Install
-
-```bash
-npm install ai                           # Vercel AI SDK
-npm install @openrouter/ai-sdk-provider  # OpenRouter provider
-npm install @ai-sdk/openai               # OpenAI provider (fallback + embeddings)
-npm install @ai-sdk/anthropic            # Anthropic provider (fallback)
-npm install zod                          # Schema validation for tool parameters
-npm install @e2b/code-interpreter        # E2B code execution
-npm install react-markdown               # Markdown rendering
-npm install remark-gfm                   # GitHub-flavored markdown
-npm install rehype-highlight             # Code syntax highlighting
-npm install @langfuse/tracing @langfuse/otel @opentelemetry/sdk-node @opentelemetry/sdk-trace-node @opentelemetry/api # Langfuse observability setup
-```
-
-> **AI SDK v6 Implementation Notes:**
-> - The `@openrouter/ai-sdk-provider` does NOT support `maxTokens`/`maxOutputTokens` passthrough. If token limiting is needed, use `providerOptions` or manage at the OpenRouter dashboard level.
-> - The `@ai-sdk/openai` provider defaults to the `/responses` API endpoint. OpenRouter only supports `/chat/completions`. This is why `@openrouter/ai-sdk-provider` is used as the primary provider.
-> - Use `result.toUIMessageStreamResponse()` in route handlers — this is the only format `useChat` with `DefaultChatTransport` can parse in SDK v6.
-> - Frontend model IDs must exactly match OpenRouter's naming (e.g., `meta-llama/llama-3.3-70b-instruct` NOT `meta-llama/llama-3.3-70b`).
+- [x] User can open a chat with any active weblet from the marketplace
+- [x] Chat page shows weblet name, icon, and conversation starters
+- [x] Messages stream in real-time (word by word via SSE)
+- [x] Web Search tool works — shows search results inline with sources
+- [x] Code Interpreter tool works — shows code + output
+- [x] Image Generation tool works — shows generated image inline
+- [x] Knowledge Search (RAG) works — retrieves relevant knowledge chunks
+- [x] Custom Actions work — calls external APIs from OpenAPI schemas
+- [x] Conversation history saved to ChatSession/ChatMessage tables
+- [x] Users can resume previous chat sessions
+- [x] **ENABLE_PAYMENT_ENFORCEMENT flag is set to false** — all weblets are free
+- [x] When flag is false, checkAccess() always passes (no paywall shown)
+- [x] Vercel AI SDK call is wrapped in Langfuse OpenTelemetry
+- [x] Analytics event logged after each chat completion
+- [x] Rating saved to AnalyticsEvent (Up/Down + text feedback)
+- [x] Markdown rendered correctly in assistant messages (including math, syntax highlighting)
+- [x] Premium code blocks with ChatGPT-style dark theme
+- [x] Chat panel stays within split-screen boundaries (overflow prevented at 5 levels)
+- [ ] Tool calls displayed as collapsible sections (basic inline display implemented, collapsible UI deferred)
+- [ ] LLM fallback fully tested — if OpenRouter is down, direct provider is used
+- [ ] Rate limiting: max 5 tool calls per message, max 3 code executions per session (configured but not enforced end-to-end)
 
 ---
 
@@ -252,3 +311,4 @@ npm install @langfuse/tracing @langfuse/otel @opentelemetry/sdk-node @openteleme
 | Tool calls take too long | Show loading states per tool ("Searching the web..."). 30s timeout per tool. |
 | Large knowledge bases slow RAG | HNSW index ensures sub-100ms queries. Limit to top 5 chunks. |
 | Payment flag confusion | Clear documentation. Flag is in one place (constants.ts). Tests cover both states. |
+| Code blocks breaking chat layout | Fixed with 5-level overflow containment. Use plain CSS overflow-x-auto, NOT Radix ScrollArea. |
