@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, RotateCcw, Bot, User, Loader2 } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { ChatMarkdown } from "@/components/ui/chat-markdown"
 import type { BuilderState } from "./builder-layout"
 
 export function PreviewChat({ state, webletId }: { state: BuilderState, webletId: string }) {
@@ -91,7 +90,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
             {messages.map((msg: UIMessage) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
+                className={`flex w-full gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
               >
                 {msg.role !== "user" && (
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -99,7 +98,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                   </div>
                 )}
                 <div
-                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                  className={`min-w-0 max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground"
@@ -111,11 +110,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                         return <span key={i}>{part.text}</span>
                       }
                       return (
-                        <div key={i} className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {part.text}
-                          </ReactMarkdown>
-                        </div>
+                        <ChatMarkdown key={i} content={part.text} />
                       )
                     }
                     if (part.type === "tool-invocation") {

@@ -26,7 +26,7 @@ export function MessageList({
   scrollRef
 }: MessageListProps) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8" ref={scrollRef}>
+    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8" ref={scrollRef}>
       {messages.length === 0 ? (
         <StarterChips 
           weblet={weblet} 
@@ -34,7 +34,7 @@ export function MessageList({
           onStarterClick={onStarterClick} 
         />
       ) : (
-        <div className="max-w-3xl mx-auto space-y-6 pb-24">
+        <div className="max-w-3xl w-full mx-auto space-y-6 pb-24 overflow-x-hidden">
           {messages.map((m) => (
             <MessageBubble 
               key={m.id} 
@@ -44,9 +44,13 @@ export function MessageList({
             />
           ))}
           
-          {isLoading && messages[messages.length - 1]?.role === "user" && (
-            <TypingIndicator weblet={weblet} />
-          )}
+          {isLoading && (() => {
+            const lastMsg = messages[messages.length - 1]
+            const lastIsUser = lastMsg?.role === "user"
+            const lastIsEmptyAssistant = lastMsg?.role === "assistant" && 
+              (!lastMsg.parts || lastMsg.parts.filter(p => p.type === "text").every((p: any) => !p.text))
+            return (lastIsUser || lastIsEmptyAssistant) ? <TypingIndicator weblet={weblet} /> : null
+          })()}
         </div>
       )}
     </div>

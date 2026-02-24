@@ -11,29 +11,63 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { X, Plus, GripVertical, ImageIcon } from "lucide-react"
+import {
+  X,
+  Plus,
+  GripVertical,
+  ImageIcon,
+  Check,
+  ChevronsUpDown,
+  PenTool,
+  Code,
+  BarChart2,
+  Megaphone,
+  GraduationCap,
+  HeadphonesIcon,
+  Microscope,
+  Palette,
+  Zap,
+  Wallet,
+  Activity,
+  Scale,
+  Package,
+} from "lucide-react"
 import { useState } from "react"
 import type { BuilderState } from "../builder-layout"
 import {
   MAX_INSTRUCTIONS_LENGTH,
   MAX_CONVERSATION_STARTERS,
 } from "@/lib/constants"
+import { cn } from "@/lib/utils"
 
 const CATEGORIES = [
-  { value: "WRITING", label: "Writing", icon: "✍️", desc: "Blog posts, emails, copy" },
-  { value: "CODE", label: "Code", icon: "💻", desc: "Code review, generation, debugging" },
-  { value: "DATA_ANALYSIS", label: "Data Analysis", icon: "📊", desc: "Data insights, reports" },
-  { value: "MARKETING", label: "Marketing", icon: "📢", desc: "Campaigns, social media, ads" },
-  { value: "EDUCATION", label: "Education", icon: "🎓", desc: "Tutoring, quizzes, learning" },
-  { value: "CUSTOMER_SUPPORT", label: "Customer Support", icon: "🎧", desc: "Help desk, FAQ bots" },
-  { value: "RESEARCH", label: "Research", icon: "🔬", desc: "Literature review, synthesis" },
-  { value: "CREATIVE", label: "Creative", icon: "🎨", desc: "Stories, art prompts, music" },
-  { value: "PRODUCTIVITY", label: "Productivity", icon: "⚡", desc: "Task management, planning" },
-  { value: "FINANCE", label: "Finance", icon: "💰", desc: "Budgeting, analysis, reporting" },
-  { value: "HEALTH", label: "Health", icon: "🏥", desc: "Wellness, fitness, medical info" },
-  { value: "LEGAL", label: "Legal", icon: "⚖️", desc: "Contracts, compliance, research" },
-  { value: "OTHER", label: "Other", icon: "📦", desc: "General purpose agents" },
+  { value: "WRITING", label: "Writing", icon: PenTool, desc: "Blog posts, emails, copy" },
+  { value: "CODE", label: "Code", icon: Code, desc: "Code review, generation, debugging" },
+  { value: "DATA_ANALYSIS", label: "Data Analysis", icon: BarChart2, desc: "Data insights, reports" },
+  { value: "MARKETING", label: "Marketing", icon: Megaphone, desc: "Campaigns, social media, ads" },
+  { value: "EDUCATION", label: "Education", icon: GraduationCap, desc: "Tutoring, quizzes, learning" },
+  { value: "CUSTOMER_SUPPORT", label: "Customer Support", icon: HeadphonesIcon, desc: "Help desk, FAQ bots" },
+  { value: "RESEARCH", label: "Research", icon: Microscope, desc: "Literature review, synthesis" },
+  { value: "CREATIVE", label: "Creative", icon: Palette, desc: "Stories, art prompts, music" },
+  { value: "PRODUCTIVITY", label: "Productivity", icon: Zap, desc: "Task management, planning" },
+  { value: "FINANCE", label: "Finance", icon: Wallet, desc: "Budgeting, analysis, reporting" },
+  { value: "HEALTH", label: "Health", icon: Activity, desc: "Wellness, fitness, medical info" },
+  { value: "LEGAL", label: "Legal", icon: Scale, desc: "Contracts, compliance, research" },
+  { value: "OTHER", label: "Other", icon: Package, desc: "General purpose agents" },
 ]
 
 const MODELS = [
@@ -41,6 +75,7 @@ const MODELS = [
   { value: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI", cost: "$$", desc: "Fast multimodal" },
   { value: "openai/gpt-4o-mini", label: "GPT-4o Mini", provider: "OpenAI", cost: "$", desc: "Affordable and fast" },
   { value: "google/gemini-2.0-flash-001", label: "Gemini 2.0 Flash", provider: "Google", cost: "$", desc: "Fast and cheap" },
+  { value: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B", provider: "Qwen", cost: "$", desc: "Very cheap, strong reasoning" },
   { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", provider: "Meta", cost: "Free", desc: "Open source, strong" },
   { value: "deepseek/deepseek-r1", label: "DeepSeek R1", provider: "DeepSeek", cost: "$", desc: "Reasoning specialist" },
 ]
@@ -58,6 +93,7 @@ function getInstructionsColor(length: number): string {
 
 export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
   const [newStarter, setNewStarter] = useState("")
+  const [openCategory, setOpenCategory] = useState(false)
 
   const addStarter = () => {
     if (!newStarter.trim()) return
@@ -75,6 +111,8 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
   }
 
   const startersAtLimit = state.conversationStarters.length >= MAX_CONVERSATION_STARTERS
+
+  const selectedCategory = CATEGORIES.find((c) => c.value === state.category)
 
   return (
     <div className="flex flex-col gap-5">
@@ -120,27 +158,66 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
       </div>
 
       {/* Category */}
-      <div className="space-y-2">
+      <div className="space-y-2 flex flex-col">
         <Label>Category *</Label>
-        <Select
-          value={state.category}
-          onValueChange={(val) => onUpdate({ category: val })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a category..." />
-          </SelectTrigger>
-          <SelectContent>
-            {CATEGORIES.map((cat) => (
-              <SelectItem key={cat.value} value={cat.value}>
-                <span className="flex items-center gap-2">
-                  <span>{cat.icon}</span>
-                  <span>{cat.label}</span>
-                  <span className="text-muted-foreground text-xs">— {cat.desc}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={openCategory} onOpenChange={setOpenCategory}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={openCategory}
+              className="w-full justify-between font-normal h-10 px-3 py-2 bg-transparent"
+            >
+              {selectedCategory ? (
+                <div className="flex items-center gap-2 truncate">
+                  <selectedCategory.icon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{selectedCategory.label}</span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Select a category...</span>
+              )}
+              <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search categories..." />
+              <CommandList>
+                <CommandEmpty>No category found.</CommandEmpty>
+                <CommandGroup>
+                  {CATEGORIES.map((cat) => (
+                    <CommandItem
+                      key={cat.value}
+                      value={cat.label}
+                      onSelect={() => {
+                        onUpdate({ category: cat.value })
+                        setOpenCategory(false)
+                      }}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <cat.icon className={cn(
+                          "size-4 shrink-0",
+                          state.category === cat.value ? "text-primary" : "text-muted-foreground"
+                        )} />
+                        <span className="font-medium truncate">{cat.label}</span>
+                        <span className="text-muted-foreground text-xs hidden sm:inline-block truncate">
+                          — {cat.desc}
+                        </span>
+                      </div>
+                      <Check
+                        className={cn(
+                          "ml-2 size-4 shrink-0",
+                          state.category === cat.value ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Description */}

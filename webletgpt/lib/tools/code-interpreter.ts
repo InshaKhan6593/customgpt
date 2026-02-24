@@ -1,5 +1,5 @@
 import { z } from "zod"
-import CodeInterpreter from "@e2b/code-interpreter"
+import { Sandbox } from "@e2b/code-interpreter"
 
 export const codeInterpreterTool = {
   description: "Execute Python code in a secure cloud sandbox. Useful for data analysis, math, generating charts, and scraping.",
@@ -20,17 +20,18 @@ export const codeInterpreterTool = {
 
     try {
       // Create a short-lived sandbox
-      const sandbox: any = await CodeInterpreter.create()
+      const sandbox = await Sandbox.create()
 
-      // Execute code
-      const execution = await sandbox.notebook.execCell(code)
+      // Execute code (v2 API syntax)
+      const execution = await sandbox.runCode(code)
 
       // Close sandbox immediately when done
-      await sandbox.close()
+      await sandbox.kill()
 
       return {
         stdout: execution.results.map((r: any) => r.text).join("\n") + execution.logs.stdout.join("\n"),
         stderr: execution.logs.stderr.join("\n"),
+        error: execution.error ? execution.error.traceback : null
       }
     } catch (error: any) {
       return { error: `Failed to execute code: ${error.message}` }

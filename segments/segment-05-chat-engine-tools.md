@@ -28,7 +28,7 @@ The core streaming endpoint (`POST /api/chat`) handles every chat interaction:
 4. Get the active prompt version (for RSIL A/B testing — returns the default instructions until Segment 15 implements version routing)
 5. Build the tools array based on the weblet's enabled capabilities
 6. Add any custom action tools parsed from the weblet's OpenAPI schemas
-7. Wrap the AI call with Langfuse Telemetry to capture the execution trace (Segment 16)
+7. Wrap the AI call with Langfuse Telemetry to capture the execution trace natively using OpenTelemetry. This involves adding `experimental_telemetry` to the `streamText` options and capturing metadata like `userId`, `sessionId`, and `webletId`. Also, use Next.js's `after()` function to flush the Langfuse traces before the serverless execution terminates.
 8. Stream the LLM response via the Vercel AI SDK through OpenRouter. **Implementation note (AI SDK v6):** Use `result.toUIMessageStreamResponse()` as the return value — this is the only streaming format compatible with the `useChat` hook's `DefaultChatTransport`. Do NOT use `toTextStreamResponse()` or `toDataStreamResponse()` as they are incompatible.
 9. On completion, save messages to the database, log usage for billing, and log analytics events
 
@@ -142,7 +142,11 @@ app/(user)/chat/
     └── page.tsx                    ← Resume existing chat session
 
 app/api/chat/
-└── route.ts                        ← Streaming chat endpoint (POST)
+└── route.ts                        ← Streaming chat endpoint (POST). Implements `streamText` with `experimental_telemetry` enabled and flushes traces via `after()`.
+
+instrumentation.ts                  ← Next.js instrumentation file configuring `LangfuseSpanProcessor` and `NodeTracerProvider`.
+
+next.config.mjs                     ← Must have `experimental: { instrumentationHook: true }` enabled.
 
 lib/tools/
 ├── registry.ts                     ← Maps capability toggles → tool definitions
@@ -228,6 +232,7 @@ npm install @e2b/code-interpreter        # E2B code execution
 npm install react-markdown               # Markdown rendering
 npm install remark-gfm                   # GitHub-flavored markdown
 npm install rehype-highlight             # Code syntax highlighting
+npm install @langfuse/tracing @langfuse/otel @opentelemetry/sdk-node @opentelemetry/sdk-trace-node @opentelemetry/api # Langfuse observability setup
 ```
 
 > **AI SDK v6 Implementation Notes:**

@@ -1,6 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs } from 'ai'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { langfuseSpanProcessor } from '@/instrumentation'
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { checkAccess } from '@/lib/chat/access'
 import { getActiveVersion } from '@/lib/chat/engine'
@@ -57,8 +58,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No active instructions found for this Weblet" }, { status: 400 })
     }
 
-    // Prepare system instructions for AI SDK
-    const systemPrompt = activeVersion.prompt
+    // Prepare system instructions — append formatting guidelines
+    // so the LLM always uses proper markdown (code fences, headings, etc.)
+    const FORMATTING_INSTRUCTIONS = `
+
+## Response Formatting Rules
+- Always format your responses using Markdown.
+- When including code, ALWAYS wrap it in fenced code blocks with the language specified, like:
+\`\`\`python
+print("hello")
+\`\`\`
+- Use headings (##, ###), bold (**text**), bullet lists, and numbered lists when appropriate.
+- Never output raw code without fenced code blocks.`
+
+    const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
     // 3. Assemble Tools based on Weblet capabilities config
     const tools = getToolsFromCapabilities(weblet.capabilities)
@@ -101,6 +114,14 @@ export async function POST(req: NextRequest) {
       messages: messages as any[],
       tools,
       stopWhen: stepCountIs(5),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: {
+          webletId,
+          sessionId: activeSessionId,
+          userId,
+        },
+      },
       async onFinish({ text, toolCalls, toolResults, usage, finishReason }) {
         // Save assistant response
         await saveMessage(activeSessionId as string, "assistant", text, usage?.totalTokens)
@@ -115,6 +136,9 @@ export async function POST(req: NextRequest) {
         })
       },
     })
+    
+    // Critical for serverless: flush traces before function terminates
+    after(async () => await langfuseSpanProcessor.forceFlush());
 
     return response.toUIMessageStreamResponse();
 
