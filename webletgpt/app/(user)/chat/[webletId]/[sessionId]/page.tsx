@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
 import { ChatContainer } from "@/components/chat/chat-container"
 import { UIMessage } from "ai"
+import { ENABLE_PAYMENT_ENFORCEMENT } from "@/lib/constants"
+import { Paywall } from "@/components/monetization/paywall"
 
 export default async function ExistingChatPage({
   params,
@@ -25,6 +27,9 @@ export default async function ExistingChatPage({
           id: true,
           name: true,
           iconUrl: true,
+          developerId: true,
+          accessType: true,
+          monthlyPrice: true,
         }
       },
       messages: {
@@ -35,6 +40,31 @@ export default async function ExistingChatPage({
 
   if (!session) {
     notFound()
+  }
+
+  // Payment Check
+  let hasAccess = true
+  if (ENABLE_PAYMENT_ENFORCEMENT && session.weblet.accessType === "SUBSCRIBERS_ONLY") {
+    if (user.id !== session.weblet.developerId) {
+      const activeSub = await prisma.subscription.findFirst({
+        where: { userId: user.id, status: "ACTIVE" },
+      })
+      if (!activeSub) {
+        hasAccess = false
+      }
+    }
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="flex-1 overflow-auto bg-background p-4 sm:p-8">
+        <Paywall
+          webletId={session.weblet.id}
+          webletName={session.weblet.name}
+          monthlyPrice={session.weblet.monthlyPrice || 0}
+        />
+      </div>
+    )
   }
 
   // Convert Prisma messages to AI SDK format

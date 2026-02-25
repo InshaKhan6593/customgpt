@@ -19,6 +19,7 @@ export type BuilderState = {
   conversationStarters: string[]
   privacyPolicy: string
   accessType: "FREE" | "SUBSCRIBERS_ONLY"
+  monthlyPrice?: number // New field for Stripe integration
   capabilities: WebletCapabilities
   isActive: boolean
 }
@@ -34,6 +35,7 @@ const defaultState: BuilderState = {
   conversationStarters: [],
   privacyPolicy: "",
   accessType: "FREE",
+  monthlyPrice: undefined,
   capabilities: {
     webSearch: false,
     codeInterpreter: false,
@@ -71,6 +73,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
             iconUrl: updatedState.iconUrl || undefined,
             category: updatedState.category || undefined,
             accessType: updatedState.accessType,
+            monthlyPrice: updatedState.monthlyPrice, // Added
             capabilities: updatedState.capabilities,
             isActive: updatedState.isActive,
             instructions: updatedState.instructions || undefined,
@@ -110,6 +113,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           iconUrl: state.iconUrl || undefined,
           category: state.category || undefined,
           accessType: state.accessType,
+          monthlyPrice: state.monthlyPrice, // Added
           capabilities: state.capabilities,
           isActive: false,
           instructions: state.instructions || undefined,
@@ -153,6 +157,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           iconUrl: state.iconUrl || undefined,
           category: state.category,
           accessType: state.accessType,
+          monthlyPrice: state.monthlyPrice, // Added
           capabilities: state.capabilities,
           isActive: true,
           isPublic: true,

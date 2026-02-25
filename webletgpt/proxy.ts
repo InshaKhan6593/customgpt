@@ -8,7 +8,7 @@ const { auth } = NextAuth(authConfig)
 // In Next.js 16, proxy.ts handles route interception at the edge (replacing middleware.ts)
 // Auth.js Edge compatibility allows reading the session without hitting the DB.
 
-const publicRoutes = ['/login', '/auth/error', '/api/auth', '/marketplace', '/pricing', '/api/marketplace']
+const publicRoutes = ['/login', '/auth/error', '/api/auth', '/marketplace', '/pricing', '/api/marketplace', '/api/webhooks']
 const marketplaceFallback = '/marketplace' 
 
 export default async function proxy(request: NextRequest) {

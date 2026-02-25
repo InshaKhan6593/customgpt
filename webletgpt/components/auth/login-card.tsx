@@ -13,7 +13,7 @@ import { useSearchParams } from "next/navigation"
 
 export function LoginCard() {
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get("callbackUrl") || "/marketplace"
+  const callbackUrl = searchParams.get("callbackUrl") || "/chats"
 
   const [step, setStep] = useState<"email" | "otp">("email")
   const [email, setEmail] = useState("")

@@ -9,6 +9,8 @@ import { logChatEvent } from '@/lib/chat/analytics'
 import { getOrCreateChatSession, saveMessage } from '@/lib/chat/history'
 import { auth } from '@/lib/auth'
 import { getToolsFromCapabilities } from '@/lib/tools/registry'
+import { checkQuotas } from '@/lib/billing/quota-check'
+import { logUsage } from '@/lib/billing/usage-logger'
 import { z } from 'zod'
 
 const chatSchema = z.object({
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const weblet = await prisma.weblet.findUnique({
       where: { id: webletId },
-      select: { capabilities: true, category: true } // We fetch version separately via engine.ts
+      select: { capabilities: true, category: true, developerId: true } // We fetch version separately via engine.ts
     })
 
     if (!weblet) {
@@ -86,6 +88,12 @@ print("hello")
     }
     const userId = session.user.id
     
+    // 3.5 Check Quotas before executing LLM
+    const quotaCheck = await checkQuotas(userId, webletId)
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason || "Quota exceeded" }, { status: 402 })
+    }
+
     const chatSession = await getOrCreateChatSession(webletId, userId, activeSessionId || null)
     activeSessionId = chatSession.id
 
@@ -126,6 +134,29 @@ print("hello")
         // Save assistant response
         await saveMessage(activeSessionId as string, "assistant", text, usage?.totalTokens)
         
+        // Count tool usages for logging
+        const toolCounts: Record<string, number> = {};
+        if (toolCalls) {
+          toolCalls.forEach(tc => {
+            toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1;
+          });
+        }
+
+        // Log usage in the background
+        if (usage?.totalTokens) {
+          await logUsage({
+            userId,
+            webletId,
+            developerId: weblet.developerId,
+            sessionId: activeSessionId,
+            tokensIn: (usage as any)?.promptTokens || 0,
+            tokensOut: (usage as any)?.completionTokens || 0,
+            modelId,
+            toolCalls: toolCounts,
+            source: "DIRECT_CHAT",
+          }).catch(err => console.error("Failed to log usage:", err));
+        }
+
         // Log telemetry event
         await logChatEvent(webletId, "chat_completed", {
           sessionId: activeSessionId,

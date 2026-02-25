@@ -30,6 +30,7 @@ import {
   Key,
   Wallet,
   Settings,
+  CreditCard,
 } from "lucide-react"
 const developerToolsItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -38,6 +39,7 @@ const developerToolsItems = [
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "RSIL", href: "/dashboard/rsil", icon: Sparkles },
   { label: "API Keys", href: "/dashboard/api-keys", icon: Key },
+  { label: "Billing", href: "/dashboard/billing", icon: CreditCard },
 ]
 
 const accountItems = [

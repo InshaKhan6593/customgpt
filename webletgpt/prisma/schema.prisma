@@ -26,6 +26,8 @@ model User {
   transactions  Transaction[]
   flows         UserFlow[]
   weblets       Weblet[]       @relation("DeveloperWeblets")
+  developerPlan DeveloperPlan?
+  userPlan      UserPlan?
 }
 
 model Account {
@@ -309,4 +311,85 @@ enum PayoutStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+// ── Developer Subscription Plan ──
+model DeveloperPlan {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 DevTier   @default(STARTER)
+  creditsIncluded      Int       // Monthly credit quota (e.g., 200, 10000, 50000)
+  creditsUsed          Int       @default(0)
+  billingCycleStart    DateTime
+  billingCycleEnd      DateTime
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  autoReloadEnabled    Boolean   @default(true)  // Automatically buy credits when 0
+  autoReloadAmount     Int       @default(2000)  // How many credits to buy at a time
+  overageRate          Decimal   @default(0.005) // $/credit
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+// ── User Platform Plan ──
+model UserPlan {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 UserTier  @default(FREE_USER)
+  creditsIncluded      Int       // Monthly credit quota (e.g., 100, 1000, unlimited=-1)
+  creditsUsed          Int       @default(0)
+  workflowRunsIncluded Int       @default(2)
+  workflowRunsUsed     Int       @default(0)
+  billingCycleStart    DateTime
+  billingCycleEnd      DateTime
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+// ── Per-Message Usage Record (Audit Trail) ──
+model UsageRecord {
+  id             String      @id @default(cuid())
+  userId         String      // Who initiated the chat
+  webletId       String      // Which weblet was called
+  developerId    String      // Who owns the weblet
+  sessionId      String?     // Chat session (null for RSIL)
+  workflowId     String?     // If part of a workflow
+  tokensIn       Int         // Input tokens consumed
+  tokensOut      Int         // Output tokens consumed
+  modelId        String      // e.g., "anthropic/claude-3.5-sonnet"
+  toolCalls      Json?       // e.g., { "tavily": 1, "dalle": 0, "e2b": 0, "rag": 2 }
+  creditsCharged Int         // Credits deducted for this action
+  estimatedCost  Decimal     // Platform's estimated cost in USD
+  source         UsageSource // Where this usage came from
+  parentRecordId String?     // If triggered by composability, link to parent
+  createdAt      DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@index([developerId, createdAt])
+  @@index([webletId, createdAt])
+}
+
+enum DevTier {
+  STARTER
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum UserTier {
+  FREE_USER
+  PLUS
+  POWER
+}
+
+enum UsageSource {
+  DIRECT_CHAT       // User chatted directly with weblet
+  COMPOSABILITY     // Weblet called as a child by another weblet
+  WORKFLOW          // Part of a user workflow pipeline
+  ORCHESTRATION     // Part of multi-agent orchestration
+  RSIL              // Automated optimization (platform cost)
 }

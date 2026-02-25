@@ -3,7 +3,7 @@ export const APP_DESCRIPTION = "The easiest way to build, share, and monetize AI
 
 // Platform Feature Flags & Configs
 export const PLATFORM_FEE_RATE = 0.15; // 15% platform fee
-export const ENABLE_PAYMENT_ENFORCEMENT = false; // Toggled on in Segment 07
+export const ENABLE_PAYMENT_ENFORCEMENT = process.env.ENABLE_PAYMENT_ENFORCEMENT === "true";
 
 // File Upload Limits
 export const MAX_KNOWLEDGE_FILES = 10;

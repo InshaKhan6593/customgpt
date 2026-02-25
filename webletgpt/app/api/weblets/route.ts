@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
           slug,
           description,
           category,
+          isActive: false,
           isPublic,
           privacyPolicy,
           conversationStarters,

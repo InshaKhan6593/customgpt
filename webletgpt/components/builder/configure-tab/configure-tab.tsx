@@ -350,19 +350,49 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
       </div>
 
       {/* Access Toggle */}
-      <div className="flex items-center justify-between rounded-md border p-4">
-        <div>
-          <p className="text-sm font-medium text-foreground">Subscribers Only</p>
-          <p className="text-xs text-muted-foreground">
-            Restrict access to paying subscribers
-          </p>
+      <div className="flex flex-col gap-4 rounded-md border p-4 bg-card">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">Subscribers Only</p>
+            <p className="text-xs text-muted-foreground">
+              Restrict access to paying subscribers
+            </p>
+          </div>
+          <Switch
+            checked={state.accessType === "SUBSCRIBERS_ONLY"}
+            onCheckedChange={(checked) => {
+              // If toggling off, we can optionally clear the price, but let's keep it in state.
+              onUpdate({ accessType: checked ? "SUBSCRIBERS_ONLY" : "FREE" })
+            }}
+          />
         </div>
-        <Switch
-          checked={state.accessType === "SUBSCRIBERS_ONLY"}
-          onCheckedChange={(checked) =>
-            onUpdate({ accessType: checked ? "SUBSCRIBERS_ONLY" : "FREE" })
-          }
-        />
+
+        {state.accessType === "SUBSCRIBERS_ONLY" && (
+          <div className="space-y-2 pt-4 border-t">
+            <Label htmlFor="monthlyPrice">Monthly Price (USD) *</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                $
+              </span>
+              <Input
+                id="monthlyPrice"
+                type="number"
+                placeholder="10.00"
+                className="pl-7"
+                min="1"
+                step="0.01"
+                value={state.monthlyPrice || ""}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  onUpdate({ monthlyPrice: isNaN(val) ? undefined : val })
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Set the monthly subscription price for users to access this weblet.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

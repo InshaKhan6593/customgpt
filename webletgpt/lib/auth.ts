@@ -28,4 +28,45 @@ export const {
     }),
     // GitHub and Google providers would be added here
   ],
+  events: {
+    // Fires after every successful sign-in (new and returning users)
+    async signIn({ user }) {
+      if (!user.id) return;
+      const now = new Date();
+      const nextMonth = new Date(new Date().setMonth(now.getMonth() + 1));
+
+      // Create a free UserPlan if one doesn't exist yet
+      await prisma.userPlan.upsert({
+        where: { userId: user.id },
+        update: {},  // returning user — don't overwrite their paid plan
+        create: {
+          userId: user.id,
+          tier: "FREE_USER",
+          creditsIncluded: 100,
+          creditsUsed: 0,
+          workflowRunsIncluded: 2,
+          workflowRunsUsed: 0,
+          billingCycleStart: now,
+          billingCycleEnd: nextMonth,
+        },
+      });
+
+      // Create a Starter DeveloperPlan if one doesn't exist yet
+      await prisma.developerPlan.upsert({
+        where: { userId: user.id },
+        update: {},  // returning developer — don't overwrite their paid plan
+        create: {
+          userId: user.id,
+          tier: "STARTER",
+          creditsIncluded: 200,
+          creditsUsed: 0,
+          billingCycleStart: now,
+          billingCycleEnd: nextMonth,
+          autoReloadEnabled: false,
+          autoReloadAmount: 2000,
+          overageRate: 0.005,
+        },
+      });
+    },
+  },
 })

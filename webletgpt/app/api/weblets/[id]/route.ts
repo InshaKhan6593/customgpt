@@ -73,6 +73,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       webletData.slug = slug;
     }
 
+    // Set up Stripe Product and Price dynamically if a price is configured
+    if (
+      webletData.monthlyPrice !== undefined && 
+      webletData.monthlyPrice > 0 &&
+      webletData.monthlyPrice !== weblet.monthlyPrice
+    ) {
+      // Dynamic import to avoid Stripe SDK loading unless payment logic is hit
+      const { createStripeProduct } = await import("@/lib/stripe/create-product");
+      const stripeData = await createStripeProduct(
+        webletData.name || weblet.name, 
+        id, 
+        webletData.monthlyPrice
+      );
+      
+      webletData.stripeProductId = stripeData.productId;
+      webletData.stripePriceId = stripeData.priceId;
+      webletData.accessType = "SUBSCRIBERS_ONLY";
+    }
+
     const updated = await prisma.weblet.update({
       where: { id },
       data: webletData
