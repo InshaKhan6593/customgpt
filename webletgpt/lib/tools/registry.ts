@@ -5,8 +5,10 @@ import { fileSearchTool } from "./file-search"
 
 /**
  * Maps the capability keys from Weblet configuration into actual Vercel AI SDK tools.
+ * @param capabilities - The Weblet's capability flags (webSearch, imageGen, fileSearch, etc.)
+ * @param webletId - The Weblet ID, required for scoping file search to the correct knowledge base
  */
-export function getToolsFromCapabilities(capabilities: any) {
+export function getToolsFromCapabilities(capabilities: any, webletId?: string) {
   const tools: Record<string, any> = {}
 
   if (!capabilities) return tools
@@ -21,11 +23,11 @@ export function getToolsFromCapabilities(capabilities: any) {
   }
 
   if (capabilities.imageGen) {
-    tools.imageGeneration = imageGenerationTool
+    tools.imageGeneration = imageGenerationTool(capabilities.imageGenModel || "dall-e-3")
   }
 
-  if (capabilities.fileSearch) {
-    tools.fileSearch = fileSearchTool
+  if (capabilities.fileSearch && webletId) {
+    tools.fileSearch = fileSearchTool(webletId)
   }
 
   return tools

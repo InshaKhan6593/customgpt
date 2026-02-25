@@ -4,6 +4,7 @@ import { Switch } from "@/components/ui/switch"
 import { Globe, Code, ImageIcon, Search } from "lucide-react"
 import type { BuilderState } from "../builder-layout"
 import type { WebletCapabilities } from "@/lib/types/api"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type CapabilitiesTabProps = {
   state: BuilderState
@@ -47,6 +48,15 @@ export function CapabilitiesTab({ state, onUpdate }: CapabilitiesTabProps) {
     })
   }
 
+  const handleImageModelChange = (value: string) => {
+    onUpdate({
+      capabilities: {
+        ...state.capabilities,
+        imageGenModel: value
+      }
+    })
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="mb-2">
@@ -57,23 +67,42 @@ export function CapabilitiesTab({ state, onUpdate }: CapabilitiesTabProps) {
       </div>
 
       {CAPABILITIES.map((cap) => (
-        <div
-          key={cap.key}
-          className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-md bg-muted">
-              <cap.icon className="size-4 text-foreground" />
+        <div key={cap.key} className="flex flex-col gap-2">
+          <div className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-md bg-muted">
+                <cap.icon className="size-4 text-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">{cap.label}</p>
+                <p className="text-xs text-muted-foreground">{cap.description}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">{cap.label}</p>
-              <p className="text-xs text-muted-foreground">{cap.description}</p>
-            </div>
+            <Switch
+              checked={!!state.capabilities[cap.key]}
+              onCheckedChange={() => toggleCapability(cap.key)}
+            />
           </div>
-          <Switch
-            checked={!!state.capabilities[cap.key]}
-            onCheckedChange={() => toggleCapability(cap.key)}
-          />
+          
+          {/* Conditional dropdown for Image Generation model */}
+          {cap.key === "imageGen" && state.capabilities.imageGen && (
+            <div className="ml-10 px-4 py-2 border-l-2 border-primary/20 bg-muted/30 rounded-r-md">
+              <label className="text-xs font-medium text-muted-foreground block mb-1.5">Model</label>
+              <Select 
+                value={state.capabilities.imageGenModel || "dall-e-3"} 
+                onValueChange={handleImageModelChange}
+              >
+                <SelectTrigger className="w-full text-xs h-8">
+                  <SelectValue placeholder="Select image model" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dall-e-3">DALL-E 3 (High Quality, Default)</SelectItem>
+                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast, Cheap)</SelectItem>
+                  <SelectItem value="black-forest-labs/flux-schnell">Flux Schnell (Fast, Cheap)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       ))}
     </div>

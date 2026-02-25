@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, File, Trash2, FileText, Loader2 } from "lucide-react"
+import { Upload, Trash2, FileText, Loader2, AlertCircle } from "lucide-react"
 
 type KnowledgeFile = {
   id: string
   filename: string
   fileSize: number
   chunkCount: number
-  status: "uploading" | "extracting" | "chunking" | "embedding" | "done" | "error"
+  status: "uploading" | "processing" | "done" | "error"
+  errorMessage?: string
 }
 
 const ACCEPTED_TYPES = [".pdf", ".docx", ".txt", ".csv", ".md"]
@@ -22,31 +23,41 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const STATUS_LABELS: Record<KnowledgeFile["status"], string> = {
-  uploading: "Uploading...",
-  extracting: "Extracting text...",
-  chunking: "Chunking...",
-  embedding: "Generating embeddings...",
-  done: "Done",
-  error: "Error",
-}
-
 export function KnowledgeTab({ webletId }: { webletId: string }) {
   const [files, setFiles] = useState<KnowledgeFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
 
-  const simulateUpload = useCallback(
-    (file: globalThis.File) => {
-      const ext = "." + file.name.split(".").pop()?.toLowerCase()
-      if (!ACCEPTED_TYPES.includes(ext)) {
-        return
+  // Load existing files on mount
+  useEffect(() => {
+    async function loadFiles() {
+      try {
+        const res = await fetch(`/api/weblets/${webletId}/knowledge`)
+        if (!res.ok) return
+        const data = await res.json()
+        const existing: KnowledgeFile[] = (Array.isArray(data) ? data : []).map((f: any) => ({
+          id: f.id,
+          filename: f.filename,
+          fileSize: f.fileSize,
+          chunkCount: f._count?.chunks || 0,
+          status: "done" as const,
+        }))
+        setFiles(existing)
+      } catch (err) {
+        console.error("Failed to load knowledge files:", err)
       }
-      if (file.size > MAX_FILE_SIZE) {
-        return
-      }
+    }
+    if (webletId) loadFiles()
+  }, [webletId])
 
+  const uploadFile = useCallback(
+    async (file: globalThis.File) => {
+      const ext = "." + file.name.split(".").pop()?.toLowerCase()
+      if (!ACCEPTED_TYPES.includes(ext)) return
+      if (file.size > MAX_FILE_SIZE) return
+
+      const tempId = `temp_${Date.now()}`
       const newFile: KnowledgeFile = {
-        id: Date.now().toString(),
+        id: tempId,
         filename: file.name,
         fileSize: file.size,
         chunkCount: 0,
@@ -54,50 +65,79 @@ export function KnowledgeTab({ webletId }: { webletId: string }) {
       }
       setFiles((prev) => [...prev, newFile])
 
-      // Simulate the processing pipeline stages
-      const stages: KnowledgeFile["status"][] = [
-        "extracting",
-        "chunking",
-        "embedding",
-        "done",
-      ]
-      stages.forEach((stage, i) => {
-        setTimeout(() => {
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === newFile.id
-                ? {
-                    ...f,
-                    status: stage,
-                    chunkCount: stage === "done" ? Math.floor(Math.random() * 80) + 20 : 0,
-                  }
-                : f
-            )
+      try {
+        // Update status to processing
+        setFiles((prev) =>
+          prev.map((f) => (f.id === tempId ? { ...f, status: "processing" as const } : f))
+        )
+
+        const formData = new FormData()
+        formData.append("file", file)
+
+        const res = await fetch(`/api/weblets/${webletId}/knowledge`, {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || "Upload failed")
+        }
+
+        const created = await res.json()
+
+        // Replace temp entry with real data
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === tempId
+              ? {
+                  id: created.id,
+                  filename: created.filename,
+                  fileSize: created.fileSize,
+                  chunkCount: created.chunkCount || 0,
+                  status: "done" as const,
+                }
+              : f
           )
-        }, (i + 1) * 1200)
-      })
+        )
+      } catch (error: any) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === tempId
+              ? { ...f, status: "error" as const, errorMessage: error.message }
+              : f
+          )
+        )
+      }
     },
-    []
+    [webletId]
   )
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragging(false)
-      Array.from(e.dataTransfer.files).forEach(simulateUpload)
+      Array.from(e.dataTransfer.files).forEach(uploadFile)
     },
-    [simulateUpload]
+    [uploadFile]
   )
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      Array.from(e.target.files).forEach(simulateUpload)
+      Array.from(e.target.files).forEach(uploadFile)
     }
   }
 
-  const deleteFile = (id: string) => {
+  const deleteFile = async (id: string) => {
+    // Skip API call for temp/errored entries
+    if (!id.startsWith("temp_")) {
+      try {
+        await fetch(`/api/weblets/${webletId}/knowledge/${id}`, { method: "DELETE" })
+      } catch (err) {
+        console.error("Failed to delete file:", err)
+      }
+    }
     setFiles((prev) => prev.filter((f) => f.id !== id))
-    // TODO: DELETE /api/weblets/[id]/knowledge/[fileId]
   }
 
   return (
@@ -164,29 +204,25 @@ export function KnowledgeTab({ webletId }: { webletId: string }) {
                       • {file.chunkCount} chunks
                     </span>
                   )}
-                  {file.status !== "done" && file.status !== "error" && (
+                  {(file.status === "uploading" || file.status === "processing") && (
                     <span className="flex items-center gap-1 text-xs text-amber-600">
                       <Loader2 className="size-3 animate-spin" />
-                      {STATUS_LABELS[file.status]}
+                      {file.status === "uploading" ? "Uploading..." : "Processing (extract → chunk → embed)..."}
                     </span>
                   )}
                   {file.status === "done" && (
-                    <span className="text-xs text-green-600">
-                      ✓ {STATUS_LABELS[file.status]}
+                    <span className="text-xs text-green-600">✓ Ready</span>
+                  )}
+                  {file.status === "error" && (
+                    <span className="flex items-center gap-1 text-xs text-red-600">
+                      <AlertCircle className="size-3" />
+                      {file.errorMessage || "Processing failed"}
                     </span>
                   )}
                 </div>
-                {file.status !== "done" && file.status !== "error" && (
+                {(file.status === "uploading" || file.status === "processing") && (
                   <Progress
-                    value={
-                      file.status === "uploading"
-                        ? 25
-                        : file.status === "extracting"
-                        ? 50
-                        : file.status === "chunking"
-                        ? 75
-                        : 90
-                    }
+                    value={file.status === "uploading" ? 25 : 60}
                     className="mt-2 h-1"
                   />
                 )}

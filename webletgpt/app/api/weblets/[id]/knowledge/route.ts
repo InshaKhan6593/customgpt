@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/utils/auth-guard";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
 import { MAX_KNOWLEDGE_FILES } from "@/lib/constants";
+import { processKnowledgeFile } from "@/lib/knowledge/process";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -43,14 +44,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return errorResponse(`Maximum of ${MAX_KNOWLEDGE_FILES} knowledge files allowed`, 400);
     }
 
-    // In a real implementation this would parse FormData and upload to S3/Vercel Blob.
-    // For this segment, we simulate the database record creation.
-    
     const formData = await req.formData();
     const file = formData.get("file") as File;
     if (!file) return errorResponse("No file provided", 400);
 
-    const storageKey = `mock_key_${Date.now()}_${file.name}`;
+    // Read the file buffer for processing
+    const arrayBuffer = await file.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    // Create the KnowledgeFile record first
+    const storageKey = `knowledge_${id}_${Date.now()}_${file.name}`;
     
     const kFile = await prisma.knowledgeFile.create({
       data: {
@@ -62,7 +65,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     });
 
-    return successResponse(kFile, 201);
+    // Run the full processing pipeline: extract → chunk → embed → store in pgvector
+    try {
+      const result = await processKnowledgeFile(
+        kFile.id,
+        fileBuffer,
+        file.name,
+        file.type
+      );
+
+      return successResponse({
+        ...kFile,
+        chunkCount: result.chunkCount,
+        status: "done"
+      }, 201);
+    } catch (processError: any) {
+      // If processing fails, delete the orphaned KnowledgeFile record
+      await prisma.knowledgeFile.delete({ where: { id: kFile.id } });
+      console.error("Knowledge processing failed:", processError);
+      return errorResponse(`File processing failed: ${processError.message}`, 500);
+    }
+
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
     return errorResponse("Internal server error", 500);

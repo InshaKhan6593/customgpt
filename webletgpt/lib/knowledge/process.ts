@@ -56,10 +56,11 @@ export async function processKnowledgeFile(
     for (let i = 0; i < chunks.length; i++) {
       const embedding = embeddings[i]
       const content = chunks[i]
+      const embeddingStr = `[${embedding.join(",")}]`
 
       await prisma.$executeRaw`
         INSERT INTO "KnowledgeChunk" (id, "knowledgeFileId", content, embedding)
-        VALUES (gen_random_uuid(), ${knowledgeFileId}, ${content}, ${embedding}::vector)
+        VALUES (gen_random_uuid(), ${knowledgeFileId}, ${content}, ${embeddingStr}::vector)
       `
     }
 

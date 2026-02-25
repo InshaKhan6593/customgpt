@@ -74,7 +74,7 @@ print("hello")
     const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
     // 3. Assemble Tools based on Weblet capabilities config
-    const tools = getToolsFromCapabilities(weblet.capabilities)
+    const tools = getToolsFromCapabilities(weblet.capabilities, webletId)
 
     // Ensure session exists
     let activeSessionId = sessionId

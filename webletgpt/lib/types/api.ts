@@ -9,6 +9,7 @@ export type WebletCapabilities = {
   webSearch?: boolean
   codeInterpreter?: boolean
   imageGen?: boolean
+  imageGenModel?: string
   fileSearch?: boolean
 }
 
