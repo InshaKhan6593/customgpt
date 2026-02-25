@@ -249,7 +249,7 @@ export default function BillingPage() {
           )}
         </TabsContent>
 
-        {/* ── Upgrade ── */}
+        {/* ── Upgrade & Settings ── */}
         <TabsContent value="upgrade" className="mt-6 space-y-8">
           <div>
             <h2 className="font-semibold">User Plans</h2>
@@ -265,6 +265,53 @@ export default function BillingPage() {
             </p>
             <PlanSelector type="developer" currentTier={devPlan?.tier} />
           </div>
+          
+          {/* Developer Settings */}
+          {devPlan && (
+            <div className="pt-8 border-t">
+              <h2 className="font-semibold text-lg">Developer Settings</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Manage your weblet hosting configuration and billing preferences.
+              </p>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Auto-Reload Configuration</CardTitle>
+                  <CardDescription>
+                    Automatically purchase additional credits when your balance hits 0 to prevent your Weblets from going offline.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <div className="font-medium text-sm">Enable Auto-Reload</div>
+                      <div className="text-xs text-muted-foreground">Keep your weblets online automatically.</div>
+                    </div>
+                    {/* Dummy switch state for now as requested by instructions */}
+                    <div className="flex items-center space-x-2">
+                       <span className="text-sm font-medium">{devPlan.autoReloadEnabled ? "Enabled" : "Disabled"}</span>
+                       <Button variant="outline" size="sm">Toggle</Button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="font-medium text-sm">Reload Amount</div>
+                    <div className="flex gap-4">
+                      <select 
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        defaultValue={devPlan.autoReloadAmount.toString()}
+                      >
+                        <option value="2000">Reload $10 (2,000 credits) at a time</option>
+                        <option value="5000">Reload $25 (5,000 credits) at a time</option>
+                        <option value="10000">Reload $50 (10,000 credits) at a time</option>
+                      </select>
+                      <Button>Save</Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

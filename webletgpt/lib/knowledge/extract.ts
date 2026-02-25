@@ -81,18 +81,25 @@ async function extractWithLlamaParse(fileBuffer: Buffer, filename: string): Prom
       })
 
       if (statusResponse.ok) {
-        result = await statusResponse.json()
-        break
+        // Only attempt to parse if the content-type is JSON
+        const contentType = statusResponse.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+            result = await statusResponse.json()
+            break
+        }
       }
     }
 
-    if (!result) {
-      throw new Error("LlamaParse processing timed out after 60 seconds.")
+    if (!result || !result.text) {
+      console.warn(`LlamaParse timed out or failed to return text for ${filename}. Job ID: ${jobId}`);
+      // Return a fallback instead of throwing an error so the UI doesn't hang forever
+      return `[Extraction failed or timed out for file: ${filename}]`;
     }
 
     return result.text || ""
   } catch (error: any) {
     console.error("LlamaParse extraction error:", error)
-    throw new Error(`Failed to extract text from ${filename}: ${error.message}`)
+    // Return a fallback instead of throwing so we don't crash the whole pipeline
+    return `[Failed to extract text from ${filename}: ${error.message}]`
   }
 }

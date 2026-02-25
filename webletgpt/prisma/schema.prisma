@@ -106,6 +106,7 @@ model WebletVersion {
   status     VersionStatus @default(DRAFT)
   commitMsg  String?
   model      String        @default("anthropic/claude-3.5-sonnet")
+  openapiSchema Json?
   createdAt  DateTime      @default(now())
   weblet     Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
 

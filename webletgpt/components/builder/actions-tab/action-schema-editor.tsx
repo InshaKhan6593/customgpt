@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -39,12 +39,22 @@ const PLACEHOLDER_SCHEMA = `{
   }
 }`
 
-export function ActionsTab() {
-  const [schema, setSchema] = useState("")
+
+interface ActionsTabProps {
+  schemaString: string
+  onUpdate: (schemaString: string) => void
+}
+
+export function ActionsTab({ schemaString, onUpdate }: ActionsTabProps) {
   const [importUrl, setImportUrl] = useState("")
   const [validationError, setValidationError] = useState<string | null>(null)
   const [endpoints, setEndpoints] = useState<ParsedEndpoint[]>([])
   const [isValid, setIsValid] = useState(false)
+
+  // Validate schema when prop changes
+  useEffect(() => {
+    validateSchema(schemaString || "")
+  }, [schemaString])
 
   const validateSchema = (value: string) => {
     if (!value.trim()) {
@@ -91,8 +101,7 @@ export function ActionsTab() {
 
   const handleEditorChange = (value: string | undefined) => {
     const v = value || ""
-    setSchema(v)
-    validateSchema(v)
+    onUpdate(v)
   }
 
   const handleImport = async () => {
@@ -100,8 +109,7 @@ export function ActionsTab() {
     try {
       const res = await fetch(importUrl)
       const text = await res.text()
-      setSchema(text)
-      validateSchema(text)
+      onUpdate(text)
     } catch {
       setValidationError("Failed to fetch schema from URL")
     }
@@ -147,7 +155,7 @@ export function ActionsTab() {
           <Editor
             height="300px"
             defaultLanguage="json"
-            value={schema}
+            value={schemaString}
             onChange={handleEditorChange}
             theme="vs-dark"
             options={{

@@ -21,6 +21,7 @@ const updateSchema = z.object({
   conversationStarters: z.any().optional(),
   instructions: z.string().optional(),
   model: z.string().optional(),
+  openapiSchema: z.any().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -64,7 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!result.success) return errorResponse("Invalid input", 400, result.error.errors);
 
     const data = result.data as any;
-    const { instructions, model, ...webletData } = data;
+    const { instructions, model, openapiSchema, ...webletData } = data;
     
     if (webletData.name && webletData.name !== weblet.name) {
       let slug = sanitizeSlug(webletData.name);
@@ -98,7 +99,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
 
     // Handle Version updates seamlessly during auto-saves and publishes
-    if (instructions !== undefined || model !== undefined) {
+    if (instructions !== undefined || model !== undefined || openapiSchema !== undefined) {
       const activeVersion = await prisma.webletVersion.findFirst({
         where: { webletId: id, status: "ACTIVE" },
         orderBy: { versionNum: "desc" }
@@ -110,6 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           data: {
             prompt: instructions !== undefined ? instructions : activeVersion.prompt,
             model: model !== undefined ? model : activeVersion.model,
+            openapiSchema: openapiSchema !== undefined ? openapiSchema : activeVersion.openapiSchema,
           }
         });
       } else {
@@ -119,6 +121,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             versionNum: 1,
             prompt: instructions || "You are a helpful assistant.",
             model: model || "anthropic/claude-3.5-sonnet",
+            openapiSchema: openapiSchema || null,
             status: "ACTIVE"
           }
         });

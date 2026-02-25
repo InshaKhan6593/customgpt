@@ -11,6 +11,7 @@ import { auth } from '@/lib/auth'
 import { getToolsFromCapabilities } from '@/lib/tools/registry'
 import { checkQuotas } from '@/lib/billing/quota-check'
 import { logUsage } from '@/lib/billing/usage-logger'
+import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
 import { z } from 'zod'
 
 const chatSchema = z.object({
@@ -75,8 +76,17 @@ print("hello")
 
     const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
-    // 3. Assemble Tools based on Weblet capabilities config
-    const tools = getToolsFromCapabilities(weblet.capabilities, webletId)
+    // 3. Assemble Tools based on Weblet capabilities config and custom Actions
+    let tools = getToolsFromCapabilities(weblet.capabilities, webletId)
+    
+    if (activeVersion.openapiSchema) {
+      const customTools = getToolsFromOpenAPI(
+        typeof activeVersion.openapiSchema === "string" 
+          ? activeVersion.openapiSchema 
+          : JSON.stringify(activeVersion.openapiSchema)
+      )
+      tools = { ...tools, ...customTools }
+    }
 
     // Ensure session exists
     let activeSessionId = sessionId

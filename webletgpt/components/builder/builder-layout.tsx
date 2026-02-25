@@ -20,6 +20,7 @@ export type BuilderState = {
   privacyPolicy: string
   accessType: "FREE" | "SUBSCRIBERS_ONLY"
   monthlyPrice?: number // New field for Stripe integration
+  openapiSchema: string // OpenAPI specification (JSON string)
   capabilities: WebletCapabilities
   isActive: boolean
 }
@@ -42,6 +43,7 @@ const defaultState: BuilderState = {
     imageGen: false,
     fileSearch: false,
   },
+  openapiSchema: "",
   isActive: false,
 }
 
@@ -78,6 +80,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
             isActive: updatedState.isActive,
             instructions: updatedState.instructions || undefined,
             model: updatedState.model || undefined,
+            openapiSchema: updatedState.openapiSchema || undefined,
             conversationStarters: updatedState.conversationStarters,
             privacyPolicy: updatedState.privacyPolicy || undefined,
           }),
@@ -118,6 +121,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           isActive: false,
           instructions: state.instructions || undefined,
           model: state.model || undefined,
+          openapiSchema: state.openapiSchema || undefined,
           conversationStarters: state.conversationStarters,
           privacyPolicy: state.privacyPolicy || undefined,
         }),
@@ -163,6 +167,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           isPublic: true,
           instructions: state.instructions,
           model: state.model,
+          openapiSchema: state.openapiSchema || undefined,
           conversationStarters: state.conversationStarters,
           privacyPolicy: state.privacyPolicy || undefined,
         }),
@@ -196,16 +201,16 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] w-full overflow-hidden">
       {/* Split screen container */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 w-full max-w-full overflow-hidden">
         {/* Left Pane - Configuration */}
-        <div className="w-1/2 border-r overflow-y-auto p-4">
+        <div className="w-1/2 min-w-0 border-r overflow-y-auto p-4">
           <BuilderTabs state={state} onUpdate={updateState} webletId={webletId} />
         </div>
 
         {/* Right Pane - Live Preview */}
-        <div className="w-1/2 overflow-y-auto">
+        <div className="w-1/2 min-w-0 overflow-y-auto">
           <PreviewChat state={state} webletId={webletId} />
         </div>
       </div>

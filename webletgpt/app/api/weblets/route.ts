@@ -62,31 +62,28 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.weblet.findUnique({ where: { slug } });
     if (existing) slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
 
-    // Create weblet & active version inside transaction
-    const weblet = await prisma.$transaction(async (tx) => {
-      const w = await tx.weblet.create({
-        data: {
-          developerId: user.id,
-          name,
-          slug,
-          description,
-          category,
-          isActive: false,
-          isPublic,
-          privacyPolicy,
-          conversationStarters,
-          versions: {
-            create: {
-              versionNum: 1,
-              prompt,
-              model,
-              status: "ACTIVE"
-            }
+    // Create weblet & active version (nested write automatically runs in transaction)
+    const weblet = await prisma.weblet.create({
+      data: {
+        developerId: user.id,
+        name,
+        slug,
+        description,
+        category,
+        isActive: false,
+        isPublic,
+        privacyPolicy,
+        conversationStarters,
+        versions: {
+          create: {
+            versionNum: 1,
+            prompt,
+            model,
+            status: "ACTIVE"
           }
-        },
-        include: { versions: true }
-      });
-      return w;
+        }
+      },
+      include: { versions: true }
     });
 
     return successResponse(weblet, 201);

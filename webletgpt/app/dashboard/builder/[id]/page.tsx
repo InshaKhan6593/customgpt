@@ -42,6 +42,7 @@ export default function BuilderStudioPage({
             category: w.category || "",
             instructions: w.versions?.[0]?.prompt || "",
             model: w.versions?.[0]?.model || "anthropic/claude-3.5-sonnet",
+            openapiSchema: w.versions?.[0]?.openapiSchema ? JSON.stringify(w.versions[0].openapiSchema, null, 2) : "",
             accessType: w.accessType || "FREE",
             conversationStarters: w.conversationStarters || [],
             privacyPolicy: w.privacyPolicy || "",

@@ -49,7 +49,7 @@ export function BuilderTabs({ state, onUpdate, webletId }: BuilderTabsProps) {
       </TabsContent>
 
       <TabsContent value="actions" className="mt-4">
-        <ActionsTab />
+        <ActionsTab schemaString={state.openapiSchema} onUpdate={(schema) => onUpdate({ openapiSchema: schema })} />
       </TabsContent>
     </Tabs>
   )

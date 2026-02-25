@@ -1,17 +1,39 @@
 import { prisma as db } from '@/lib/prisma';
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { MarketplaceFilters } from '@/components/marketplace/filters';
 
-export default async function MarketplacePage() {
-  // Fetch public weblets logic will go here
-  // For now, let's just make a mock structure or fetch whatever weblets are available.
+interface MarketplacePageProps {
+  searchParams: {
+    q?: string;
+    category?: string;
+  };
+}
+
+export default async function MarketplacePage({ searchParams }: MarketplacePageProps) {
+  const query = searchParams?.q || "";
+  const category = searchParams?.category || "";
+
+  // Construct where clause based on search params
+  const where: any = {};
+  
+  if (query) {
+    where.OR = [
+      { name: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+    ];
+  }
+  
+  if (category) {
+    where.category = category;
+  }
+
   const weblets = await db.weblet.findMany({
-    where: { 
-      // isPublic: true - In reality we'd filter by a public flag, but for now we'll show all or a mock.
-    },
-    take: 10,
+    where,
+    take: 50,
     orderBy: { createdAt: 'desc' },
     include: {
       developer: {
@@ -29,21 +51,29 @@ export default async function MarketplacePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <Suspense fallback={<div className="h-10 w-full mb-8 bg-muted animate-pulse rounded-md" />}>
+        <MarketplaceFilters />
+      </Suspense>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {weblets.length > 0 ? (
           weblets.map((weblet) => (
             <Card key={weblet.id} className="flex flex-col h-full hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="flex justify-between items-start">
-                  <CardTitle className="text-xl">{weblet.name}</CardTitle>
+                  <CardTitle className="text-xl line-clamp-1">{weblet.name}</CardTitle>
                 </div>
-                <CardDescription className="line-clamp-2 mt-2 text-sm">
+                <CardDescription className="mt-2 text-sm">
                   {weblet.description || "No description provided."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">
                  <div className="flex flex-wrap gap-2 mb-4">
-                  {weblet.category && <Badge variant="secondary">{weblet.category}</Badge>}
+                  {weblet.category ? (
+                    <Badge variant="secondary">{weblet.category}</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-transparent border-transparent select-none">None</Badge>
+                  )}
                  </div>
                  <div className="text-sm text-muted-foreground mt-4">
                    By {weblet.developer?.name || 'Unknown'}
@@ -60,8 +90,11 @@ export default async function MarketplacePage() {
             </Card>
           ))
         ) : (
-          <div className="col-span-fulltext-center py-12 text-muted-foreground">
-            No Weblets found in the marketplace. Check back later!
+          <div className="col-span-full text-center py-24 border rounded-xl bg-muted/20">
+            <h3 className="text-lg font-medium">No Weblets found</h3>
+            <p className="text-muted-foreground mt-2">
+              Try adjusting your search query or category filters.
+            </p>
           </div>
         )}
       </div>
