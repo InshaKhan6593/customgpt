@@ -13,7 +13,8 @@ const updateFlowSchema = z.object({
     webletId: z.string(),
     order: z.number().int().min(1),
     inputMapping: z.string(),
-    hitlGate: z.boolean()
+    hitlGate: z.boolean(),
+    role: z.string().optional(),
   })).optional(),
   masterWebletId: z.string().optional(),
   isPublic: z.boolean().optional()

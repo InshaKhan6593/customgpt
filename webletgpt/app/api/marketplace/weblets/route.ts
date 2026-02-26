@@ -11,12 +11,17 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get("category") as WebletCategory | null;
     const sort = searchParams.get("sort") || "newest";
     
+    const all = searchParams.get("all") === "true";
+    
     const skip = (page - 1) * limit;
 
-    let whereClause: any = { 
-      isActive: true, 
-      isPublic: true 
-    };
+    let whereClause: any = {};
+    if (!all) {
+      whereClause = { 
+        isActive: true, 
+        isPublic: true 
+      };
+    }
 
     if (category) {
       // Validate category exists in enum

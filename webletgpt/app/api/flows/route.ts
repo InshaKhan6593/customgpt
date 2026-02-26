@@ -13,8 +13,9 @@ const createFlowSchema = z.object({
     webletId: z.string(),
     order: z.number().int().min(1),
     inputMapping: z.string(),
-    hitlGate: z.boolean()
-  })),
+    hitlGate: z.boolean(),
+    role: z.string().optional(),
+  })).default([]),
   masterWebletId: z.string().optional(),
   isPublic: z.boolean().default(false)
 });
@@ -51,19 +52,22 @@ export async function POST(req: NextRequest) {
     const result = createFlowSchema.safeParse(body);
 
     if (!result.success) {
+      console.error("Zod Validation Failed:", result.error.errors);
       return errorResponse("Invalid input data", 400, result.error.errors);
     }
 
     const { name, description, mode, steps, masterWebletId, isPublic } = result.data;
 
-    // Validate weblets actually exist
-    const webletIds = [...new Set(steps.map(s => s.webletId))];
-    const existingWeblets = await prisma.weblet.count({
-      where: { id: { in: webletIds } }
-    });
+    // Validate weblets actually exist (skip for empty draft flows)
+    if (steps.length > 0) {
+      const webletIds = [...new Set(steps.map(s => s.webletId))];
+      const existingWeblets = await prisma.weblet.count({
+        where: { id: { in: webletIds } }
+      });
 
-    if (existingWeblets !== webletIds.length) {
-      return errorResponse("One or more weblets in the flow do not exist.", 400);
+      if (existingWeblets !== webletIds.length) {
+        return errorResponse("One or more weblets in the flow do not exist.", 400);
+      }
     }
 
     const flow = await prisma.userFlow.create({
@@ -80,6 +84,7 @@ export async function POST(req: NextRequest) {
 
     return successResponse(flow, 201);
   } catch (err: any) {
+    console.error("Failed to create flow:", err);
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
     return errorResponse("Internal server error", 500);
   }
