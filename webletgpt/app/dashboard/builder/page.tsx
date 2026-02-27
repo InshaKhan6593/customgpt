@@ -46,7 +46,7 @@ export default function BuilderPage() {
           instructions, capabilities, knowledge, and custom actions.
         </p>
       </div>
-      <Button onClick={handleCreate} disabled={creating} size="lg">
+      <Button variant="secondary" onClick={handleCreate} disabled={creating} size="lg">
         {creating ? (
           <>
             <Loader2 className="size-4 mr-2 animate-spin" />

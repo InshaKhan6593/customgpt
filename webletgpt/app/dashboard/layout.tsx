@@ -115,6 +115,11 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  const pathname = usePathname()
+  // Builder [id] pages are full-screen split-pane tools — they manage their own
+  // layout and should not be wrapped in the standard p-6 content padding.
+  const isBuilderPage = /^\/dashboard\/builder\/.+/.test(pathname)
+
   return (
     <SidebarProvider>
       <DashboardSidebar />
@@ -123,7 +128,7 @@ export default function DashboardLayout({
           <SidebarTrigger />
           <span className="text-sm font-medium text-foreground">Developer Dashboard</span>
         </header>
-        <div className="flex-1 p-6">{children}</div>
+        <div className={`flex-1 overflow-hidden${isBuilderPage ? "" : " p-6"}`}>{children}</div>
       </SidebarInset>
     </SidebarProvider>
   )

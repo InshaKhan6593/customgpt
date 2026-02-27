@@ -43,6 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     return successResponse(flow);
   } catch (err: any) {
+    console.error("[GET /api/flows/[id]]", err);
     return errorResponse("Internal server error", 500);
   }
 }
@@ -83,6 +84,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return successResponse(updated);
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
+    console.error("[PATCH /api/flows/[id]]", err);
     return errorResponse("Internal server error", 500);
   }
 }
@@ -104,6 +106,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return successResponse({ success: true, message: "Flow deleted" });
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
+    console.error("[DELETE /api/flows/[id]]", err);
     return errorResponse("Internal server error", 500);
   }
 }

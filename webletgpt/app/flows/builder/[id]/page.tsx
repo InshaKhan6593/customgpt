@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NavHeader } from "@/components/nav-header";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,12 +33,12 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
           fetch(`/api/flows/${id}`),
           fetch(`/api/marketplace/weblets?limit=50&all=true`) // Fetch all weblets (including private/inactive) for MVP builder
         ]);
-        
+
         const flowData = await flowRes.json();
-        
+
         if (flowRes.ok) {
           setFlow(flowData);
-          
+
           if (webletsRes.ok) {
             const webletsData = await webletsRes.json();
             // The paginated API response structure is { data: [...], meta: {...} }
@@ -121,15 +122,15 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
     setFlow((prev: any) => {
       const newSteps = [...prev.steps];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      
+
       // Swap
       const temp = newSteps[index];
       newSteps[index] = newSteps[targetIndex];
       newSteps[targetIndex] = temp;
-      
+
       // Re-adjust order
       const reordered = newSteps.map((s: any, i: number) => ({ ...s, order: i + 1 }));
-      
+
       // Fix input mapping if first step is moved
       if (reordered.length > 0) {
         reordered[0].inputMapping = "original";
@@ -195,7 +196,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   return (
     <div className="flex flex-col min-h-svh bg-background">
       <NavHeader />
-      
+
       {/* Top Bar */}
       <div className="border-b bg-card py-4 px-6 sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center space-x-4 flex-1">
@@ -203,23 +204,23 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex-1 max-w-sm">
-            <Input 
+            <Input
               value={flow.name}
-              onChange={(e) => setFlow({...flow, name: e.target.value})}
+              onChange={(e) => setFlow({ ...flow, name: e.target.value })}
               className="font-bold text-lg border-transparent hover:border-border focus-visible:bg-background"
             />
           </div>
         </div>
         <div className="flex items-center space-x-3">
           <Button variant="outline" onClick={autoSuggestTeam}>
-            <Wand2 className="w-4 h-4 mr-2 text-indigo-500" />
+            <Wand2 className="w-4 h-4 mr-2" />
             Auto-Suggest Team
           </Button>
           <Button variant="outline" onClick={saveFlow} disabled={saving}>
             <Save className="w-4 h-4 mr-2" />
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button onClick={() => router.push(`/flows/run/${id}`)} className="bg-gradient-to-b from-zinc-800 to-zinc-950 hover:from-zinc-700 hover:to-zinc-900 text-zinc-50 border border-zinc-700/50 shadow-md transition-all duration-200">
+          <Button variant="secondary" onClick={() => router.push(`/flows/run/${id}`)}>
             <Play className="w-4 h-4 mr-2" />
             Run Flow
           </Button>
@@ -227,20 +228,20 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <main className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto p-4 md:p-8 gap-8">
-        
+
         {/* Left Sidebar - Config */}
         <aside className="w-full md:w-64 space-y-6">
           <div>
             <Label className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">Execution Mode</Label>
-            <Select 
-              value={flow.mode} 
-              onValueChange={(val) => setFlow({...flow, mode: val})}
+            <Select
+              value={flow.mode}
+              onValueChange={(val) => setFlow({ ...flow, mode: val })}
             >
               <SelectTrigger className="mt-2 w-full">
                 <SelectValue placeholder="Select mode" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="SEQUENTIAL">Sequential (A → B → C)</SelectItem>
+                <SelectItem value="SEQUENTIAL">Sequential</SelectItem>
                 <SelectItem value="HYBRID" disabled>Hybrid (Master Agent) - Coming Soon</SelectItem>
               </SelectContent>
             </Select>
@@ -254,7 +255,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         <div className="flex-1">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold">Workflow Steps</h2>
-            <Button size="sm" onClick={addStep} className="bg-gradient-to-b from-zinc-800 to-zinc-950 hover:from-zinc-700 hover:to-zinc-900 text-zinc-50 border border-zinc-700/50 shadow-md">
+            <Button variant="secondary" size="sm" onClick={addStep}>
               <Plus className="w-4 h-4 mr-2" />
               Add Step
             </Button>
@@ -279,94 +280,94 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                     </Button>
                   </div>
 
-                  <CardHeader className="py-4 flex flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-lg font-medium flex items-center">
-                      <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs mr-3">
+                  <CardHeader className="py-3 flex flex-row items-center justify-between space-y-0 text-zinc-100">
+                    <CardTitle className="text-base font-medium flex items-center">
+                      <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2">
                         {index + 1}
                       </span>
                       Step {index + 1}
                     </CardTitle>
-                    <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => removeStep(index)}>
-                      <Trash2 className="w-4 h-4" />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => removeStep(index)}>
+                      <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </CardHeader>
-                  
-                  <CardContent className="space-y-6 pb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      
-                      <div className="space-y-2">
-                        <Label>Select Agent (Weblet)</Label>
-                        <Select 
-                          value={step.webletId} 
+
+                  <CardContent className="space-y-4 pb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+
+                      <div className="space-y-1.5 md:col-span-5">
+                        <Label className="text-xs">Select Agent (Weblet)</Label>
+                        <Select
+                          value={step.webletId}
                           onValueChange={(val) => updateStep(index, "webletId", val)}
                         >
-                          <SelectTrigger className={!step.webletId ? "border-dashed border-red-300" : ""}>
+                          <SelectTrigger className={cn("h-9 w-full min-w-0 [&>span]:truncate", !step.webletId && "border-dashed border-red-300")}>
                             <SelectValue placeholder="Choose an agent..." />
                           </SelectTrigger>
                           <SelectContent>
                             {weblets.map(w => (
                               <SelectItem key={w.id} value={w.id}>
-                                {w.name} <span className="text-xs text-muted-foreground">({w.category})</span>
+                                {w.name} <span className="text-[10px] text-muted-foreground">({w.category})</span>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>Input Data Source</Label>
-                        <Select 
-                          value={step.inputMapping} 
+                      <div className="space-y-1.5 md:col-span-4">
+                        <Label className="text-xs">Agent Role</Label>
+                        <Select
+                          value={step.role || ""}
+                          onValueChange={(val) => updateStep(index, "role", val)}
+                        >
+                          <SelectTrigger className="h-9 w-full min-w-0 [&>span]:truncate">
+                            <SelectValue placeholder="Assign a role..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PREDEFINED_ROLES.map((role) => (
+                              <SelectItem key={role.id} value={role.label}>
+                                {role.label} — <span className="text-[10px] text-muted-foreground">{role.description}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5 md:col-span-3">
+                        <Label className="text-xs">Input Data Source</Label>
+                        <Select
+                          value={step.inputMapping}
                           onValueChange={(val) => updateStep(index, "inputMapping", val)}
                           disabled={index === 0}
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Where does input come from?" />
+                          <SelectTrigger className="h-9 w-full">
+                            <SelectValue placeholder="Where from?" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="original">Original User Prompt</SelectItem>
-                            {index > 0 && <SelectItem value="previous">Output of Previous Step</SelectItem>}
+                            <SelectItem value="original">Original Prompt</SelectItem>
+                            {index > 0 && <SelectItem value="previous">Previous Step Output</SelectItem>}
                           </SelectContent>
                         </Select>
-                        {index === 0 && <p className="text-[10px] text-muted-foreground">The first step must use the original prompt.</p>}
+                        {index === 0 && <p className="text-[9px] text-muted-foreground leading-tight">First step uses original prompt.</p>}
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Agent Role</Label>
-                      <Select
-                        value={step.role || ""}
-                        onValueChange={(val) => updateStep(index, "role", val)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Assign a role (optional)..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PREDEFINED_ROLES.map((role) => (
-                            <SelectItem key={role.id} value={role.label}>
-                              {role.label} — <span className="text-xs text-muted-foreground">{role.description}</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[10px] text-muted-foreground">Roles shape how the agent approaches its task within the team.</p>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="flex items-center justify-between pt-3 border-t">
                       <div className="space-y-0.5">
-                        <Label>Human in the Loop</Label>
-                        <p className="text-xs text-muted-foreground">Pause for my manual approval before executing this step.</p>
+                        <Label className="text-xs">Human in the Loop</Label>
+                        <p className="text-[10px] text-muted-foreground">Pause for manual approval before this step.</p>
                       </div>
-                      <Switch 
+                      <Switch
                         checked={step.hitlGate}
                         onCheckedChange={(val) => updateStep(index, "hitlGate", val)}
+                        className="scale-90"
                       />
                     </div>
                   </CardContent>
                 </Card>
               ))
             )}
-            
+
             {flow.steps.length > 0 && (
               <div className="flex justify-center mt-6">
                 <Button variant="ghost" onClick={addStep} className="border border-dashed w-full max-w-sm">

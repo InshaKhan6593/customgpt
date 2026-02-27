@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
     return paginatedResponse(flows, total, page, limit);
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
+    console.error("[GET /api/flows]", err);
     return errorResponse("Internal server error", 500);
   }
 }

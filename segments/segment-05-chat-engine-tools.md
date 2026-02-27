@@ -33,7 +33,7 @@ This segment also introduces the **payment feature flag** (`ENABLE_PAYMENT_ENFOR
 | Web Search | `lib/tools/web-search.ts` | ✅ Done | Tavily API integration. Returns up to 5 results with titles, URLs, content. |
 | Code Interpreter | `lib/tools/code-interpreter.ts` | ✅ Done | E2B Sandbox integration. Executes Python in secure cloud sandbox. 30s timeout. |
 | Image Generation | `lib/tools/image-generation.ts` | ✅ Done | DALL-E 3 API integration via OpenAI. |
-| File Search (RAG) | `lib/tools/file-search.ts` | ✅ Done | pgvector cosine similarity search over embedded knowledge chunks. |
+| File Search (RAG) | `lib/tools/file-search.ts` | ✅ Done | **Hybrid Search**: pgvector cosine similarity search + PostgreSQL full-text search (`tsvector`), merged using Reciprocal Rank Fusion (RRF). Requires `webletId` for dataset scoping. |
 | Custom Actions | `lib/tools/action-executor.ts` | ✅ Done | Dynamic tool creation from OpenAPI schemas. |
 | Chat Engine | `lib/chat/engine.ts` | ✅ Done | Core orchestration — system prompt building, `getActiveVersion()` stub. |
 | Chat History | `lib/chat/history.ts` | ✅ Done | Load/save conversation history from `ChatSession`/`ChatMessage` tables. |
@@ -108,7 +108,7 @@ A registry (`lib/tools/registry.ts`) maps capability toggle names to actual tool
 | `webSearch` | Web Search | Tavily API | Searches the internet and returns clean text results with sources |
 | `codeInterpreter` | Code Interpreter | E2B Sandbox | Executes Python code in a secure cloud sandbox, returns stdout/stderr |
 | `imageGeneration` | Image Generation | DALL-E 3 API | Generates images from text descriptions |
-| `fileSearch` | Knowledge Search | pgvector (internal) | Searches the weblet's uploaded knowledge files using vector similarity |
+| `fileSearch` | Knowledge Search | pgvector (internal) | Searches uploaded files using **Hybrid Search**: combines semantic vector search (`pgvector`) with full-text keyword search (`tsvector`), merged using Reciprocal Rank Fusion (RRF). |
 | (from actions JSON) | Custom Actions | Any API | Dynamically generated tools from OpenAPI schemas |
 
 **Cost caps to prevent runaway spending:**

@@ -18,6 +18,7 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
   const { id: flowId } = use(params);
 
   const [flow, setFlow] = useState<any>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -35,9 +36,12 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
         const data = await res.json();
         if (res.ok) {
           setFlow(data);
+        } else {
+          setFlowError(data.error || "Failed to load flow");
         }
       } catch (err) {
         console.error(err);
+        setFlowError("Could not connect to the server");
       }
     };
     loadData();
@@ -116,6 +120,21 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  if (flowError) {
+    return (
+      <div className="flex flex-col min-h-svh bg-background">
+        <NavHeader />
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-8">
+          <p className="text-destructive font-medium">{flowError}</p>
+          <Button variant="outline" onClick={() => router.push("/flows")}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Flows
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!flow) {
     return (
       <div className="flex min-h-svh items-center justify-center">
@@ -180,8 +199,9 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
                 rows={3}
               />
               <Button
+                variant="secondary"
                 size="sm"
-                className="w-full font-medium bg-gradient-to-b from-zinc-800 to-zinc-950 hover:from-zinc-700 hover:to-zinc-900 text-zinc-50 border border-zinc-700/50 shadow-sm transition-all duration-200"
+                className="w-full"
                 onClick={startFlow}
                 disabled={isRunning}
               >

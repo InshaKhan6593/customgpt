@@ -180,8 +180,7 @@ export const executeFlow = inngest.createFunction(
           const userMessage = buildHandoffMessage({
             stepNumber: i + 1,
             totalSteps: steps.length,
-            userMessage:
-              currentStep.inputMapping === "original" ? initialInput : initialInput,
+            userMessage: initialInput,
             previousOutput:
               currentStep.inputMapping === "original"
                 ? (revision > 0 ? currentOutput : undefined)

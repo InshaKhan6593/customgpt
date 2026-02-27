@@ -53,15 +53,54 @@ Database:
 
 ---
 
+## Database Updates Needed
+
+To support saving and managing user workflows before execution, we need new Prisma models:
+
+```prisma
+model Workflow {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  creatorId   String
+  creator     User           @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  steps       WorkflowStep[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  @@index([creatorId])
+}
+
+model WorkflowStep {
+  id                    String   @id @default(cuid())
+  workflowId            String
+  workflow              Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stepOrder             Int
+  webletId              String
+  weblet                Weblet   @relation(fields: [webletId], references: [id])
+  role                  String?
+  promptSource          String   // "USER_PROMPT" or "PREVIOUS_OUTPUT"
+  requiresHumanApproval Boolean  @default(false)
+
+  @@index([workflowId])
+  @@index([webletId])
+}
+```
+
+---
+
 ## Files to Create
 
 ```
-app/(chat)/orchestrate/
-├── page.tsx                          ← Multi-agent chat page
-└── [sessionId]/page.tsx              ← Resume orchestration session
+app/flows/
+├── page.tsx                          ← My AI Workflows Dashboard (List/Grid)
+├── builder/[id]/page.tsx             ← Visual workflow builder studio
+└── run/[id]/page.tsx                 ← Multi-agent execution UI
 
-app/api/orchestrate/
-├── route.ts                          ← Start orchestration (POST)
+app/api/flows/
+├── route.ts                          ← GET/POST saved workflows
+├── [id]/route.ts                     ← GET/PATCH/DELETE a saved workflow
+├── orchestrate/route.ts              ← Start orchestration (POST)
 ├── approve/route.ts                  ← Human-in-the-loop approval (POST)
 └── cancel/route.ts                   ← Cancel running orchestration (POST)
 
@@ -77,20 +116,17 @@ lib/orchestrator/
 ├── simulator.ts                      ← Dry-run simulation before execution
 └── realtime.ts                       ← Ably pub/sub wrapper for progress events
 
-components/orchestrate/
-├── orchestrate-container.tsx         ← Full layout for multi-agent interface
-├── task-input.tsx                    ← Task description input + "Optimize & Execute" button
-├── agent-selector.tsx                ← Pick weblets for the team (search + select)
+components/flows/
+├── flows-dashboard.tsx               ← Grid of saved flows with Run/Edit/Delete
+├── flow-builder.tsx                  ← Visual step builder / agent selector
+├── execution-mode-toggle.tsx         ← Sequential / Concurrent / Hybrid switch
 ├── auto-suggest-panel.tsx            ← Shows AI-recommended team with reasoning
-├── role-assignment.tsx               ← Assign roles to selected weblets (dropdown per weblet)
-├── execution-mode-toggle.tsx         ← Sequential / Concurrent / Hybrid radio buttons
-├── hitl-settings.tsx                 ← Human-in-the-loop configuration
-├── agent-timeline.tsx                ← Visual timeline showing step-by-step execution
-├── agent-card.tsx                    ← Shows individual agent's status, output, tools used
-├── handoff-display.tsx               ← Shows data flowing between agents
-├── hitl-approval-dialog.tsx          ← Modal: Review output + Approve / Edit / Reject
-├── simulation-preview.tsx            ← Shows planned execution steps before running
-└── control-panel.tsx                 ← Execution mode, simulator toggle, HITL settings
+├── run/
+│   ├── orchestrate-container.tsx     ← Full layout for execution
+│   ├── agent-timeline.tsx            ← Visual timeline showing step-by-step execution
+│   ├── agent-card.tsx                ← Shows individual agent's status, output, tools used
+│   ├── hitl-approval-dialog.tsx      ← Modal: Review output + Approve / Edit / Reject
+│   └── handoff-display.tsx           ← Shows data flowing between agents
 ```
 
 ---

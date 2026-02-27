@@ -62,15 +62,19 @@ This tab handles the RAG (Retrieval Augmented Generation) pipeline:
 
 1. **File Upload Area** — A drag-and-drop zone that accepts PDF, DOCX, TXT, CSV, and MD files (max 20MB each)
 2. **Processing Pipeline** — When a file is uploaded:
-   - The file is stored in Vercel Blob (cloud storage)
-   - A KnowledgeFile record is created in the database
-   - Text is extracted from the file using the LlamaParse API (preventing Vercel serverless OOM crashes on large complex files)
-   - The extracted text is split into chunks of 500 tokens each, with 50-token overlap between chunks
-   - Each chunk is sent to OpenAI's text-embedding-3-small model to generate a 1536-dimension vector embedding
-   - Chunks and embeddings are stored in the KnowledgeChunk table using prisma-extension-pgvector
-   - The file card updates to show the chunk count
-3. **File List** — Shows all uploaded files with filename, file size, chunk count, and a delete button
-4. **Progress Indicator** — During processing, show: "Uploading... → Extracting text... → Chunking... → Generating embeddings... → Done (42 chunks created)"
+   - A KnowledgeFile record is created in the database.
+   - Text is extracted from the file: **LlamaParse API** is used for complex PDF/DOCX layouts, while MD/TXT/CSV are read directly.
+   - The extracted text is passed to a **Smart Markdown-Aware Chunker** (`chunk.ts`). Instead of blindly cutting every 2000 characters, it splits text hierarchically:
+     1. By Markdown Headers (`## Section`)
+     2. By Paragraphs
+     3. By Sentences
+   - Each chunk (max ~2000 chars) is sent to an **Embedding Provider** (`embed.ts` supports dual-mode):
+     - `Ollama` (FREE, Local) using `nomic-embed-text-v2-moe` (768 dimensions)
+     - `OpenAI` (Paid, Cloud) using `text-embedding-3-small` (1536 dimensions)
+   - Chunks and their generated vector embeddings are stored in the PostgreSQL (Neon) database in the `KnowledgeChunk` table.
+   - The file card updates to show the chunk count and status changes to "Ready".
+
+> **Implementation Note for Agents:** When inserting vectors into Neon `pgvector` via raw SQL, ensure the embedding array is formatted as a string `[0.1, 0.2, ...]::vector` to avoid parsing errors.
 
 > **Example:** Developer uploads "company-handbook.pdf" (2MB, 50 pages). The system extracts text, creates 120 chunks of ~500 tokens each, generates embeddings, and stores them. When a user later asks the weblet "What is the PTO policy?", the chat engine searches these embeddings to find the most relevant chunks and includes them in the AI's context.
 

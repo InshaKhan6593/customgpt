@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git mv segments/segment-10-payouts.md segments/segment-10-payouts.md.tmp)",
+      "Bash(git mv segments/segment-11-multi-agent.md segments/segment-10-multi-agent.md)",
+      "Bash(git mv segments/segment-12-composability-mcp.md segments/segment-11-composability-mcp.md)",
+      "Bash(git mv segments/segment-13-orchestration-workflows.md segments/segment-12-orchestration-workflows.md)",
+      "Bash(git mv segments/segment-15-observability-evals.md segments/segment-13-observability-evals.md)",
+      "Bash(git mv segments/segment-10-payouts.md.tmp segments/segment-15-payouts.md)",
+      "Bash(npx next build --no-lint)"
+    ]
+  }
+}

@@ -124,7 +124,7 @@ export function ActionsTab({ schemaString, onUpdate }: ActionsTabProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 min-w-0 w-full">
       <div className="mb-1">
         <h3 className="text-sm font-medium text-foreground">Custom Actions</h3>
         <p className="text-xs text-muted-foreground mt-1">
@@ -149,11 +149,12 @@ export function ActionsTab({ schemaString, onUpdate }: ActionsTabProps) {
       </div>
 
       {/* Monaco Editor */}
-      <div className="space-y-2">
+      <div className="space-y-2 min-w-0 w-full">
         <Label>OpenAPI Schema (JSON)</Label>
-        <div className="rounded-md border overflow-hidden">
+        <div className="rounded-md border overflow-hidden w-full min-w-0">
           <Editor
             height="300px"
+            width="100%"
             defaultLanguage="json"
             value={schemaString}
             onChange={handleEditorChange}
@@ -179,9 +180,16 @@ export function ActionsTab({ schemaString, onUpdate }: ActionsTabProps) {
       )}
 
       {isValid && (
-        <div className="flex items-center gap-2 rounded-md border border-green-500/50 bg-green-50 p-3">
-          <Check className="size-4 text-green-600 shrink-0" />
-          <p className="text-sm text-green-700">Valid OpenAPI schema</p>
+        <div className="flex items-center justify-between rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Check className="size-3.5 text-green-500 shrink-0" />
+            <p className="text-xs font-medium text-green-500">Valid OpenAPI schema</p>
+          </div>
+          {endpoints.length > 0 && (
+            <span className="text-xs text-green-500/70 tabular-nums">
+              {endpoints.length} endpoint{endpoints.length !== 1 ? "s" : ""} detected
+            </span>
+          )}
         </div>
       )}
 

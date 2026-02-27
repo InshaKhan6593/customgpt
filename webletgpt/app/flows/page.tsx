@@ -5,7 +5,8 @@ import { NavHeader } from "@/components/nav-header";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Play, Edit, Trash2, ArrowRight } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Plus, Play, Pencil, Trash2, Workflow, Layers } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -79,88 +80,103 @@ export default function FlowsPage() {
     <div className="flex flex-col min-h-svh bg-background">
       <NavHeader />
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8 space-y-8">
+
+        {/* Page header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">My AI Workflows</h1>
-            <p className="text-muted-foreground mt-1 text-sm md:text-base">
-              Automate multi-step processes by chaining AI agents together.
+            <h1 className="text-2xl font-semibold tracking-tight">My AI Workflows</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Chain AI agents together to automate multi-step tasks.
             </p>
           </div>
-          <Button onClick={createNewFlow}>
+          <Button variant="secondary" onClick={createNewFlow} size="sm">
             <Plus className="w-4 h-4 mr-2" />
-            Create New Flow
+            New Workflow
           </Button>
         </div>
 
+        {/* Loading */}
         {loading ? (
-          <div className="flex h-40 items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="flex h-48 items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent" />
           </div>
+
+        /* Empty state */
         ) : !flows || flows.length === 0 ? (
-          <div className="text-center py-20 bg-muted/30 rounded-lg border border-dashed">
-            <h3 className="text-lg font-medium mb-2">No workflows yet</h3>
-            <p className="text-muted-foreground mb-6">Create your first flow to automate complex tasks.</p>
-            <Button variant="outline" onClick={createNewFlow}>Create Flow</Button>
+          <div className="flex flex-col items-center justify-center py-24 rounded-lg border border-dashed text-center gap-4">
+            <div className="rounded-full bg-muted p-4">
+              <Workflow className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">No workflows yet</p>
+              <p className="text-sm text-muted-foreground">Create your first flow to automate complex tasks.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={createNewFlow}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Workflow
+            </Button>
           </div>
+
+        /* Flow cards */
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {(flows || []).map((flow: any) => (
-              <Card key={flow.id} className="flex flex-col group">
-                <CardHeader>
-                  <CardTitle className="text-lg flex justify-between">
-                    <span className="truncate">{flow.name}</span>
-                    <Badge variant="outline" className="ml-2 font-mono text-[10px] bg-secondary/30">
-                      {flow.mode}
+              <Card key={flow.id} className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle className="text-base font-semibold leading-snug line-clamp-1">
+                      {flow.name || "Untitled Flow"}
+                    </CardTitle>
+                    <Badge variant="secondary" className="shrink-0 text-[11px] capitalize">
+                      {flow.mode.charAt(0) + flow.mode.slice(1).toLowerCase()}
                     </Badge>
-                  </CardTitle>
-                  <CardDescription className="line-clamp-2 min-h-[40px]">
+                  </div>
+                  <CardDescription className="line-clamp-2 text-sm leading-relaxed">
                     {flow.description || "No description provided."}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="flex items-center flex-wrap gap-1 mt-2">
-                    {flow.steps.length > 0 ? (
-                      flow.steps.map((step: any, idx: number) => (
-                        <div key={idx} className="flex items-center text-xs text-muted-foreground">
-                          <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground/80">
-                            {step.webletId.substring(0, 8)}...
-                          </span>
-                          {idx < flow.steps.length - 1 && <ArrowRight className="w-3 h-3 mx-1 opacity-50" />}
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">No steps configured.</span>
-                    )}
+
+                <CardContent className="flex-1 pb-4">
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>
+                      {flow.steps.length === 0
+                        ? "No steps configured"
+                        : `${flow.steps.length} step${flow.steps.length !== 1 ? "s" : ""}`}
+                    </span>
                   </div>
                 </CardContent>
-                <CardFooter className="pt-4 border-t flex justify-between bg-muted/10 gap-2">
-                  <Button 
-                    variant="default" 
-                    size="sm" 
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-sm"
+
+                <Separator />
+
+                <CardFooter className="pt-3 pb-3 flex items-center justify-between gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
                     onClick={() => router.push(`/flows/run/${flow.id}`)}
                   >
                     <Play className="w-3.5 h-3.5 mr-2" />
                     Run
                   </Button>
-                  <div className="flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="px-3"
-                      onClick={() => router.push(`/flows/builder/${flow.id}`)}
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      className="px-3 text-destructive hover:bg-destructive/10"
-                      onClick={() => deleteFlow(flow.id)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => router.push(`/flows/builder/${flow.id}`)}
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => deleteFlow(flow.id)}
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
                 </CardFooter>
               </Card>
             ))}

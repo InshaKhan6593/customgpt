@@ -32,6 +32,7 @@ export async function GET() {
       },
       select: {
         createdAt: true,
+        webletId: true,
         weblet: { select: { category: true } }
       }
     });
@@ -83,7 +84,7 @@ export async function GET() {
       status: w.isPublic ? "Active" : "Draft",
       rating: "0.0",
       revenue: 0, // Mocked for table
-      chats: analytics.filter(a => a.weblet?.category === w.category).length // Approximation for now
+      chats: analytics.filter(a => a.webletId === w.id).length
     })).sort((a, b) => b.chats - a.chats).slice(0, 5);
 
     return NextResponse.json({

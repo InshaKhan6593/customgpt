@@ -202,15 +202,17 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] w-full overflow-hidden">
-      {/* Split screen container */}
-      <div className="flex flex-1 w-full max-w-full overflow-hidden">
+      {/* Split screen container — CSS Grid keeps both columns at a fixed 50%
+          regardless of content size. Flex would let Monaco's initial render
+          influence the sizing algorithm and push the right pane wider. */}
+      <div className="grid grid-cols-2 flex-1 w-full overflow-hidden">
         {/* Left Pane - Configuration */}
-        <div className="w-1/2 min-w-0 border-r overflow-y-auto p-4">
+        <div className="min-w-0 border-r overflow-y-auto overflow-x-hidden p-4">
           <BuilderTabs state={state} onUpdate={updateState} webletId={webletId} />
         </div>
 
         {/* Right Pane - Live Preview */}
-        <div className="w-1/2 min-w-0 overflow-y-auto">
+        <div className="min-w-0 overflow-y-auto overflow-x-hidden">
           <PreviewChat state={state} webletId={webletId} />
         </div>
       </div>

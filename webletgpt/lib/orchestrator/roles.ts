@@ -90,8 +90,8 @@ export function buildHandoffMessage(opts: {
 }): string {
   const parts: string[] = [];
 
-  if (opts.stepNumber === 1 || !opts.previousOutput) {
-    // First step — just the user's original request
+  if (!opts.previousOutput) {
+    // First step (or no previous output) — just the user's original request
     parts.push(opts.userMessage);
   } else {
     // Subsequent steps — structured handoff

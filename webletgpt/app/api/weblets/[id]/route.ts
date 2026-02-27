@@ -105,13 +105,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         orderBy: { versionNum: "desc" }
       });
 
+      // Parse openapiSchema string → object so Prisma stores a JSON object,
+      // not a JSON string. Storing a string causes double-encoding on retrieval.
+      let parsedSchema: object | null | undefined = undefined
+      if (openapiSchema !== undefined) {
+        if (openapiSchema === null || openapiSchema === "") {
+          parsedSchema = null
+        } else if (typeof openapiSchema === "string") {
+          try {
+            parsedSchema = JSON.parse(openapiSchema)
+          } catch {
+            parsedSchema = null
+          }
+        } else {
+          parsedSchema = openapiSchema // already an object
+        }
+      }
+
       if (activeVersion) {
         await prisma.webletVersion.update({
           where: { id: activeVersion.id },
           data: {
             prompt: instructions !== undefined ? instructions : activeVersion.prompt,
             model: model !== undefined ? model : activeVersion.model,
-            openapiSchema: openapiSchema !== undefined ? openapiSchema : activeVersion.openapiSchema,
+            ...(parsedSchema !== undefined && { openapiSchema: parsedSchema }),
           }
         });
       } else {
@@ -121,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             versionNum: 1,
             prompt: instructions || "You are a helpful assistant.",
             model: model || "anthropic/claude-3.5-sonnet",
-            openapiSchema: openapiSchema || null,
+            openapiSchema: parsedSchema ?? null,
             status: "ACTIVE"
           }
         });

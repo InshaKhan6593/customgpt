@@ -17,18 +17,22 @@ export const authConfig = {
         token.role = user.role
         if (user.name) token.name = user.name
       }
-      
+
       // Handle the session update when role or name is changed
       if (trigger === "update") {
         if (session?.role) token.role = session.role
         if (session?.name) token.name = session.name
       }
-      
+
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string
+        // token.id is set explicitly on sign-in. token.sub is the standard JWT
+        // subject claim that NextAuth always populates with the database user ID.
+        // Falling back to token.sub ensures sessions created before token.id was
+        // introduced still resolve to the correct user ID.
+        session.user.id = (token.id ?? token.sub) as string
         session.user.role = token.role as "USER" | "DEVELOPER" | "ADMIN"
         if (token.name) session.user.name = token.name as string
       }

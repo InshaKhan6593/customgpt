@@ -50,8 +50,8 @@ export default function DashboardOverviewPage() {
     );
   }
 
-  // Fallback if no weblets
-  if (!data || data.topWeblets?.length === 0) {
+  // Fallback if API error, no data, or no weblets
+  if (!data || data.error || !data.overview || data.topWeblets?.length === 0) {
     return (
       <div className="flex flex-col gap-8 max-w-5xl mx-auto items-center py-24 text-center">
         <div className="rounded-full bg-muted p-6">
@@ -64,7 +64,7 @@ export default function DashboardOverviewPage() {
           </p>
         </div>
         <Link href="/builder">
-          <Button size="lg" className="gap-2">
+          <Button variant="secondary" size="lg" className="gap-2">
             <Plus className="h-4 w-4" /> Create a Weblet
           </Button>
         </Link>
@@ -200,7 +200,7 @@ export default function DashboardOverviewPage() {
                        {w.category ? <Badge variant="secondary" className="font-normal">{w.category}</Badge> : "—"}
                      </td>
                      <td className="px-4 py-3">
-                        <Badge variant={w.status === "Active" ? "default" : "outline"} className="font-normal text-xs">{w.status}</Badge>
+                        <Badge variant={w.status === "Active" ? "secondary" : "outline"} className="font-normal text-xs">{w.status}</Badge>
                      </td>
                      <td className="px-4 py-3 text-right">
                        <span className="flex items-center justify-end gap-1">

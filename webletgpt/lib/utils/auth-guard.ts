@@ -19,7 +19,15 @@ export class AuthorizationError extends Error {
  * Throws an AuthorizationError if the user is unauthenticated or lacks the required role.
  */
 export async function requireRole(minimumRole: UserRole = "USER") {
-  const session = await auth()
+  let session: Awaited<ReturnType<typeof auth>>
+
+  try {
+    session = await auth()
+  } catch (err) {
+    // auth() can throw in edge cases (malformed cookie, missing AUTH_SECRET, JWT decode error)
+    console.error("[requireRole] auth() threw an unexpected error:", err)
+    throw new AuthorizationError("Authentication failed")
+  }
 
   if (!session?.user) {
     throw new AuthorizationError("Not authenticated")

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Bot, MoreVertical, Plus } from "lucide-react"
+import { useEffect, useState, useCallback } from "react"
+import { Bot, MoreVertical, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -37,50 +37,70 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 
-// Mock Data
-const MOCK_CREDITS = 500
-const MOCK_SUBSCRIPTIONS = [
-  {
-    id: "sub_1",
-    webletName: "Essay Editor",
-    price: 8.0,
-    status: "Active",
-    nextBillingDate: "Oct 14, 2024",
-  },
-  {
-    id: "sub_2",
-    webletName: "Code Reviewer",
-    price: 15.0,
-    status: "Past Due",
-    nextBillingDate: "Past Due",
-  },
-]
+interface UserPlan {
+  tier: string
+  creditsIncluded: number
+  creditsUsed: number
+  billingCycleEnd: string | null
+}
+
+interface Subscription {
+  id: string
+  stripeSubscriptionId: string | null
+  status: string
+  currentPeriodEnd: string | null
+}
 
 export default function BillingPage() {
-  const [subscriptions, setSubscriptions] = useState(MOCK_SUBSCRIPTIONS)
+  const [userPlan, setUserPlan] = useState<UserPlan | null>(null)
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [loading, setLoading] = useState(true)
   const [cancelSubId, setCancelSubId] = useState<string | null>(null)
-  
-  // Handlers
-  const handleCancelSub = () => {
-    if (cancelSubId) {
-      // Future: Call API to cancel Stripe Subscription
-      setSubscriptions((prev) =>
-        prev.map((sub) =>
-          sub.id === cancelSubId ? { ...sub, status: "Canceled", nextBillingDate: "Ends at term" } : sub
-        )
-      )
+  const [cancelling, setCancelling] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [planRes, subRes] = await Promise.all([
+        fetch("/api/billing/plans"),
+        fetch("/api/subscriptions"),
+      ])
+      const planData = await planRes.json()
+      const subData = await subRes.json()
+      setUserPlan(planData.userPlan ?? null)
+      setSubscriptions(subData.data ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const availableCredits = userPlan
+    ? Math.max(0, userPlan.creditsIncluded - userPlan.creditsUsed)
+    : 0
+
+  const handleCancelSub = async () => {
+    if (!cancelSubId) return
+    setCancelling(true)
+    try {
+      await fetch("/api/stripe/customer-portal", { method: "POST" })
+        .then((r) => r.json())
+        .then((d) => { if (d.url) window.location.href = d.url })
+    } finally {
+      setCancelling(false)
       setCancelSubId(null)
     }
+  }
+
+  const statusVariant = (status: string) => {
+    if (status === "ACTIVE") return "default"
+    if (status === "PAST_DUE" || status === "UNPAID") return "destructive"
+    return "secondary"
   }
 
   return (
@@ -92,21 +112,24 @@ export default function BillingPage() {
             Manage your platform credits and active weblet subscriptions.
           </p>
         </div>
-        <Button onClick={async () => {
-          try {
-            const res = await fetch("/api/stripe/customer-portal", { method: "POST" })
-            const data = await res.json()
-            if (data.url) window.location.href = data.url
-            else alert(data.error || "No active billing account found.")
-          } catch (e) {
-            alert("Something went wrong.")
-          }
-        }} variant="outline">
+        <Button
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/stripe/customer-portal", { method: "POST" })
+              const data = await res.json()
+              if (data.url) window.location.href = data.url
+              else alert(data.error || "No active billing account found.")
+            } catch {
+              alert("Something went wrong.")
+            }
+          }}
+          variant="outline"
+        >
           Manage Billing on Stripe
         </Button>
       </div>
 
-      {/* Top Card: Platform Credits */}
+      {/* Platform Credits */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="space-y-1">
@@ -115,52 +138,47 @@ export default function BillingPage() {
               Used for paying LLM execution costs on free or usage-based weblets.
             </CardDescription>
           </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Buy Credits
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Purchase Platform Credits</DialogTitle>
-                <DialogDescription>
-                  Select a credit package to add to your balance.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-4 py-4">
-                <Button variant="outline" className="h-24 flex flex-col gap-2">
-                  <span className="font-bold text-lg">500 Credits</span>
-                  <span className="text-muted-foreground">$5.00</span>
-                </Button>
-                <Button variant="outline" className="h-24 flex flex-col gap-2">
-                  <span className="font-bold text-lg">1,200 Credits</span>
-                  <span className="text-muted-foreground">$10.00</span>
-                </Button>
-              </div>
-              <DialogFooter>
-                <Button className="w-full">Proceed to Checkout</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold">{MOCK_CREDITS.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground mt-1">Available Credits</p>
+          {loading ? (
+            <Skeleton className="h-8 w-32" />
+          ) : (
+            <>
+              <div className="text-3xl font-bold">{availableCredits.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Available Credits
+                {userPlan && (
+                  <> &middot; Plan: <span className="font-medium">{userPlan.tier}</span></>
+                )}
+                {userPlan?.creditsIncluded && (
+                  <> &middot; {userPlan.creditsUsed.toLocaleString()} / {userPlan.creditsIncluded.toLocaleString()} used</>
+                )}
+              </p>
+            </>
+          )}
         </CardContent>
+        <CardFooter>
+          <Button variant="outline" size="sm" asChild>
+            <a href="/dashboard/billing">Upgrade Plan</a>
+          </Button>
+        </CardFooter>
       </Card>
 
-      {/* Subscriptions Section */}
+      {/* Weblet Subscriptions */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Active Subscriptions</h2>
-        
-        {subscriptions.length === 0 ? (
+
+        {loading ? (
+          <Skeleton className="h-48 rounded-xl" />
+        ) : subscriptions.length === 0 ? (
           <Card className="flex flex-col items-center justify-center py-12 text-center">
             <Bot className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
             <CardTitle className="mb-2">No Active Subscriptions</CardTitle>
             <CardDescription className="mb-6 max-w-sm">
-              You don't have any active Weblet subscriptions.
+              You don&apos;t have any active Weblet subscriptions.
             </CardDescription>
             <Button asChild>
               <a href="/marketplace">Explore the Marketplace</a>
@@ -171,10 +189,9 @@ export default function BillingPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Weblet Name</TableHead>
-                  <TableHead>Price</TableHead>
+                  <TableHead>Weblet</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Next Billing Date</TableHead>
+                  <TableHead>Renews</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -185,24 +202,17 @@ export default function BillingPage() {
                       <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
                         <Bot className="h-4 w-4 text-primary" />
                       </div>
-                      {sub.webletName}
+                      {"Weblet Subscription"}
                     </TableCell>
-                    <TableCell>${sub.price.toFixed(2)} / month</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
-                          sub.status === "Active"
-                            ? "default"
-                            : sub.status === "Past Due"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                      >
-                        {sub.status}
+                      <Badge variant={statusVariant(sub.status)}>
+                        {sub.status.replace("_", " ")}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {sub.nextBillingDate}
+                      {sub.currentPeriodEnd
+                        ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+                        : "—"}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -216,7 +226,7 @@ export default function BillingPage() {
                           <DropdownMenuItem
                             className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                             onClick={() => setCancelSubId(sub.id)}
-                            disabled={sub.status === "Canceled"}
+                            disabled={sub.status === "CANCELED"}
                           >
                             Cancel Subscription
                           </DropdownMenuItem>
@@ -231,13 +241,14 @@ export default function BillingPage() {
         )}
       </div>
 
-      {/* Cancel Confirmation Dialog */}
+      {/* Cancel Confirmation */}
       <AlertDialog open={!!cancelSubId} onOpenChange={(open) => !open && setCancelSubId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action will cancel your subscription. You will lose access to the premium features of this Weblet at the end of your current billing cycle.
+              This will open the Stripe billing portal where you can cancel your subscription.
+              You will keep access until the end of your current billing cycle.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -245,8 +256,9 @@ export default function BillingPage() {
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleCancelSub}
+              disabled={cancelling}
             >
-              Yes, Cancel
+              {cancelling ? "Redirecting…" : "Manage on Stripe"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

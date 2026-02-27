@@ -19,20 +19,23 @@ export function PremiumCodeBlock({ language = "code", code }: CodeBlockProps) {
   }
 
   return (
-    <div className="relative group my-4 max-w-full overflow-hidden">
+    // min-w-0: allow this block to shrink in flex/grid contexts (prevents it
+    // from dictating the width of its flex parent).
+    // overflow-hidden: clip anything that escapes the rounded border.
+    <div className="relative group my-4 min-w-0 w-full overflow-hidden">
       <div className="w-full bg-[#0d0d0d] border border-white/10 rounded-lg overflow-hidden">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-1.5 bg-[#2f2f2f] text-zinc-300">
           <span className="font-sans text-xs tracking-tight lowercase">
             {language}
           </span>
-          
-          <button 
+
+          <button
             onClick={handleCopy}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors text-xs ${
-              copied 
-                ? "text-green-400" 
+              copied
+                ? "text-green-400"
                 : "text-zinc-400 hover:text-zinc-100"
             }`}
             title="Copy code"
@@ -51,8 +54,12 @@ export function PremiumCodeBlock({ language = "code", code }: CodeBlockProps) {
           </button>
         </div>
 
-        {/* Code Body — plain overflow-x-auto, no ScrollArea */}
-        <div className="overflow-x-auto p-4 bg-[#0d0d0d]">
+        {/* Code Body
+            w-full gives this div a definite width (100% of the rounded card
+            above), which is what makes overflow-x-auto actually scroll rather
+            than expand. Without a definite width the div grows to fit the pre's
+            natural content width and no scrollbar ever appears. */}
+        <div className="overflow-x-auto w-full p-4 bg-[#0d0d0d]">
           <pre className="m-0 bg-transparent font-mono text-[13px] leading-relaxed text-zinc-100 whitespace-pre [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
             {code}
           </pre>

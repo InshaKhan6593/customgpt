@@ -1,5 +1,6 @@
 import Stripe from "stripe"
 import { prisma } from "@/lib/prisma"
+import { stripe } from "@/lib/stripe/client"
 import { SubStatus, TxType, TxStatus } from "@prisma/client"
 import { PLATFORM_FEE_RATE } from "@/lib/constants"
 
@@ -158,31 +159,92 @@ export async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const subscriptionId = invoiceData.subscription as string;
   if (!subscriptionId) return;
 
+  // Skip $0 invoices (free plan, trials, etc.)
+  if (invoice.amount_paid === 0) return;
+
   const amountPaid = invoice.amount_paid / 100;
+  const paymentId  = (invoiceData.payment_intent as string) || invoice.id;
   const lineItem: any = invoice.lines.data[0];
   const webletId = lineItem?.metadata?.webletId || lineItem?.price?.metadata?.webletId;
 
-  // Only handle renewals for weblet subscriptions (platform plans handled in checkout.completed)
-  if (!webletId) return;
+  // ── Weblet subscription renewal ──────────────────────────────────────────
+  if (webletId) {
+    const sub = await prisma.subscription.findUnique({
+      where: { stripeSubscriptionId: subscriptionId },
+    });
+    if (!sub) return;
 
-  const sub = await prisma.subscription.findUnique({
-    where: { stripeSubscriptionId: subscriptionId },
-  });
-  if (!sub) return;
+    await prisma.transaction.upsert({
+      where: { stripePaymentId: paymentId },
+      create: {
+        userId: sub.userId,
+        amount: amountPaid,
+        type: "SUBSCRIPTION_PAYMENT",
+        status: "COMPLETED",
+        stripePaymentId: paymentId,
+        metadata: { webletId, reason: "renewal" },
+      },
+      update: {},
+    });
+    return;
+  }
 
-  const paymentId = (invoiceData.payment_intent as string) || invoice.id;
+  // ── Platform plan invoice (new subscription, upgrade proration, renewal) ──
+  // The subscription metadata carries userId + tier + planType from when we
+  // created or last updated the subscription.
+  const stripeSub = await stripe.subscriptions.retrieve(subscriptionId);
+  const meta      = stripeSub.metadata as Record<string, string> | undefined;
+  const userId    = meta?.userId;
+  const tier      = meta?.tier;
+  const planType  = meta?.planType;
+
+  if (!userId || !tier || !planType) return;
+
   await prisma.transaction.upsert({
     where: { stripePaymentId: paymentId },
     create: {
-      userId: sub.userId,
+      userId,
       amount: amountPaid,
       type: "SUBSCRIPTION_PAYMENT",
       status: "COMPLETED",
       stripePaymentId: paymentId,
-      metadata: { webletId, reason: "renewal" },
+      metadata: { planType, tier, reason: invoice.billing_reason ?? "payment" },
     },
     update: {},
   });
+
+  // On renewal: reset creditsUsed so the user gets a fresh quota each cycle
+  if (invoice.billing_reason === "subscription_cycle") {
+    const creditsMap: Record<string, number> = {
+      STARTER: 200, PRO: 10_000, BUSINESS: 50_000,
+      FREE_USER: 100, PLUS: 1_000, POWER: -1,
+    };
+    const creditsIncluded = creditsMap[tier] ?? 1_000;
+
+    if (planType === "developer_plan") {
+      const now = new Date();
+      await prisma.developerPlan.updateMany({
+        where: { userId, stripeSubscriptionId: subscriptionId },
+        data: {
+          creditsUsed: 0,
+          creditsIncluded,
+          billingCycleStart: now,
+          billingCycleEnd: new Date(new Date().setMonth(now.getMonth() + 1)),
+        },
+      });
+    } else if (planType === "user_plan") {
+      const now = new Date();
+      await prisma.userPlan.updateMany({
+        where: { userId, stripeSubscriptionId: subscriptionId },
+        data: {
+          creditsUsed: 0,
+          creditsIncluded,
+          billingCycleStart: now,
+          billingCycleEnd: new Date(new Date().setMonth(now.getMonth() + 1)),
+        },
+      });
+    }
+  }
 }
 
 export async function handleSubscriptionUpdated(
@@ -201,14 +263,46 @@ export async function handleSubscriptionUpdated(
     ? new Date(subData.current_period_end * 1000)
     : null;
 
-  // Try to update weblet subscription first; if not found, ignore silently
+  // ── Weblet subscription ──────────────────────────────────────────────────
   try {
     await prisma.subscription.update({
       where: { stripeSubscriptionId: subscription.id },
       data: { status: mappedStatus, currentPeriodEnd },
     });
+    return; // handled — exit early
   } catch {
-    // subscription not found in DB — it's a platform plan, not a weblet sub
+    // Not a weblet sub — check if it's a platform plan below
+  }
+
+  // ── Platform plan (developer or user) ────────────────────────────────────
+  // When the checkout route swaps a price via subscriptions.update(), Stripe
+  // fires this event. The metadata on the subscription carries tier + planType
+  // so we can keep our DB in sync as a reliable backup to the immediate update.
+  const meta = subscription.metadata as Record<string, string> | undefined;
+  const tier     = meta?.tier;
+  const planType = meta?.planType;
+  const userId   = meta?.userId;
+
+  if (!userId || !tier || !planType) return;
+
+  const creditsMap: Record<string, number> = {
+    STARTER: 200, PRO: 10_000, BUSINESS: 50_000,
+    FREE_USER: 100, PLUS: 1_000, POWER: -1,
+  };
+  const creditsIncluded = creditsMap[tier] ?? 1_000;
+
+  if (planType === "developer_plan") {
+    await prisma.developerPlan.updateMany({
+      where: { userId, stripeSubscriptionId: subscription.id },
+      data: { tier: tier as any, creditsIncluded },
+    });
+  } else if (planType === "user_plan") {
+    const workflowRunsIncluded =
+      tier === "PLUS" ? 20 : tier === "POWER" ? 999_999 : 2;
+    await prisma.userPlan.updateMany({
+      where: { userId, stripeSubscriptionId: subscription.id },
+      data: { tier: tier as any, creditsIncluded, workflowRunsIncluded },
+    });
   }
 }
 

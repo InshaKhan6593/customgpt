@@ -17,16 +17,19 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
   const query = searchParams?.q || "";
   const category = searchParams?.category || "";
 
-  // Construct where clause based on search params
-  const where: any = {};
-  
+  // Only show publicly available weblets
+  const where: any = {
+    isActive: true,
+    isPublic: true,
+  };
+
   if (query) {
     where.OR = [
       { name: { contains: query, mode: "insensitive" } },
       { description: { contains: query, mode: "insensitive" } },
     ];
   }
-  
+
   if (category) {
     where.category = category;
   }
@@ -84,7 +87,7 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
                   {weblet.monthlyPrice ? `$${Number(weblet.monthlyPrice).toFixed(2)}/mo` : 'Free'}
                 </div>
                 <Link href={`/${weblet.slug || weblet.id}`}>
-                  <Button variant="default">View details</Button>
+                  <Button variant="secondary">View details</Button>
                 </Link>
               </CardFooter>
             </Card>

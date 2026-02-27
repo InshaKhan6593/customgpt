@@ -12,26 +12,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { differenceInDays } from "date-fns";
 import { CheckCircle2, XCircle, RefreshCw, Zap, TrendingUp } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface BillingData {
   userPlan: any | null;
   devPlan: any | null;
 }
 
-function BillingBanner({ onRefresh }: { onRefresh: () => void }) {
+function BillingBanner() {
   const params = useSearchParams();
-  if (params.get("success"))
-    return (
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-3 text-green-600 text-sm">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          Plan upgraded! If your plan hasn't updated yet, click refresh.
-        </div>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRefresh}>
-          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
-        </Button>
-      </div>
-    );
   if (params.get("cancelled"))
     return (
       <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-destructive text-sm">
@@ -46,7 +41,8 @@ export default function BillingPage() {
   const [data, setData] = useState<BillingData>({ userPlan: null, devPlan: null });
   const [userRecords, setUserRecords] = useState<any[]>([]);
   const [devRecords, setDevRecords] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,16 +58,32 @@ export default function BillingPage() {
       setDevRecords(usageData.devRecords ?? []);
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   }, []);
 
   useEffect(() => {
     load();
-    // If redirected back from Stripe with ?success=true, re-fetch after a short
-    // delay to give the webhook time to update the DB
-    const isSuccess = new URLSearchParams(window.location.search).get("success");
-    if (isSuccess) {
-      const t = setTimeout(() => load(), 2500);
+
+    const params = new URLSearchParams(window.location.search);
+    const isSuccess = params.get("success");
+    const sessionId = params.get("session_id");
+
+    if (isSuccess && sessionId) {
+      // Immediately confirm the plan from Stripe (reliable backup for slow/missing webhook)
+      fetch("/api/billing/confirm-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+        .then(() => load())
+        .catch(() => {
+          const t = setTimeout(() => load(), 3000);
+          return () => clearTimeout(t);
+        });
+    } else if (isSuccess) {
+      // No session_id — fall back to delayed re-fetch
+      const t = setTimeout(() => load(), 3000);
       return () => clearTimeout(t);
     }
   }, [load]);
@@ -96,7 +108,7 @@ export default function BillingPage() {
       </div>
 
       <Suspense fallback={null}>
-        <BillingBanner onRefresh={load} />
+        <BillingBanner />
       </Suspense>
 
       <Tabs defaultValue="overview">
@@ -109,7 +121,7 @@ export default function BillingPage() {
 
         {/* ── Overview ── */}
         <TabsContent value="overview" className="mt-6 space-y-6">
-          {loading ? (
+          {initialLoad ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Skeleton className="h-36 rounded-xl" />
               <Skeleton className="h-36 rounded-xl" />
@@ -123,7 +135,18 @@ export default function BillingPage() {
                     <CardTitle className="text-base">Your User Credits</CardTitle>
                     <CardDescription>Used when chatting with weblets</CardDescription>
                   </div>
-                  <Badge variant="outline">{userPlan?.tier ?? "FREE_USER"}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{userPlan?.tier ?? "FREE_USER"}</Badge>
+                    <button
+                      type="button"
+                      onClick={load}
+                      disabled={loading}
+                      className="rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                      aria-label="Refresh credits"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <CreditBar
@@ -157,6 +180,15 @@ export default function BillingPage() {
                         Auto-reload
                       </Badge>
                     )}
+                    <button
+                      type="button"
+                      onClick={load}
+                      disabled={loading}
+                      className="rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                      aria-label="Refresh credits"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                    </button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -186,7 +218,7 @@ export default function BillingPage() {
               Every message you sent across all weblets, with credits consumed.
             </p>
           </div>
-          {loading ? (
+          {initialLoad ? (
             <Skeleton className="h-48 rounded-xl" />
           ) : (
             <UsageTable records={userRecords} emptyText="No chats yet. Start chatting with a weblet to see usage here." />
@@ -201,7 +233,7 @@ export default function BillingPage() {
               Every request handled by weblets you built, with platform cost breakdown.
             </p>
           </div>
-          {loading ? (
+          {initialLoad ? (
             <Skeleton className="h-48 rounded-xl" />
           ) : devRecords.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -256,14 +288,14 @@ export default function BillingPage() {
             <p className="text-sm text-muted-foreground mb-4">
               Credits for chatting with weblets as a user.
             </p>
-            <PlanSelector type="user" currentTier={userPlan?.tier} />
+            <PlanSelector type="user" currentTier={userPlan?.tier} onSuccess={load} />
           </div>
           <div>
             <h2 className="font-semibold">Developer Plans</h2>
             <p className="text-sm text-muted-foreground mb-4">
               Credits for serving your weblets to users.
             </p>
-            <PlanSelector type="developer" currentTier={devPlan?.tier} />
+            <PlanSelector type="developer" currentTier={devPlan?.tier} onSuccess={load} />
           </div>
           
           {/* Developer Settings */}
@@ -297,15 +329,17 @@ export default function BillingPage() {
                   <div className="space-y-2">
                     <div className="font-medium text-sm">Reload Amount</div>
                     <div className="flex gap-4">
-                      <select 
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        defaultValue={devPlan.autoReloadAmount.toString()}
-                      >
-                        <option value="2000">Reload $10 (2,000 credits) at a time</option>
-                        <option value="5000">Reload $25 (5,000 credits) at a time</option>
-                        <option value="10000">Reload $50 (10,000 credits) at a time</option>
-                      </select>
-                      <Button>Save</Button>
+                      <Select defaultValue={devPlan.autoReloadAmount.toString()}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent side="bottom" avoidCollisions={true}>
+                          <SelectItem value="2000">Reload $10 (2,000 credits) at a time</SelectItem>
+                          <SelectItem value="5000">Reload $25 (5,000 credits) at a time</SelectItem>
+                          <SelectItem value="10000">Reload $50 (10,000 credits) at a time</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button variant="secondary">Save</Button>
                     </div>
                   </div>
                 </CardContent>

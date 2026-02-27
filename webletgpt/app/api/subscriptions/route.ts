@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
 
     const subscriptions = await prisma.subscription.findMany({
       where: { userId: user.id },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
     });
 
     return successResponse(subscriptions);

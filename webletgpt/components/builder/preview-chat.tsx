@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport, UIMessage } from "ai"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, RotateCcw, Bot, User, Loader2 } from "lucide-react"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
 import type { BuilderState } from "./builder-layout"
@@ -13,6 +12,11 @@ import type { BuilderState } from "./builder-layout"
 export function PreviewChat({ state, webletId }: { state: BuilderState, webletId: string }) {
   const isNew = webletId === "new"
   const [input, setInput] = useState("")
+
+  // Ref to the scrollable messages container — used for auto-scroll to bottom
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  // Sentinel element placed after the last message; we scroll it into view
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   const { messages, setMessages, sendMessage, status } = useChat({
     id: "preview-chat-session",
@@ -29,11 +33,19 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
     setMessages([])
   }, [webletId, setMessages])
 
+  // Auto-scroll to bottom whenever messages update (including during streaming).
+  // We use the scroll container's scrollTop directly rather than scrollIntoView
+  // so we have full control and avoid conflicts with the Radix ScrollArea viewport.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    // Instant scroll keeps up with rapid streaming updates without visual jitter
+    el.scrollTop = el.scrollHeight
+  }, [messages, status])
+
   const handleSend = () => {
     if (!input.trim() || isNew) return
-    sendMessage({
-      text: input,
-    })
+    sendMessage({ text: input })
     setInput("")
   }
 
@@ -42,7 +54,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
         <span className="text-sm font-medium text-muted-foreground">
           Live Preview Mode
         </span>
@@ -57,8 +69,12 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
         </Button>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
+      {/* Messages — plain div instead of Radix ScrollArea so we can hold a ref
+          and call scrollTop directly for reliable auto-scroll during streaming */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-4"
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 py-20 text-center">
             <Bot className="size-12 text-muted-foreground/50" />
@@ -98,7 +114,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                   </div>
                 )}
                 <div
-                  className={`min-w-0 max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                  className={`min-w-0 max-w-[80%] overflow-hidden rounded-lg px-3 py-2 text-sm ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground"
@@ -109,9 +125,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                       if (msg.role === "user") {
                         return <span key={i}>{part.text}</span>
                       }
-                      return (
-                        <ChatMarkdown key={i} content={part.text} />
-                      )
+                      return <ChatMarkdown key={i} content={part.text} />
                     }
                     if (part.type === "tool-invocation") {
                       return (
@@ -130,7 +144,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                 )}
               </div>
             ))}
-            
+
             {status === "submitted" && (
               <div className="flex gap-3">
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -145,12 +159,15 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                 </div>
               </div>
             )}
+
+            {/* Invisible sentinel — always sits below the last message */}
+            <div ref={bottomRef} />
           </div>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Input */}
-      <div className="border-t p-4">
+      <div className="border-t p-4 shrink-0">
         <form
           onSubmit={(e) => {
             e.preventDefault()

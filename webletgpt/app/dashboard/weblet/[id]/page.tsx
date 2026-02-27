@@ -59,7 +59,7 @@ export default function WebletAnalyticsPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] text-center gap-4">
         <h2 className="text-2xl font-bold">Weblet Not Found</h2>
         <p className="text-muted-foreground">This weblet may have been deleted or you don't have access.</p>
-        <Link href="/dashboard"><Button>Back to Dashboard</Button></Link>
+        <Link href="/dashboard"><Button variant="secondary">Back to Dashboard</Button></Link>
       </div>
     );
   }
@@ -79,7 +79,7 @@ export default function WebletAnalyticsPage() {
            <div>
              <div className="flex items-center gap-3">
                <h1 className="text-2xl font-bold tracking-tight">{weblet.name}</h1>
-               <Badge variant={weblet.isPublic ? "default" : "secondary"}>
+               <Badge variant="secondary">
                  {weblet.isPublic ? "Published" : "Draft"}
                </Badge>
              </div>
@@ -100,7 +100,7 @@ export default function WebletAnalyticsPage() {
              </Button>
            </Link>
            <Link href={`/builder?id=${weblet.id}`}>
-             <Button size="sm" className="gap-2">
+             <Button variant="secondary" size="sm" className="gap-2">
                <Edit className="h-4 w-4" /> Edit Weblet
              </Button>
            </Link>
@@ -177,7 +177,7 @@ export default function WebletAnalyticsPage() {
              <CardContent className="space-y-4 text-sm">
                <div className="flex justify-between items-center py-2 border-b">
                   <span className="text-muted-foreground">Current Model</span>
-                  <Badge variant={weblet.pricingModel === "FREE" ? "secondary" : "default"}>{weblet.pricingModel}</Badge>
+                  <Badge variant="secondary">{weblet.pricingModel}</Badge>
                </div>
                {weblet.pricingModel !== "FREE" && (
                  <div className="flex justify-between items-center py-2 border-b">
