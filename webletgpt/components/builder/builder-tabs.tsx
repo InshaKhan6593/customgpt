@@ -1,11 +1,13 @@
 "use client"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Settings, Zap, Database, Code } from "lucide-react"
+import { Settings, Zap, Database, Code, Plug, GitBranch } from "lucide-react"
 import { ConfigureTab } from "./configure-tab/configure-tab"
 import { CapabilitiesTab } from "./capabilities-tab/capability-toggles"
 import { KnowledgeTab } from "./knowledge-tab/knowledge-tab"
 import { ActionsTab } from "./actions-tab/action-schema-editor"
+import { MCPTab } from "./mcp-tab/mcp-tab"
+import { ComposeTab } from "./compose-tab/compose-tab"
 import type { BuilderState } from "./builder-layout"
 
 type BuilderTabsProps = {
@@ -17,7 +19,7 @@ type BuilderTabsProps = {
 export function BuilderTabs({ state, onUpdate, webletId }: BuilderTabsProps) {
   return (
     <Tabs defaultValue="configure" className="w-full">
-      <TabsList className="grid w-full grid-cols-4">
+      <TabsList className="grid w-full grid-cols-6">
         <TabsTrigger value="configure" className="flex items-center gap-1.5 text-xs">
           <Settings className="size-3.5" />
           Configure
@@ -33,6 +35,14 @@ export function BuilderTabs({ state, onUpdate, webletId }: BuilderTabsProps) {
         <TabsTrigger value="actions" className="flex items-center gap-1.5 text-xs">
           <Code className="size-3.5" />
           Actions
+        </TabsTrigger>
+        <TabsTrigger value="mcp" className="flex items-center gap-1.5 text-xs">
+          <Plug className="size-3.5" />
+          MCP
+        </TabsTrigger>
+        <TabsTrigger value="compose" className="flex items-center gap-1.5 text-xs">
+          <GitBranch className="size-3.5" />
+          Compose
         </TabsTrigger>
       </TabsList>
 
@@ -51,6 +61,15 @@ export function BuilderTabs({ state, onUpdate, webletId }: BuilderTabsProps) {
       <TabsContent value="actions" className="mt-4">
         <ActionsTab schemaString={state.openapiSchema} onUpdate={(schema) => onUpdate({ openapiSchema: schema })} />
       </TabsContent>
+
+      <TabsContent value="mcp" className="mt-4">
+        <MCPTab webletId={webletId} />
+      </TabsContent>
+
+      <TabsContent value="compose" className="mt-4">
+        <ComposeTab webletId={webletId} />
+      </TabsContent>
     </Tabs>
   )
 }
+

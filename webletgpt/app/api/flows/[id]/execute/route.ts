@@ -41,6 +41,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json();
     const { initialInput } = body;
 
+    // Use the flow's defaultPrompt as fallback when no initialInput is provided
+    const resolvedInput = (initialInput && initialInput.trim()) ? initialInput : ((flow as any).defaultPrompt || "");
+
+    if (!resolvedInput.trim()) {
+      return errorResponse("No prompt provided. Set a default prompt in the flow builder or provide an initialInput.", 400);
+    }
+
     const sessionId = randomUUID();
 
     // Trigger background execution (pass userId for credit enforcement)
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         flowId: id,
         sessionId,
         userId: user.id,
-        initialInput: initialInput || ""
+        initialInput: resolvedInput
       }
     });
 

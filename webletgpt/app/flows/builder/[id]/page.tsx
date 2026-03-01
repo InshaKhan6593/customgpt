@@ -6,6 +6,7 @@ import { NavHeader } from "@/components/nav-header";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,6 +25,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   const [weblets, setWeblets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [promptError, setPromptError] = useState(false);
 
   // Load flow and available weblets
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         body: JSON.stringify({
           name: flow.name,
           mode: flow.mode,
+          defaultPrompt: flow.defaultPrompt || null,
           steps: flow.steps,
         })
       });
@@ -93,6 +96,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
           inputMapping: prev.steps.length === 0 ? "original" : "previous",
           hitlGate: false,
           role: "",
+          stepPrompt: "",
         }
       ]
     }));
@@ -165,6 +169,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         inputMapping: idx === 0 ? "original" : "previous",
         hitlGate: false,
         role: member.role,
+        stepPrompt: "",
       }));
 
       setFlow((prev: any) => ({
@@ -220,7 +225,18 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
             <Save className="w-4 h-4 mr-2" />
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button variant="secondary" onClick={() => router.push(`/flows/run/${id}`)}>
+          <Button variant="secondary" onClick={() => {
+            if (!flow.defaultPrompt?.trim()) {
+              setPromptError(true);
+              return;
+            }
+            setPromptError(false);
+            if (flow.steps.length === 0) {
+              toast({ title: "No steps", description: "Add at least one agent step before running.", variant: "destructive" });
+              return;
+            }
+            router.push(`/flows/run/${id}`);
+          }}>
             <Play className="w-4 h-4 mr-2" />
             Run Flow
           </Button>
@@ -248,6 +264,31 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
             <p className="text-xs text-muted-foreground mt-2">
               Sequential runs each agent one after another. Hybrid relies on a Master Agent to delegate tasks dynamically.
             </p>
+          </div>
+
+          <div>
+            <Label className={cn("text-xs uppercase font-semibold tracking-wider", promptError ? "text-destructive" : "text-muted-foreground")}>
+              Default Prompt {promptError && "*"}
+            </Label>
+            <Textarea
+              value={flow.defaultPrompt || ""}
+              onChange={(e) => {
+                setFlow({ ...flow, defaultPrompt: e.target.value });
+                if (e.target.value.trim()) setPromptError(false);
+              }}
+              placeholder="e.g. Write a research report on AI trends in 2025..."
+              className={cn("mt-2 text-sm resize-none", promptError && "border-destructive ring-destructive/20 ring-2")}
+              rows={4}
+            />
+            {promptError ? (
+              <p className="text-xs text-destructive mt-2">
+                Default prompt is required to run this flow.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">
+                Pre-fills the prompt when running this flow. Users can still edit it before execution.
+              </p>
+            )}
           </div>
         </aside>
 
@@ -350,6 +391,22 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                         </Select>
                         {index === 0 && <p className="text-[9px] text-muted-foreground leading-tight">First step uses original prompt.</p>}
                       </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Instructions for this Agent</Label>
+                      <Textarea
+                        value={step.stepPrompt || ""}
+                        onChange={(e) => updateStep(index, "stepPrompt", e.target.value)}
+                        placeholder={index === 0
+                          ? "Tell this agent what to do with the input prompt..."
+                          : "Tell this agent exactly what to do with the previous output..."}
+                        className="text-sm resize-none min-h-[60px]"
+                        rows={2}
+                      />
+                      <p className="text-[9px] text-muted-foreground leading-tight">
+                        Custom instructions injected into this agent&apos;s system prompt at runtime.
+                      </p>
                     </div>
 
                     <div className="flex items-center justify-between pt-3 border-t">

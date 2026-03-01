@@ -91,6 +91,7 @@ model Weblet {
   developer          User                @relation("DeveloperWeblets", fields: [developerId], references: [id], onDelete: Cascade)
   childCompositions  WebletComposition[] @relation("ChildWeblet")
   parentCompositions WebletComposition[] @relation("ParentWeblet")
+  mcpServers         WebletMCPServer[]
   versions           WebletVersion[]
 
   @@index([developerId])
@@ -142,6 +143,7 @@ model UserFlow {
   description    String?
   mode           FlowMode @default(SEQUENTIAL)
   steps          Json
+  defaultPrompt  String?
   masterWebletId String?
   isPublic       Boolean  @default(false)
   createdAt      DateTime @default(now())
@@ -393,4 +395,47 @@ enum UsageSource {
   WORKFLOW          // Part of a user workflow pipeline
   ORCHESTRATION     // Part of multi-agent orchestration
   RSIL              // Automated optimization (platform cost)
+}
+
+// -- Weblet Composability --
+model WebletComposition {
+  id                String   @id @default(cuid())
+  parentWebletId    String
+  childWebletId     String
+  triggerCondition  String?  // Optional: when to invoke this child
+  passingContext    Json?    // Input/output mapping config
+  createdAt         DateTime @default(now())
+
+  parentWeblet      Weblet   @relation("ParentWeblet", fields: [parentWebletId], references: [id], onDelete: Cascade)
+  childWeblet       Weblet   @relation("ChildWeblet", fields: [childWebletId], references: [id], onDelete: Cascade)
+
+  @@unique([parentWebletId, childWebletId])
+}
+
+// ── MCP Server Integration ──
+model WebletMCPServer {
+  id          String      @id @default(cuid())
+  webletId    String
+  weblet      Weblet      @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  serverUrl   String
+  label       String
+  description String?
+  iconUrl     String?
+  authType    MCPAuthType @default(NONE)
+  authToken   String?     // Encrypted API key or OAuth token
+  tools       Json?       // Cached tool definitions from discovery
+  isActive    Boolean     @default(true)
+  catalogId   String?     // Null = custom server, non-null = from curated catalog
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([webletId, serverUrl])
+  @@index([webletId])
+}
+
+enum MCPAuthType {
+  NONE
+  API_KEY
+  BEARER_TOKEN
+  OAUTH
 }

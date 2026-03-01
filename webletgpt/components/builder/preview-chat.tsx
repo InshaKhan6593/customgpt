@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport, UIMessage } from "ai"
+import { DefaultChatTransport, UIMessage, isToolUIPart } from "ai"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Send, RotateCcw, Bot, User, Loader2 } from "lucide-react"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
+import { ToolInvocationToggle } from "@/components/chat/tool-invocation-toggle"
 import type { BuilderState } from "./builder-layout"
 
 export function PreviewChat({ state, webletId }: { state: BuilderState, webletId: string }) {
@@ -77,7 +79,14 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
       >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 py-20 text-center">
-            <Bot className="size-12 text-muted-foreground/50" />
+            {state.iconUrl ? (
+              <Avatar className="size-12">
+                <AvatarImage src={state.iconUrl} />
+                <AvatarFallback className="text-lg bg-muted font-semibold">{(state.name || "W").charAt(0).toUpperCase()}</AvatarFallback>
+              </Avatar>
+            ) : (
+              <Bot className="size-12 text-muted-foreground/50" />
+            )}
             <div>
               <p className="text-sm font-medium text-foreground">
                 {state.name || "Your Weblet"}
@@ -109,15 +118,20 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                 className={`flex w-full gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
               >
                 {msg.role !== "user" && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Bot className="size-4" />
-                  </div>
+                  <Avatar className="size-7 shrink-0">
+                    {state.iconUrl ? (
+                      <AvatarImage src={state.iconUrl} />
+                    ) : null}
+                    <AvatarFallback className="text-[10px] bg-primary text-primary-foreground font-semibold">
+                      {(state.name || "W").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
                 )}
                 <div
-                  className={`min-w-0 max-w-[80%] overflow-hidden rounded-lg px-3 py-2 text-sm ${
+                  className={`min-w-0 overflow-hidden text-sm ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
+                      ? "max-w-[80%] rounded-lg px-3 py-2 bg-primary text-primary-foreground"
+                      : "max-w-full text-foreground"
                   }`}
                 >
                   {msg.parts.map((part, i) => {
@@ -127,12 +141,8 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                       }
                       return <ChatMarkdown key={i} content={part.text} />
                     }
-                    if (part.type === "tool-invocation") {
-                      return (
-                        <div key={i} className="text-xs text-muted-foreground italic">
-                          🔧 Using {(part as any).toolInvocation?.toolName || "tool"}...
-                        </div>
-                      )
+                    if (isToolUIPart(part)) {
+                      return <ToolInvocationToggle key={i} part={part} />
                     }
                     return null
                   })}
@@ -146,17 +156,20 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
             ))}
 
             {status === "submitted" && (
-              <div className="flex gap-3">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Bot className="size-4" />
-                </div>
-                <div className="rounded-lg bg-muted px-4 py-3">
-                  <span className="flex gap-1">
-                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
-                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-.15s]" />
-                    <span className="size-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-.3s]" />
-                  </span>
-                </div>
+              <div className="flex gap-3 items-center">
+                <Avatar className="size-7 shrink-0">
+                  {state.iconUrl ? (
+                    <AvatarImage src={state.iconUrl} />
+                  ) : null}
+                  <AvatarFallback className="text-[10px] bg-primary text-primary-foreground font-semibold">
+                    {(state.name || "W").charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="flex gap-1.5 py-2">
+                  <span className="size-1.5 rounded-full bg-zinc-500 animate-bounce" />
+                  <span className="size-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:-.15s]" />
+                  <span className="size-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:-.3s]" />
+                </span>
               </div>
             )}
 

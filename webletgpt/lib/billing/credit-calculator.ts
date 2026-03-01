@@ -19,10 +19,16 @@ export function calculateCredits(toolCalls?: Record<string, number> | null): num
 
   let credits = 0;
   for (const [tool, count] of Object.entries(toolCalls)) {
-    // Attempt to match the tool name to our multipliers.
-    // If we have "fileSearch" or "webSearch", we'll match it.
-    const key = tool as keyof typeof CREDIT_MULTIPLIERS;
-    const multiplier = CREDIT_MULTIPLIERS[key] || CREDIT_MULTIPLIERS.base;
+    // Check for prefix-based tool names first (MCP tools, composition tools)
+    let multiplier: number;
+    if (tool.startsWith("mcp_")) {
+      multiplier = CREDIT_MULTIPLIERS.mcp;
+    } else if (tool.startsWith("weblet_")) {
+      multiplier = CREDIT_MULTIPLIERS.mcp; // Composition calls same cost as MCP
+    } else {
+      const key = tool as keyof typeof CREDIT_MULTIPLIERS;
+      multiplier = CREDIT_MULTIPLIERS[key] || CREDIT_MULTIPLIERS.base;
+    }
     credits += multiplier * count;
   }
   return Math.max(credits, 1); // Minimum 1 credit

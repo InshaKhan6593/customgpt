@@ -9,12 +9,14 @@ const updateFlowSchema = z.object({
   name: z.string().min(3).max(100).optional(),
   description: z.string().max(500).optional(),
   mode: z.nativeEnum(FlowMode).optional(),
+  defaultPrompt: z.string().max(2000).optional().nullable(),
   steps: z.array(z.object({
     webletId: z.string(),
     order: z.number().int().min(1),
     inputMapping: z.string(),
     hitlGate: z.boolean(),
     role: z.string().optional(),
+    stepPrompt: z.string().max(2000).optional(),
   })).optional(),
   masterWebletId: z.string().optional(),
   isPublic: z.boolean().optional()

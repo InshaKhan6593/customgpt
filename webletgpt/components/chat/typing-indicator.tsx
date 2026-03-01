@@ -13,10 +13,10 @@ export function TypingIndicator({ weblet }: TypingIndicatorProps) {
         <AvatarImage src={weblet.iconUrl || undefined} />
         <AvatarFallback>{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>
-      <div className="bg-muted text-foreground max-w-[85%] rounded-2xl px-5 py-3.5 flex items-center gap-1.5">
-        <div className="w-2 h-2 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: "0ms" }} />
-        <div className="w-2 h-2 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: "150ms" }} />
-        <div className="w-2 h-2 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: "300ms" }} />
+      <div className="flex items-center gap-1.5 py-2">
+        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "300ms" }} />
       </div>
     </div>
   )

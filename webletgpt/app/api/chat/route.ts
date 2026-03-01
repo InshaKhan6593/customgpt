@@ -12,6 +12,8 @@ import { getToolsFromCapabilities } from '@/lib/tools/registry'
 import { checkQuotas } from '@/lib/billing/quota-check'
 import { logUsage } from '@/lib/billing/usage-logger'
 import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
+import { getMCPTools, closeMCPClients } from '@/lib/mcp/client'
+import { createChildWebletTools } from '@/lib/composition/child-tool-factory'
 import { z } from 'zod'
 
 const chatSchema = z.object({
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
   try {
     const json = await req.json()
     const result = chatSchema.safeParse(json)
-    
+
     if (!result.success) {
       return NextResponse.json({ error: "Invalid request payload", details: result.error }, { status: 400 })
     }
@@ -41,14 +43,24 @@ export async function POST(req: NextRequest) {
 
     // 1. Verify Weblet Exists and Check Access (Payment Enforcement)
     const accessCheck = await checkAccess(webletId)
-    
+
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: accessCheck.reason }, { status: 402 }) // Payment Required
     }
 
     const weblet = await prisma.weblet.findUnique({
       where: { id: webletId },
-      select: { capabilities: true, category: true, developerId: true } // We fetch version separately via engine.ts
+      select: {
+        capabilities: true, category: true, developerId: true,
+        mcpServers: { where: { isActive: true } },
+        parentCompositions: {
+          include: {
+            childWeblet: {
+              select: { id: true, name: true, slug: true, description: true },
+            },
+          },
+        },
+      }
     })
 
     if (!weblet) {
@@ -76,28 +88,42 @@ print("hello")
 
     const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
-    // 3. Assemble Tools based on Weblet capabilities config and custom Actions
+    // 3. Assemble Tools based on Weblet capabilities config, custom Actions, and MCP servers
     let tools = getToolsFromCapabilities(weblet.capabilities, webletId)
-    
+
     if (activeVersion.openapiSchema) {
       const customTools = getToolsFromOpenAPI(
-        typeof activeVersion.openapiSchema === "string" 
-          ? activeVersion.openapiSchema 
+        typeof activeVersion.openapiSchema === "string"
+          ? activeVersion.openapiSchema
           : JSON.stringify(activeVersion.openapiSchema)
       )
       tools = { ...tools, ...customTools }
     }
 
+    // 3.1 MCP Server Tools — connect to external MCP servers and merge their tools
+    let mcpClients: Array<{ close: () => Promise<void> }> = []
+    if (weblet.mcpServers && weblet.mcpServers.length > 0) {
+      const mcpResult = await getMCPTools(weblet.mcpServers)
+      tools = { ...tools, ...mcpResult.tools }
+      mcpClients = mcpResult.clients
+    }
+
+    // 3.2 Composition Tools — expose child weblets as callable tools
+    if (weblet.parentCompositions && weblet.parentCompositions.length > 0) {
+      const childTools = createChildWebletTools(weblet.parentCompositions)
+      tools = { ...tools, ...childTools }
+    }
+
     // Ensure session exists
     let activeSessionId = sessionId
-    
+
     // Get real authenticated user
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     const userId = session.user.id
-    
+
     // 3.5 Check Quotas before executing LLM
     const quotaCheck = await checkQuotas(userId, webletId)
     if (!quotaCheck.allowed) {
@@ -140,16 +166,22 @@ print("hello")
           userId,
         },
       },
-      async onFinish({ text, toolCalls, toolResults, usage, finishReason }) {
+      async onFinish({ text, steps, usage, finishReason }) {
         // Save assistant response
         await saveMessage(activeSessionId as string, "assistant", text, usage?.totalTokens)
-        
-        // Count tool usages for logging
+
+        // Count tool usages across ALL steps (multi-step execution can have up to 5 steps)
         const toolCounts: Record<string, number> = {};
-        if (toolCalls) {
-          toolCalls.forEach(tc => {
-            toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1;
-          });
+        const allToolNames: string[] = [];
+        if (steps) {
+          for (const step of steps) {
+            if (step.toolCalls) {
+              for (const tc of step.toolCalls) {
+                toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1;
+                allToolNames.push(tc.toolName);
+              }
+            }
+          }
         }
 
         // Log usage in the background
@@ -162,7 +194,7 @@ print("hello")
             tokensIn: (usage as any)?.promptTokens || 0,
             tokensOut: (usage as any)?.completionTokens || 0,
             modelId,
-            toolCalls: toolCounts,
+            toolCalls: Object.keys(toolCounts).length > 0 ? toolCounts : null,
             source: "DIRECT_CHAT",
           }).catch(err => console.error("Failed to log usage:", err));
         }
@@ -172,12 +204,17 @@ print("hello")
           sessionId: activeSessionId,
           modelId,
           tokens: usage?.totalTokens,
-          toolsUsed: toolCalls?.map(t => t.toolName) || [],
+          toolsUsed: allToolNames,
           finishReason
         })
+
+        // Close MCP clients to free resources
+        if (mcpClients.length > 0) {
+          await closeMCPClients(mcpClients)
+        }
       },
     })
-    
+
     // Critical for serverless: flush traces before function terminates
     after(async () => await langfuseSpanProcessor.forceFlush());
 

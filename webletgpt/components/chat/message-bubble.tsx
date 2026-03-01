@@ -4,10 +4,11 @@ import { useState, useCallback } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Check, Copy, ThumbsDown, ThumbsUp } from "lucide-react"
-import { UIMessage } from "ai"
+import { UIMessage, isToolUIPart } from "ai"
 import { toast } from "sonner"
 import React from "react"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
+import { ToolInvocationToggle } from "./tool-invocation-toggle"
 
 // ── Main Component ──
 interface MessageBubbleProps {
@@ -28,7 +29,8 @@ export function MessageBubble({ message, weblet, onRateMessage }: MessageBubbleP
 
   const textContent = getMessageText(message.parts)
 
-  if (message.role === "assistant" && textContent.length === 0) {
+  const hasToolParts = message.parts.some(p => isToolUIPart(p))
+  if (message.role === "assistant" && textContent.length === 0 && !hasToolParts) {
     return null
   }
 
@@ -59,9 +61,15 @@ export function MessageBubble({ message, weblet, onRateMessage }: MessageBubbleP
       </Avatar>
 
       <div className="flex-1 min-w-0 space-y-2 max-w-[calc(100%-3rem)]">
-        {textContent.length > 0 && (
-          <ChatMarkdown content={textContent} />
-        )}
+        {message.parts.map((part, i) => {
+          if (part.type === "text" && part.text.trim()) {
+            return <ChatMarkdown key={i} content={part.text} />
+          }
+          if (isToolUIPart(part)) {
+            return <ToolInvocationToggle key={i} part={part} />
+          }
+          return null
+        })}
 
         {/* Message actions */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
