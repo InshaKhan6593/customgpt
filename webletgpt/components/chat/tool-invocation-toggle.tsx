@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils"
 import { isToolUIPart, getToolName } from "ai"
 import type { UIMessagePart } from "ai"
 
+/** Image tools render their result as a visual image, not as JSON output */
+const IMAGE_TOOL_NAMES = new Set(["imageGeneration"])
+
 interface ToolInvocationToggleProps {
   part: UIMessagePart<any, any>
 }
@@ -103,6 +106,79 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
   const actionDesc = getActionDescription(label, action)
   const hasDetails = (input && typeof input === "object" && Object.keys(input).length > 0) || output !== undefined
 
+  // ── Special: Image tool renders the image directly (like ChatGPT) ──
+  const isImageTool = IMAGE_TOOL_NAMES.has(toolName)
+  const imageUrl = isImageTool && output && typeof output === "object" && (output as any).url
+    ? (output as any).url
+    : null
+  const imageError = isImageTool && output && typeof output === "object" && (output as any).error
+    ? (output as any).error
+    : null
+
+  // ── Special: Image tool shows label + image below ──
+  if (isImageTool) {
+    return (
+      <div className="my-1.5">
+        {/* Tool call header — same as other tools */}
+        <div className="flex items-center gap-2 py-1">
+          <svg
+            className="size-3 text-zinc-500 shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="text-[13px] text-zinc-400">
+            {actionDesc}
+          </span>
+          {isLoading && (
+            <svg className="size-3 animate-spin text-zinc-500 shrink-0 ml-auto" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+              <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          )}
+        </div>
+
+        {/* Image content below the label */}
+        {isLoading && (
+          <div className="mt-2 rounded-xl overflow-hidden w-full max-w-[280px] aspect-square bg-zinc-800/60 border border-zinc-700/40 animate-pulse flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2 text-zinc-500">
+              <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" />
+                <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+              <span className="text-[12px]">Generating image...</span>
+            </div>
+          </div>
+        )}
+
+        {isDone && imageUrl && (
+          <div className="mt-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt={input?.prompt || "Generated image"}
+              loading="lazy"
+              className="rounded-xl shadow-lg max-w-full md:max-w-[280px] h-auto border border-border/30 transition-opacity duration-300"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement
+                target.style.display = "none"
+                target.parentElement!.innerHTML = `<div class="rounded-xl bg-zinc-800/60 border border-zinc-700/40 p-6 text-center text-zinc-500 text-sm max-w-[280px]">Image expired or unavailable</div>`
+              }}
+            />
+          </div>
+        )}
+
+        {isDone && imageError && (
+          <div className="mt-2 rounded-xl bg-red-950/30 border border-red-800/40 p-4 max-w-[280px]">
+            <p className="text-sm text-red-400">{imageError}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Default: collapsible toggle for all other tools ──
   return (
     <div className="my-1.5">
       {/* Header row — Vercel-style collapsible */}

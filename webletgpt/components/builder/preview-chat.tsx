@@ -115,7 +115,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
             {messages.map((msg: UIMessage) => (
               <div
                 key={msg.id}
-                className={`flex w-full gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
+                className={`flex w-full gap-3 ${msg.role === "user" ? "justify-end items-center" : "items-start"}`}
               >
                 {msg.role !== "user" && (
                   <Avatar className="size-7 shrink-0">
@@ -130,7 +130,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
                 <div
                   className={`min-w-0 overflow-hidden text-sm ${
                     msg.role === "user"
-                      ? "max-w-[80%] rounded-lg px-3 py-2 bg-primary text-primary-foreground"
+                      ? "max-w-[80%] text-foreground"
                       : "max-w-full text-foreground"
                   }`}
                 >

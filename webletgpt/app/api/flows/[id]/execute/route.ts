@@ -19,6 +19,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return errorResponse("Cannot execute a flow with no steps. Add steps in the builder first.", 400);
     }
 
+    // HYBRID mode requires a master agent
+    if (flow.mode === "HYBRID" && !flow.masterWebletId) {
+      return errorResponse("Hybrid flows require a master agent. Configure one in the builder.", 400);
+    }
+
     // Check workflow run quota
     const userPlan = await prisma.userPlan.findUnique({ where: { userId: user.id } });
     if (userPlan) {

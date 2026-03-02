@@ -4,7 +4,7 @@ import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { sanitizeSlug } from "@/lib/utils/slugify";
-import { WebletCategory, AccessType } from "@prisma/client";
+import { WebletCategory, AccessType, Prisma } from "@prisma/client";
 
 const updateSchema = z.object({
   name: z.string().min(3).max(50).optional(),
@@ -29,10 +29,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const user = await requireRole("DEVELOPER").catch(() => null);
-    
+
     const weblet = await prisma.weblet.findUnique({
       where: { id },
-      include: { versions: { orderBy: { versionNum: 'desc'} } }
+      include: { versions: { orderBy: { versionNum: 'desc' } } }
     });
 
     if (!weblet) return errorResponse("Weblet not found", 404);
@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const user = await requireRole("DEVELOPER");
-    
+
     // Auth Check
     const weblet = await prisma.weblet.findUnique({ where: { id } });
     if (!weblet) return errorResponse("Weblet not found", 404);
@@ -66,7 +66,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const data = result.data as any;
     const { instructions, model, openapiSchema, ...webletData } = data;
-    
+
     if (webletData.name && webletData.name !== weblet.name) {
       let slug = sanitizeSlug(webletData.name);
       const existing = await prisma.weblet.findUnique({ where: { slug } });
@@ -76,18 +76,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Set up Stripe Product and Price dynamically if a price is configured
     if (
-      webletData.monthlyPrice !== undefined && 
+      webletData.monthlyPrice !== undefined &&
       webletData.monthlyPrice > 0 &&
       webletData.monthlyPrice !== weblet.monthlyPrice
     ) {
       // Dynamic import to avoid Stripe SDK loading unless payment logic is hit
       const { createStripeProduct } = await import("@/lib/stripe/create-product");
       const stripeData = await createStripeProduct(
-        webletData.name || weblet.name, 
-        id, 
+        webletData.name || weblet.name,
+        id,
         webletData.monthlyPrice
       );
-      
+
       webletData.stripeProductId = stripeData.productId;
       webletData.stripePriceId = stripeData.priceId;
       webletData.accessType = "SUBSCRIBERS_ONLY";
@@ -128,7 +128,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           data: {
             prompt: instructions !== undefined ? instructions : activeVersion.prompt,
             model: model !== undefined ? model : activeVersion.model,
-            ...(parsedSchema !== undefined && { openapiSchema: parsedSchema }),
+            ...(parsedSchema !== undefined && { openapiSchema: parsedSchema === null ? Prisma.JsonNull : parsedSchema as Prisma.InputJsonValue }),
           }
         });
       } else {
@@ -138,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             versionNum: 1,
             prompt: instructions || "You are a helpful assistant.",
             model: model || "anthropic/claude-3.5-sonnet",
-            openapiSchema: parsedSchema ?? null,
+            openapiSchema: parsedSchema === null || parsedSchema === undefined ? Prisma.JsonNull : parsedSchema as Prisma.InputJsonValue,
             status: "ACTIVE"
           }
         });
@@ -156,7 +156,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const { id } = await params;
     const user = await requireRole("DEVELOPER");
-    
+
     // Auth Check
     const weblet = await prisma.weblet.findUnique({ where: { id } });
     if (!weblet) return errorResponse("Weblet not found", 404);

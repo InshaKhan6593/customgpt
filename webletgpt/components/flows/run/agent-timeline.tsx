@@ -63,6 +63,7 @@ interface StepGroup {
   completedAt?: Date;
   hitlPending?: boolean;
   hitlHistory: HitlRecord[];
+  isHybridAgent?: boolean;
 }
 
 export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimelineProps) {
@@ -147,6 +148,39 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
                 feedback: ev.data.feedback || undefined,
                 willRevise: ev.data.willRevise || false,
               });
+            }
+          }
+          break;
+        }
+        case "hybrid_team":
+          // Informational event — we don't create groups yet, agents appear when called
+          break;
+        case "agent_called": {
+          // HYBRID mode: master called a team member
+          const agentNum = groups.size + 1;
+          groups.set(agentNum, {
+            stepNumber: agentNum,
+            webletName: ev.data.agentName || "Agent",
+            webletId: ev.data.webletId,
+            iconUrl: ev.data.iconUrl || null,
+            role: ev.data.role,
+            status: "running",
+            revision: 0,
+            startedAt: ev.timestamp,
+            liveToolCalls: [],
+            hitlHistory: [],
+            isHybridAgent: true,
+          });
+          break;
+        }
+        case "agent_completed": {
+          // Find the matching running hybrid agent and mark it completed
+          for (const [, g] of groups) {
+            if (g.isHybridAgent && g.webletId === ev.data.webletId && g.status === "running") {
+              g.status = ev.data.error ? "failed" : "completed";
+              g.output = ev.data.output;
+              g.completedAt = ev.timestamp;
+              break;
             }
           }
           break;
@@ -283,9 +317,9 @@ function StepTimelineItem({
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Step {group.stepNumber}
+            {group.isHybridAgent ? "Called by coordinator" : `Step ${group.stepNumber}`}
             {timestamp && <> &middot; {new Date(timestamp).toLocaleTimeString()}</>}
-            {" "}&middot; {inputLabel}
+            {!group.isHybridAgent && <> &middot; {inputLabel}</>}
           </p>
         </div>
 

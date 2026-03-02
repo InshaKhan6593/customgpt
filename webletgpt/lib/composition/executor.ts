@@ -4,6 +4,7 @@ import { getActiveVersion } from "@/lib/chat/engine"
 import { getToolsFromCapabilities } from "@/lib/tools/registry"
 import { resolveCompositions } from "./resolver"
 import { createChildWebletTools } from "./child-tool-factory"
+import { langfuseSpanProcessor } from "@/instrumentation"
 
 /**
  * Execute a child weblet by running a single message through the chat engine.
@@ -48,14 +49,29 @@ export async function executeChildWeblet(
 
     const modelId = activeVersion.model || "anthropic/claude-3.5-sonnet"
 
+    // Build system prompt with composition context
+    const compositionPrompt = `${activeVersion.prompt}
+
+You are operating as a specialized sub-agent called by a parent agent. Focus on the specific task described in the message you receive. Return a clear, well-structured response that the parent agent can directly incorporate into its work. Use your available tools when they can improve your response quality. Be thorough but concise — no conversational filler.`
+
     // Execute using generateText (synchronous — parent is waiting)
     const result = await generateText({
         model: getLanguageModel(modelId),
-        system: activeVersion.prompt,
+        system: compositionPrompt,
         messages: [{ role: "user", content: message }],
         tools,
         stopWhen: stepCountIs(5), // Allow tool use within the child
+        experimental_telemetry: {
+            isEnabled: true,
+            metadata: {
+                webletId: childWebletId,
+                mode: "COMPOSITION",
+                depth: String(depth),
+            },
+        },
     })
+
+    await langfuseSpanProcessor.forceFlush()
 
     return result.text || "No response from child weblet"
 }

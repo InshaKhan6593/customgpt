@@ -33,6 +33,18 @@ export function ChatMarkdown({ content }: { content: string }) {
               <PremiumCodeBlock language={language} code={children} />
             )
           },
+          img(props) {
+            const { node, ...rest } = props
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                {...rest}
+                alt={rest.alt || "Generated image"}
+                loading="lazy"
+                className="rounded-xl shadow-md my-3 max-w-full md:max-w-[400px] h-auto border border-border/30"
+              />
+            )
+          },
           code(props) {
             const { node, children, className, ...rest } = props
             const isBlock = /language-(\w+)/.exec(className || "")

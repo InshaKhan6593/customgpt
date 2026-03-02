@@ -51,6 +51,7 @@ type Weblet = {
   name: string
   slug: string
   description: string | null
+  iconUrl: string | null
   category: string
   isActive: boolean
   isPublic: boolean
@@ -254,9 +255,13 @@ export default function MyWebletsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-start gap-3">
                   {/* Avatar */}
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
-                    {weblet.name.slice(0, 2).toUpperCase()}
-                  </div>
+                  {weblet.iconUrl ? (
+                    <img src={weblet.iconUrl} alt={weblet.name} width={40} height={40} loading="eager" className="size-10 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
+                      {weblet.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm truncate">{weblet.name}</span>

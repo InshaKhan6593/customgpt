@@ -19,7 +19,7 @@ export class AuthorizationError extends Error {
  * Throws an AuthorizationError if the user is unauthenticated or lacks the required role.
  */
 export async function requireRole(minimumRole: UserRole = "USER") {
-  let session: Awaited<ReturnType<typeof auth>>
+  let session: any
 
   try {
     session = await auth()
@@ -33,7 +33,7 @@ export async function requireRole(minimumRole: UserRole = "USER") {
     throw new AuthorizationError("Not authenticated")
   }
 
-  const userRoleLevel = roleHierarchy[session.user.role] || 0
+  const userRoleLevel = roleHierarchy[session.user.role as UserRole] || 0
   const requiredRoleLevel = roleHierarchy[minimumRole]
 
   if (userRoleLevel < requiredRoleLevel) {
@@ -44,3 +44,4 @@ export async function requireRole(minimumRole: UserRole = "USER") {
 }
 
 export const requireUser = () => requireRole("USER")
+

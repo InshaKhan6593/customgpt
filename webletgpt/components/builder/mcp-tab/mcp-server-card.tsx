@@ -116,6 +116,14 @@ export function MCPServerCard({ server, webletId, onUpdate }: MCPServerCardProps
                                 · {toolCount} tool{toolCount !== 1 ? "s" : ""}
                             </span>
                         )}
+                        {server.requiresUserAuth && (
+                            <>
+                                <span className="text-xs text-muted-foreground shrink-0">·</span>
+                                <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 px-1.5 rounded uppercase tracking-wider">
+                                    Requires User Auth
+                                </span>
+                            </>
+                        )}
                     </div>
                 </button>
 

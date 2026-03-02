@@ -8,6 +8,7 @@ import { getToolsFromCapabilities } from "@/lib/tools/registry";
 import { getToolsFromOpenAPI } from "@/lib/tools/openapi";
 import { getMCPTools, closeMCPClients } from "@/lib/mcp/client";
 import { createChildWebletTools } from "@/lib/composition/child-tool-factory";
+import { createTeamMemberTools } from "../orchestrator/team-tool-factory";
 import { generateText, stepCountIs } from "ai";
 import { langfuseSpanProcessor } from "@/instrumentation";
 import { checkQuotas } from "@/lib/billing/quota-check";
@@ -55,9 +56,274 @@ export const executeFlow = inngest.createFunction(
     await step.run("publish-start", async () => {
       await publishProgress(sessionId, "started", {
         message: `Starting flow "${flow.name}" with ${steps.length} step(s)`,
+        mode: flow.mode,
       });
     });
 
+    // ═══════════════════════════════════════════════════════════
+    // ── HYBRID MODE: Master agent coordinates team members ────
+    // ═══════════════════════════════════════════════════════════
+    if (flow.mode === "HYBRID") {
+      if (!flow.masterWebletId) {
+        await step.run("publish-no-master", async () => {
+          await publishProgress(sessionId, "failed", { message: "Hybrid flows require a master agent. Configure one in the builder." });
+        });
+        return { status: "failed", reason: "No master weblet configured" };
+      }
+
+      // Fetch master weblet info
+      const masterInfo = await step.run("fetch-master", async () => {
+        const w = await prisma.weblet.findUnique({
+          where: { id: flow.masterWebletId! },
+          select: {
+            id: true, name: true, capabilities: true, developerId: true,
+            mcpServers: { where: { isActive: true } },
+            parentCompositions: {
+              include: {
+                childWeblet: {
+                  select: { id: true, name: true, slug: true, description: true },
+                },
+              },
+            },
+          },
+        });
+        if (!w) throw new Error("Master weblet not found");
+        return w;
+      });
+
+      const masterVersion = await step.run("fetch-master-version", async () => {
+        const v = await getActiveVersion(flow.masterWebletId!);
+        if (!v) throw new Error("Master weblet has no active configuration");
+        return v;
+      });
+
+      // Quota check for master
+      const masterQuota = await step.run("check-master-quota", async () => {
+        const result = await checkQuotas(userId, flow.masterWebletId!);
+        return { allowed: result.allowed, reason: result.reason };
+      });
+
+      if (!masterQuota.allowed) {
+        await step.run("publish-master-quota-fail", async () => {
+          await publishProgress(sessionId, "failed", {
+            message: "Master agent quota exceeded. Upgrade your plan to continue.",
+            quotaExceeded: true,
+            reason: masterQuota.reason,
+          });
+        });
+        return { status: "failed", reason: masterQuota.reason };
+      }
+
+      // Batch-fetch team member info for tool descriptions
+      const teamInfoMap = await step.run("fetch-team-info", async () => {
+        const webletIds = [...new Set(steps.map((s: any) => s.webletId))];
+        const weblets = await prisma.weblet.findMany({
+          where: { id: { in: webletIds } },
+          select: { id: true, name: true, slug: true, description: true, iconUrl: true, developerId: true },
+        });
+        const map: Record<string, any> = {};
+        for (const w of weblets) {
+          map[w.id] = { name: w.name, slug: w.slug, description: w.description, iconUrl: w.iconUrl, developerId: w.developerId };
+        }
+        return map;
+      });
+
+      // Publish hybrid team info
+      await step.run("publish-hybrid-team", async () => {
+        const teamMembers = steps.map((s: any) => ({
+          webletId: s.webletId,
+          name: teamInfoMap[s.webletId]?.name || "Unknown",
+          role: s.role || null,
+          iconUrl: teamInfoMap[s.webletId]?.iconUrl || null,
+        }));
+        await publishProgress(sessionId, "hybrid_team", {
+          masterName: masterInfo.name,
+          masterWebletId: flow.masterWebletId,
+          teamMembers,
+        });
+      });
+
+      // Execute master agent with team members as tools
+      const hybridResult = await step.run("execute-master", async () => {
+        // Create team member tools
+        const teamTools = createTeamMemberTools(steps, teamInfoMap, {
+          userId,
+          sessionId,
+          flowId,
+        });
+
+        // Master's own tools
+        let masterTools = getToolsFromCapabilities(masterInfo.capabilities, masterInfo.id);
+        if (masterVersion.openapiSchema) {
+          const customTools = getToolsFromOpenAPI(
+            typeof masterVersion.openapiSchema === "string"
+              ? masterVersion.openapiSchema
+              : JSON.stringify(masterVersion.openapiSchema)
+          );
+          masterTools = { ...masterTools, ...customTools };
+        }
+
+        let mcpClients: Array<{ close: () => Promise<void> }> = [];
+        if (masterInfo.mcpServers && masterInfo.mcpServers.length > 0) {
+          try {
+            const mcpResult = await getMCPTools(masterInfo.mcpServers, userId);
+            masterTools = { ...masterTools, ...mcpResult.tools };
+            mcpClients = mcpResult.clients;
+          } catch (err) {
+            console.warn(`[Orchestrator] MCP tools failed for master ${masterInfo.name}:`, err);
+          }
+        }
+
+        if (masterInfo.parentCompositions && masterInfo.parentCompositions.length > 0) {
+          const childTools = createChildWebletTools(masterInfo.parentCompositions);
+          masterTools = { ...masterTools, ...childTools };
+        }
+
+        // Merge: team tools + master's own tools
+        const allTools = { ...teamTools, ...masterTools };
+
+        // Build coordinator system prompt
+        const teamDescription = steps.map((s: any, i: number) => {
+          const info = teamInfoMap[s.webletId];
+          const slug = info?.slug || info?.name?.toLowerCase().replace(/[^a-z0-9]+/g, "_") || `agent_${i}`;
+          return `- team_${slug}_${i}: "${info?.name || "Agent"}"${s.role ? ` (Role: ${s.role})` : ""} — ${info?.description || "A specialized AI assistant"}`;
+        }).join("\n");
+
+        const coordinatorPrompt = `${masterVersion.prompt}
+
+═══════════════════════════════════════════════════
+COORDINATOR ROLE — MULTI-AGENT ORCHESTRATION
+═══════════════════════════════════════════════════
+
+You are the lead coordinator of a multi-agent team. You receive the user's request, decompose it into clear sub-tasks, delegate each sub-task to the most appropriate team member, and synthesize all outputs into a single polished final response.
+
+AVAILABLE TEAM MEMBERS:
+${teamDescription}
+
+PLANNING PHASE — Before calling any team member:
+1. Analyze the user's request to identify distinct sub-tasks
+2. Determine which team member(s) are best suited for each sub-task
+3. Consider dependencies — some tasks may need to run before others
+
+DELEGATION RULES:
+- For each delegation, provide a clear objective, expected output format, and task boundaries
+- Do NOT give vague instructions like "help with this" — be specific about what you need
+- You may call multiple team members for different parts of the task
+- You may call the same team member more than once if the task requires it
+- Keep delegations focused — one clear sub-task per call
+
+EFFORT SCALING:
+- Simple questions → 1-2 team members, direct delegation
+- Multi-part tasks → assign each part to the most relevant specialist
+- Complex research/analysis → use multiple specialists, then synthesize
+
+ERROR HANDLING:
+- If a team member returns an error or quota limit, work with what you have from other members
+- If a critical team member fails, try rephrasing the task or using an alternative member
+- Never silently drop information — acknowledge gaps in your final response
+
+FINAL SYNTHESIS:
+- After receiving all outputs, combine them into a coherent, well-structured response
+- Resolve any contradictions between team member outputs
+- Format the final response with clear sections, headings, and structure
+- Credit specific insights to the relevant team member when appropriate
+- Deliver a complete, polished result — the user should not need to ask follow-up questions
+═══════════════════════════════════════════════════`;
+
+        const modelId = masterVersion.model || "meta-llama/llama-3.3-70b-instruct";
+        const model = getLanguageModel(modelId);
+
+        try {
+          const result = await generateText({
+            model,
+            system: coordinatorPrompt,
+            messages: [{ role: "user", content: initialInput }],
+            tools: allTools,
+            stopWhen: stepCountIs(10),
+            experimental_telemetry: {
+              isEnabled: true,
+              metadata: {
+                webletId: flow.masterWebletId!,
+                sessionId,
+                flowId,
+                mode: "HYBRID",
+                role: "coordinator",
+              },
+            },
+            onStepFinish({ toolCalls, toolResults }) {
+              if (toolCalls && toolCalls.length > 0) {
+                for (let t = 0; t < toolCalls.length; t++) {
+                  const tc = toolCalls[t] as any;
+                  // Only publish non-team tool calls (team tools publish their own events)
+                  if (!tc.toolName.startsWith("team_")) {
+                    publishProgress(sessionId, "tool_call", {
+                      stepNumber: 0,
+                      toolName: tc.toolName,
+                      args: tc.args || {},
+                      result: (toolResults as any)?.[t]?.result ?? null,
+                      state: "completed",
+                      isCoordinator: true,
+                    });
+                  }
+                }
+              }
+            },
+          });
+
+          await langfuseSpanProcessor.forceFlush();
+
+          const usage = result.usage as any;
+          return {
+            text: result.text || "[No output generated]",
+            tokensIn: usage?.promptTokens || 0,
+            tokensOut: usage?.completionTokens || 0,
+            modelId,
+            developerId: masterInfo.developerId,
+          };
+        } catch (llmError: any) {
+          console.error(`[Orchestrator] HYBRID master error:`, llmError?.message);
+          return {
+            text: `[Error from coordinator]: ${llmError?.message || "Unknown error"}`,
+            tokensIn: 0,
+            tokensOut: 0,
+            modelId,
+            developerId: masterInfo.developerId,
+          };
+        } finally {
+          if (mcpClients.length > 0) {
+            await closeMCPClients(mcpClients);
+          }
+        }
+      });
+
+      // Log master usage
+      if (hybridResult.tokensIn > 0 || hybridResult.tokensOut > 0) {
+        await step.run("log-master-usage", async () => {
+          await logUsage({
+            userId,
+            webletId: flow.masterWebletId!,
+            developerId: hybridResult.developerId,
+            sessionId,
+            workflowId: flowId,
+            tokensIn: hybridResult.tokensIn,
+            tokensOut: hybridResult.tokensOut,
+            modelId: hybridResult.modelId,
+            toolCalls: null,
+            source: "ORCHESTRATION",
+          });
+        });
+      }
+
+      await step.run("publish-hybrid-completed", async () => {
+        await publishProgress(sessionId, "completed", { finalOutput: hybridResult.text, mode: "HYBRID" });
+      });
+
+      return { status: "success", finalOutput: hybridResult.text };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ── SEQUENTIAL MODE: Steps execute one after another ──────
+    // ═══════════════════════════════════════════════════════════
     let currentOutput = "";
     let previousRole: string | null = null;
     let stepResults: any[] = [];
@@ -168,18 +434,15 @@ export const executeFlow = inngest.createFunction(
             systemPrompt = buildRolePrompt(
               activeVersion.prompt,
               currentStep.role,
-              `You are step ${i + 1} of ${steps.length} in this workflow.${
-                i === 0
-                  ? " You receive the user's original request directly."
-                  : ` You receive the output from the previous agent (${previousRole || "step " + i}).`
-              }${
-                i === steps.length - 1
-                  ? " You are the FINAL agent — deliver a polished, complete result."
-                  : " Your output will be passed to the next agent in the pipeline."
-              }${
-                revision > 0
-                  ? " A human reviewer has provided feedback on your previous output. Incorporate their feedback and produce an improved version."
-                  : ""
+              `You are step ${i + 1} of ${steps.length} in a sequential pipeline.
+${i === 0
+                ? "You receive the user's original request directly. Your output will be passed to the next agent."
+                : i === steps.length - 1
+                  ? `You receive the output from the previous agent (${previousRole || "step " + i}). You are the FINAL agent — deliver a polished, complete result ready for the end user.`
+                  : `You receive the output from the previous agent (${previousRole || "step " + i}). Your output will be passed to the next agent in the pipeline.`
+              }${revision > 0
+                ? "\n\nIMPORTANT: A human reviewer has provided feedback on your previous output. Carefully read the feedback, address every point raised, and produce a significantly improved version. Do not simply repeat your previous output."
+                : ""
               }`
             );
           }
@@ -204,7 +467,7 @@ export const executeFlow = inngest.createFunction(
           let mcpClients: Array<{ close: () => Promise<void> }> = [];
           if (weblet.mcpServers && weblet.mcpServers.length > 0) {
             try {
-              const mcpResult = await getMCPTools(weblet.mcpServers);
+              const mcpResult = await getMCPTools(weblet.mcpServers, userId);
               tools = { ...tools, ...mcpResult.tools };
               mcpClients = mcpResult.clients;
             } catch (err) {
@@ -247,6 +510,7 @@ export const executeFlow = inngest.createFunction(
                   webletId: currentStep.webletId,
                   sessionId,
                   flowId,
+                  mode: "SEQUENTIAL",
                   stepNumber: String(i + 1),
                   revision: String(revision),
                   role: currentStep.role || "none",
@@ -256,13 +520,13 @@ export const executeFlow = inngest.createFunction(
                 // Publish each tool call in real-time as the AI executes multi-step
                 if (toolCalls && toolCalls.length > 0) {
                   for (let t = 0; t < toolCalls.length; t++) {
-                    const tc = toolCalls[t];
+                    const tc = toolCalls[t] as any;
                     publishProgress(sessionId, "tool_call", {
                       stepNumber: i + 1,
                       revision,
                       toolName: tc.toolName,
                       args: tc.args || {},
-                      result: toolResults?.[t]?.result ?? null,
+                      result: (toolResults as any)?.[t]?.result ?? null,
                       state: "completed",
                     });
                   }
@@ -284,12 +548,12 @@ export const executeFlow = inngest.createFunction(
               for (const s of result.steps) {
                 if (s.toolCalls && s.toolCalls.length > 0) {
                   for (let t = 0; t < s.toolCalls.length; t++) {
-                    const tc = s.toolCalls[t];
+                    const tc = s.toolCalls[t] as any;
                     toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
                     toolCallDetails.push({
                       toolName: tc.toolName,
                       args: tc.args || {},
-                      result: s.toolResults?.[t]?.result ?? null,
+                      result: (s.toolResults as any)?.[t]?.result ?? null,
                     });
                   }
                 }
@@ -297,10 +561,11 @@ export const executeFlow = inngest.createFunction(
             } else if (result.toolCalls && result.toolCalls.length > 0) {
               // Fallback for single-step results
               for (const tc of result.toolCalls) {
-                toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
+                const tcAny = tc as any;
+                toolCallsMap[tcAny.toolName] = (toolCallsMap[tcAny.toolName] || 0) + 1;
                 toolCallDetails.push({
-                  toolName: tc.toolName,
-                  args: tc.args || {},
+                  toolName: tcAny.toolName,
+                  args: tcAny.args || {},
                   result: null,
                 });
               }

@@ -30,6 +30,7 @@ export type ConnectedMCPServer = {
     authType: MCPAuthType
     tools: MCPToolDef[] | null
     isActive: boolean
+    requiresUserAuth: boolean
     catalogId: string | null
     createdAt: string
 }

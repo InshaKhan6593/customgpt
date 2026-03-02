@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Search } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import type { MCPAuthType } from "@/lib/mcp/config"
 
@@ -20,6 +21,7 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
     const [description, setDescription] = useState("")
     const [authType, setAuthType] = useState<MCPAuthType>("NONE")
     const [authToken, setAuthToken] = useState("")
+    const [requiresUserAuth, setRequiresUserAuth] = useState(false)
     const [isAdding, setIsAdding] = useState(false)
 
     const handleDiscover = async () => {
@@ -43,6 +45,7 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                     description: description.trim() || null,
                     authType,
                     authToken: authToken.trim() || null,
+                    requiresUserAuth,
                 }),
             })
 
@@ -51,12 +54,30 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                 throw new Error(data.error || "Failed to add server")
             }
 
-            toast.success(`${label} added successfully`)
+            const { server } = await res.json()
+
+            // Try to discover tools in the background (non-blocking)
+            try {
+                const discoverRes = await fetch("/api/mcp/discover", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ serverId: server.id, webletId }),
+                })
+                if (discoverRes.ok) {
+                    toast.success(`${label} added — tools discovered`)
+                } else {
+                    toast.success(`${label} added (tool discovery failed — you can retry later)`)
+                }
+            } catch {
+                toast.success(`${label} added (tool discovery skipped)`)
+            }
+
             setServerUrl("")
             setLabel("")
             setDescription("")
             setAuthType("NONE")
             setAuthToken("")
+            setRequiresUserAuth(false)
             onServerAdded()
         } catch (err: any) {
             toast.error(err.message || "Failed to add MCP server")
@@ -136,6 +157,19 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                             />
                         </div>
                     )}
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="space-y-0.5">
+                        <Label className="text-xs font-medium">Require User Authentication</Label>
+                        <p className="text-[11px] text-muted-foreground">
+                            Users will be prompted to enter their own token in the chat.
+                        </p>
+                    </div>
+                    <Switch
+                        checked={requiresUserAuth}
+                        onCheckedChange={setRequiresUserAuth}
+                    />
                 </div>
 
                 <Button

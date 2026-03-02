@@ -70,6 +70,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
           name: flow.name,
           mode: flow.mode,
           defaultPrompt: flow.defaultPrompt || null,
+          masterWebletId: flow.masterWebletId || null,
           steps: flow.steps,
         })
       });
@@ -235,6 +236,10 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
               toast({ title: "No steps", description: "Add at least one agent step before running.", variant: "destructive" });
               return;
             }
+            if (flow.mode === "HYBRID" && !flow.masterWebletId) {
+              toast({ title: "No master agent", description: "Select a coordinator agent for hybrid mode.", variant: "destructive" });
+              return;
+            }
             router.push(`/flows/run/${id}`);
           }}>
             <Play className="w-4 h-4 mr-2" />
@@ -258,13 +263,39 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="SEQUENTIAL">Sequential</SelectItem>
-                <SelectItem value="HYBRID" disabled>Hybrid (Master Agent) - Coming Soon</SelectItem>
+                <SelectItem value="HYBRID">Hybrid (Master Agent)</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-2">
               Sequential runs each agent one after another. Hybrid relies on a Master Agent to delegate tasks dynamically.
             </p>
           </div>
+
+          {flow.mode === "HYBRID" && (
+            <div>
+              <Label className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">
+                Master Agent (Coordinator)
+              </Label>
+              <Select
+                value={flow.masterWebletId || ""}
+                onValueChange={(val) => setFlow({ ...flow, masterWebletId: val })}
+              >
+                <SelectTrigger className={cn("mt-2 w-full", !flow.masterWebletId && "border-dashed border-red-300")}>
+                  <SelectValue placeholder="Choose coordinator agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {weblets.map(w => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-2">
+                This agent orchestrates the team — it decides which agents to call and synthesizes their results.
+              </p>
+            </div>
+          )}
 
           <div>
             <Label className={cn("text-xs uppercase font-semibold tracking-wider", promptError ? "text-destructive" : "text-muted-foreground")}>
@@ -295,7 +326,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         {/* Main Canvas Area */}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold">Workflow Steps</h2>
+            <h2 className="text-xl font-bold">{flow.mode === "HYBRID" ? "Team Members" : "Workflow Steps"}</h2>
             <Button variant="secondary" size="sm" onClick={addStep}>
               <Plus className="w-4 h-4 mr-2" />
               Add Step
@@ -326,7 +357,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                       <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2">
                         {index + 1}
                       </span>
-                      Step {index + 1}
+                      {flow.mode === "HYBRID" ? `Team Member ${index + 1}` : `Step ${index + 1}`}
                     </CardTitle>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => removeStep(index)}>
                       <Trash2 className="w-3.5 h-3.5" />
@@ -336,7 +367,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                   <CardContent className="space-y-4 pb-4">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
 
-                      <div className="space-y-1.5 md:col-span-5">
+                      <div className={cn("space-y-1.5", flow.mode === "HYBRID" ? "md:col-span-6" : "md:col-span-5")}>
                         <Label className="text-xs">Select Agent (Weblet)</Label>
                         <Select
                           value={step.webletId}
@@ -355,7 +386,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                         </Select>
                       </div>
 
-                      <div className="space-y-1.5 md:col-span-4">
+                      <div className={cn("space-y-1.5", flow.mode === "HYBRID" ? "md:col-span-6" : "md:col-span-4")}>
                         <Label className="text-xs">Agent Role</Label>
                         <Select
                           value={step.role || ""}
@@ -374,23 +405,25 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                         </Select>
                       </div>
 
-                      <div className="space-y-1.5 md:col-span-3">
-                        <Label className="text-xs">Input Data Source</Label>
-                        <Select
-                          value={step.inputMapping}
-                          onValueChange={(val) => updateStep(index, "inputMapping", val)}
-                          disabled={index === 0}
-                        >
-                          <SelectTrigger className="h-9 w-full">
-                            <SelectValue placeholder="Where from?" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="original">Original Prompt</SelectItem>
-                            {index > 0 && <SelectItem value="previous">Previous Step Output</SelectItem>}
-                          </SelectContent>
-                        </Select>
-                        {index === 0 && <p className="text-[9px] text-muted-foreground leading-tight">First step uses original prompt.</p>}
-                      </div>
+                      {flow.mode !== "HYBRID" && (
+                        <div className="space-y-1.5 md:col-span-3">
+                          <Label className="text-xs">Input Data Source</Label>
+                          <Select
+                            value={step.inputMapping}
+                            onValueChange={(val) => updateStep(index, "inputMapping", val)}
+                            disabled={index === 0}
+                          >
+                            <SelectTrigger className="h-9 w-full">
+                              <SelectValue placeholder="Where from?" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="original">Original Prompt</SelectItem>
+                              {index > 0 && <SelectItem value="previous">Previous Step Output</SelectItem>}
+                            </SelectContent>
+                          </Select>
+                          {index === 0 && <p className="text-[9px] text-muted-foreground leading-tight">First step uses original prompt.</p>}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -409,17 +442,19 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between pt-3 border-t">
-                      <div className="space-y-0.5">
-                        <Label className="text-xs">Human in the Loop</Label>
-                        <p className="text-[10px] text-muted-foreground">Pause for manual approval before this step.</p>
+                    {flow.mode !== "HYBRID" && (
+                      <div className="flex items-center justify-between pt-3 border-t">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs">Human in the Loop</Label>
+                          <p className="text-[10px] text-muted-foreground">Pause for manual approval before this step.</p>
+                        </div>
+                        <Switch
+                          checked={step.hitlGate}
+                          onCheckedChange={(val) => updateStep(index, "hitlGate", val)}
+                          className="scale-90"
+                        />
                       </div>
-                      <Switch
-                        checked={step.hitlGate}
-                        onCheckedChange={(val) => updateStep(index, "hitlGate", val)}
-                        className="scale-90"
-                      />
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
               ))

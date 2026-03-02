@@ -23,7 +23,7 @@ export function getToolsFromCapabilities(capabilities: any, webletId?: string) {
   }
 
   if (capabilities.imageGen) {
-    tools.imageGeneration = imageGenerationTool(capabilities.imageGenModel || "dall-e-3")
+    tools.imageGeneration = imageGenerationTool(capabilities.imageGenModel || "google/gemini-3.1-flash-image-preview")
   }
 
   if (capabilities.fileSearch && webletId) {

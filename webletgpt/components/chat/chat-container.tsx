@@ -10,6 +10,7 @@ import { ChatHeader } from "./chat-header"
 import { MessageList } from "./message-list"
 import { InputBar } from "./input-bar"
 import { RatingDialog } from "./rating-dialog"
+import { MCPAuthGate, type RequiredMCPServer } from "./mcp-auth-gate"
 
 interface ChatContainerProps {
   weblet: {
@@ -40,6 +41,26 @@ export function ChatContainer({
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
   const [input, setInput] = useState("")
+
+  // MCP auth gate — check if user needs to provide tokens
+  const [mcpMissing, setMcpMissing] = useState<RequiredMCPServer[]>([])
+  const [mcpChecked, setMcpChecked] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/weblets/${weblet.id}/mcp/user-token`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) {
+          setMcpMissing(data.missing || [])
+          setMcpChecked(true)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMcpChecked(true) // Don't block chat on failure
+      })
+    return () => { cancelled = true }
+  }, [weblet.id])
 
   const { messages, sendMessage, status } =
     useChat({
@@ -126,11 +147,31 @@ export function ChatContainer({
     }
   }
 
+  // Show auth gate if user hasn't provided tokens for requiresUserAuth MCP servers
+  if (mcpChecked && mcpMissing.length > 0) {
+    return (
+      <div className="flex flex-col h-full relative overflow-hidden">
+        <ChatHeader weblet={weblet} />
+        <MCPAuthGate
+          webletId={weblet.id}
+          missingServers={mcpMissing}
+          onAuthenticated={() => {
+            // Re-check — there may be more servers that need auth
+            fetch(`/api/weblets/${weblet.id}/mcp/user-token`)
+              .then((res) => res.json())
+              .then((data) => setMcpMissing(data.missing || []))
+              .catch(() => setMcpMissing([]))
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full relative overflow-hidden">
       <ChatHeader weblet={weblet} />
 
-      <MessageList 
+      <MessageList
         messages={messages}
         weblet={weblet}
         conversationStarters={conversationStarters}

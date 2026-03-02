@@ -18,7 +18,7 @@ const updateFlowSchema = z.object({
     role: z.string().optional(),
     stepPrompt: z.string().max(2000).optional(),
   })).optional(),
-  masterWebletId: z.string().optional(),
+  masterWebletId: z.string().optional().nullable(),
   isPublic: z.boolean().optional()
 });
 
@@ -75,6 +75,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       if (existingWeblets !== webletIds.length) {
         return errorResponse("One or more weblets in the flow do not exist.", 400);
+      }
+    }
+
+    // Validate master weblet exists for HYBRID mode
+    if (data.masterWebletId) {
+      const masterExists = await prisma.weblet.findUnique({
+        where: { id: data.masterWebletId },
+        select: { id: true },
+      });
+      if (!masterExists) {
+        return errorResponse("Master weblet not found.", 400);
       }
     }
 

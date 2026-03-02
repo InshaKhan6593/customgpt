@@ -38,7 +38,19 @@ const CAPABILITIES = [
   },
 ]
 
+const VALID_IMAGE_MODELS = [
+  "google/gemini-3.1-flash-image-preview",
+  "google/gemini-3-pro-image-preview",
+  "openai/gpt-5-image-mini",
+  "openai/gpt-5-image",
+]
+const DEFAULT_IMAGE_MODEL = VALID_IMAGE_MODELS[0]
+
 export function CapabilitiesTab({ state, onUpdate }: CapabilitiesTabProps) {
+  const imageModel = VALID_IMAGE_MODELS.includes(state.capabilities.imageGenModel as string)
+    ? (state.capabilities.imageGenModel as string)
+    : DEFAULT_IMAGE_MODEL
+
   const toggleCapability = (key: keyof WebletCapabilities) => {
     onUpdate({
       capabilities: {
@@ -88,17 +100,18 @@ export function CapabilitiesTab({ state, onUpdate }: CapabilitiesTabProps) {
           {cap.key === "imageGen" && state.capabilities.imageGen && (
             <div className="ml-10 px-4 py-2 border-l-2 border-primary/20 bg-muted/30 rounded-r-md">
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Model</label>
-              <Select 
-                value={state.capabilities.imageGenModel || "dall-e-3"} 
+              <Select
+                value={imageModel}
                 onValueChange={handleImageModelChange}
               >
                 <SelectTrigger className="w-full text-xs h-8">
                   <SelectValue placeholder="Select image model" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="dall-e-3">DALL-E 3 (High Quality, Default)</SelectItem>
-                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast, Cheap)</SelectItem>
-                  <SelectItem value="black-forest-labs/flux-schnell">Flux Schnell (Fast, Cheap)</SelectItem>
+                  <SelectItem value="google/gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image — Fast & cheap (Default)</SelectItem>
+                  <SelectItem value="google/gemini-3-pro-image-preview">Gemini 3 Pro Image — Higher quality</SelectItem>
+                  <SelectItem value="openai/gpt-5-image-mini">GPT-5 Image Mini — Great quality, affordable</SelectItem>
+                  <SelectItem value="openai/gpt-5-image">GPT-5 Image — Best quality, premium</SelectItem>
                 </SelectContent>
               </Select>
             </div>

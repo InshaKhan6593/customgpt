@@ -26,6 +26,7 @@ model User {
   transactions  Transaction[]
   flows         UserFlow[]
   weblets       Weblet[]       @relation("DeveloperWeblets")
+  mcpTokens     UserMCPToken[]
   developerPlan DeveloperPlan?
   userPlan      UserPlan?
 }
@@ -397,20 +398,6 @@ enum UsageSource {
   RSIL              // Automated optimization (platform cost)
 }
 
-// -- Weblet Composability --
-model WebletComposition {
-  id                String   @id @default(cuid())
-  parentWebletId    String
-  childWebletId     String
-  triggerCondition  String?  // Optional: when to invoke this child
-  passingContext    Json?    // Input/output mapping config
-  createdAt         DateTime @default(now())
-
-  parentWeblet      Weblet   @relation("ParentWeblet", fields: [parentWebletId], references: [id], onDelete: Cascade)
-  childWeblet       Weblet   @relation("ChildWeblet", fields: [childWebletId], references: [id], onDelete: Cascade)
-
-  @@unique([parentWebletId, childWebletId])
-}
 
 // ── MCP Server Integration ──
 model WebletMCPServer {
@@ -421,16 +408,35 @@ model WebletMCPServer {
   label       String
   description String?
   iconUrl     String?
-  authType    MCPAuthType @default(NONE)
-  authToken   String?     // Encrypted API key or OAuth token
-  tools       Json?       // Cached tool definitions from discovery
-  isActive    Boolean     @default(true)
-  catalogId   String?     // Null = custom server, non-null = from curated catalog
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  authType         MCPAuthType @default(NONE)
+  authToken        String?     // Developer's API key or OAuth token
+  tools            Json?       // Cached tool definitions from discovery
+  isActive         Boolean     @default(true)
+  requiresUserAuth Boolean     @default(false) // If true, end users must provide their own token
+  catalogId        String?     // Null = custom server, non-null = from curated catalog
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  userTokens       UserMCPToken[]
 
   @@unique([webletId, serverUrl])
   @@index([webletId])
+}
+
+// ── Per-User MCP Authentication Tokens ──
+model UserMCPToken {
+  id        String          @id @default(cuid())
+  userId    String
+  serverId  String
+  tokenEnc  String          // AES-256-GCM encrypted token
+  tokenIv   String          // Initialization vector for decryption
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server    WebletMCPServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverId])
+  @@index([userId])
 }
 
 enum MCPAuthType {

@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, stepCountIs } from 'ai'
+import { streamText, convertToModelMessages, stepCountIs, generateId } from 'ai'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { langfuseSpanProcessor } from '@/instrumentation'
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const { messages: rawMessages, webletId, sessionId } = result.data
 
     // Use official Vercel utility for performant, native message conversion
-    const messages = await convertToModelMessages(rawMessages as any)
+    const messages = deduplicateToolUseIds(await convertToModelMessages(rawMessages as any))
 
     // 1. Verify Weblet Exists and Check Access (Payment Enforcement)
     const accessCheck = await checkAccess(webletId)
@@ -77,16 +77,26 @@ export async function POST(req: NextRequest) {
     // so the LLM always uses proper markdown (code fences, headings, etc.)
     const FORMATTING_INSTRUCTIONS = `
 
-## Response Formatting Rules
-- Always format your responses using Markdown.
-- When including code, ALWAYS wrap it in fenced code blocks with the language specified, like:
+## Response Guidelines
+- Format all responses using Markdown for readability.
+- When including code, ALWAYS use fenced code blocks with the language specified:
 \`\`\`python
 print("hello")
 \`\`\`
-- Use headings (##, ###), bold (**text**), bullet lists, and numbered lists when appropriate.
-- Never output raw code without fenced code blocks.`
+- Use headings (##, ###), **bold**, bullet lists, and numbered lists to structure longer responses.
+- Never output raw code without fenced code blocks.
+- Be direct and helpful — answer the user's question first, then provide additional context if needed.
+- If you use any tools to look up information, present the findings naturally without exposing raw tool output.
+- When you are uncertain about something, say so clearly rather than guessing.`
 
     const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
+
+    // Get real authenticated user (needed for MCP user tokens + quotas)
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    const userId = session.user.id
 
     // 3. Assemble Tools based on Weblet capabilities config, custom Actions, and MCP servers
     let tools = getToolsFromCapabilities(weblet.capabilities, webletId)
@@ -100,10 +110,10 @@ print("hello")
       tools = { ...tools, ...customTools }
     }
 
-    // 3.1 MCP Server Tools — connect to external MCP servers and merge their tools
+    // 3.1 MCP Server Tools — pass userId so requiresUserAuth servers use the user's token
     let mcpClients: Array<{ close: () => Promise<void> }> = []
     if (weblet.mcpServers && weblet.mcpServers.length > 0) {
-      const mcpResult = await getMCPTools(weblet.mcpServers)
+      const mcpResult = await getMCPTools(weblet.mcpServers, userId)
       tools = { ...tools, ...mcpResult.tools }
       mcpClients = mcpResult.clients
     }
@@ -116,13 +126,6 @@ print("hello")
 
     // Ensure session exists
     let activeSessionId = sessionId
-
-    // Get real authenticated user
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-    const userId = session.user.id
 
     // 3.5 Check Quotas before executing LLM
     const quotaCheck = await checkQuotas(userId, webletId)
@@ -141,8 +144,8 @@ print("hello")
         contentString = latestUserMessage.content
       } else if (Array.isArray(latestUserMessage.content)) {
         contentString = latestUserMessage.content
-          .filter(p => p.type === 'text')
-          .map(p => (p as any).text)
+          .filter((p: any) => p.type === 'text')
+          .map((p: any) => (p as any).text)
           .join('\n')
       }
       await saveMessage(activeSessionId, "user", contentString)
@@ -152,10 +155,14 @@ print("hello")
     const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct";
     const model = getLanguageModel(modelId);
 
+    // Truncate conversation to fit within model context window (~120K tokens budget).
+    // Rough estimate: 1 token ≈ 4 chars. Keep most recent messages that fit.
+    const truncatedMessages = truncateMessages(messages, 120_000)
+
     const response = streamText({
       model,
       system: systemPrompt,
-      messages: messages as any[],
+      messages: truncatedMessages as any[],
       tools,
       stopWhen: stepCountIs(5),
       experimental_telemetry: {
@@ -164,6 +171,7 @@ print("hello")
           webletId,
           sessionId: activeSessionId,
           userId,
+          mode: "DIRECT_CHAT",
         },
       },
       async onFinish({ text, steps, usage, finishReason }) {
@@ -224,4 +232,72 @@ print("hello")
     console.error("Chat API error:", error)
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
   }
+}
+
+/**
+ * Truncate conversation history to fit within a token budget.
+ * Keeps the most recent messages. Uses a rough estimate of 1 token ≈ 4 chars.
+ * Always preserves at least the last message (the user's current query).
+ */
+function truncateMessages(messages: any[], maxTokens: number): any[] {
+  const estimateTokens = (msg: any): number => {
+    const content = msg.content
+    if (typeof content === "string") return Math.ceil(content.length / 4)
+    if (Array.isArray(content)) {
+      return content.reduce((sum: number, part: any) => {
+        if (part.type === "text") return sum + Math.ceil((part.text?.length || 0) / 4)
+        if (part.type === "tool-call") return sum + Math.ceil(JSON.stringify(part.args || {}).length / 4) + 20
+        if (part.type === "tool-result") return sum + Math.ceil(JSON.stringify(part.result || "").length / 4) + 20
+        return sum + 50
+      }, 0)
+    }
+    return 50
+  }
+
+  // Walk backwards from most recent, accumulate until budget is exceeded
+  let totalTokens = 0
+  let startIndex = messages.length
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const tokens = estimateTokens(messages[i])
+    if (totalTokens + tokens > maxTokens && i < messages.length - 1) break
+    totalTokens += tokens
+    startIndex = i
+  }
+
+  return messages.slice(startIndex)
+}
+
+/**
+ * Normalize tool IDs so every tool-call / tool-result pair has a unique ID.
+ *
+ * Providers like Anthropic (Bedrock) reject requests when two tool_use blocks
+ * share the same ID — which happens when multi-step conversations are replayed.
+ *
+ * Strategy: give every tool-call a fresh ID, then patch each tool-result to
+ * reference the new ID of its matching tool-call. Single pass, O(n).
+ */
+function deduplicateToolUseIds(messages: any[]): any[] {
+  const idMap = new Map<string, string>() // oldId → newId
+
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content)) return msg
+
+    const newContent = msg.content.map((part: any) => {
+      if (part.type === "tool-call" && part.toolCallId) {
+        const newId = generateId()
+        idMap.set(part.toolCallId, newId)
+        return { ...part, toolCallId: newId }
+      }
+
+      if (part.type === "tool-result" && part.toolCallId) {
+        const newId = idMap.get(part.toolCallId)
+        if (newId) return { ...part, toolCallId: newId }
+      }
+
+      return part
+    })
+
+    return { ...msg, content: newContent }
+  })
 }

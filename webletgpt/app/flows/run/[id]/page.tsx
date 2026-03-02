@@ -100,8 +100,8 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
       setIsFinished(true);
     }
 
-    // Auto-scroll on new steps, tool calls, or flow completion
-    const stepCount = events.filter(e => e.type === "step_started").length;
+    // Auto-scroll on new steps, tool calls, agent calls, or flow completion
+    const stepCount = events.filter(e => e.type === "step_started" || e.type === "agent_called").length;
     const toolCallCount = events.filter(e => e.type === "tool_call").length;
     const hasFinished = events.some(e => e.type === "completed" || e.type === "failed");
     const scrollTrigger = stepCount + toolCallCount;
@@ -172,9 +172,11 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  // Calculate progress %
+  // Calculate progress
+  const isHybrid = flow.mode === "HYBRID";
   const completedSteps = new Set(events.filter(e => e.type === "step_completed").map(e => e.data.stepNumber)).size;
-  const progressPct = flow.steps.length > 0 ? Math.min(100, (completedSteps / flow.steps.length) * 100) : 0;
+  const agentCallCount = events.filter(e => e.type === "agent_called").length;
+  const agentDoneCount = events.filter(e => e.type === "agent_completed").length;
 
   return (
     <div className="flex flex-col min-h-svh bg-background">
@@ -216,29 +218,41 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
                     {isFinished ? "Workflow Complete" : "Executing Workflow"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {completedSteps} of {flow.steps.length} step{flow.steps.length !== 1 ? "s" : ""} completed
+                    {isHybrid
+                      ? `${agentDoneCount} of ${agentCallCount} agent call${agentCallCount !== 1 ? "s" : ""} completed`
+                      : `${completedSteps} of ${flow.steps.length} step${flow.steps.length !== 1 ? "s" : ""} completed`
+                    }
                   </p>
                 </div>
               </div>
 
-              {/* Step dots */}
-              <div className="flex items-center gap-1.5">
-                {Array.from({ length: flow.steps.length }).map((_, i) => {
-                  const done = i < completedSteps;
-                  const active = i === completedSteps && !isFinished;
-                  return (
-                    <div
-                      key={i}
-                      className={cn(
-                        "size-2 rounded-full transition-all duration-300",
-                        done && "bg-emerald-500",
-                        active && "bg-foreground animate-pulse",
-                        !done && !active && "bg-muted-foreground/25"
-                      )}
-                    />
-                  );
-                })}
-              </div>
+              {/* Step dots (sequential) / Pulse indicator (hybrid) */}
+              {isHybrid ? (
+                !isFinished && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-foreground animate-pulse" />
+                    <span className="text-xs text-muted-foreground">Coordinator active</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: flow.steps.length }).map((_, i) => {
+                    const done = i < completedSteps;
+                    const active = i === completedSteps && !isFinished;
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          "size-2 rounded-full transition-all duration-300",
+                          done && "bg-emerald-500",
+                          active && "bg-foreground animate-pulse",
+                          !done && !active && "bg-muted-foreground/25"
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

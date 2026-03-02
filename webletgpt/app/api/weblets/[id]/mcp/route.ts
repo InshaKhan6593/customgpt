@@ -47,6 +47,7 @@ const addServerSchema = z.object({
     authToken: z.string().nullable().optional(),
     catalogId: z.string().nullable().optional(),
     iconUrl: z.string().nullable().optional(),
+    requiresUserAuth: z.boolean().default(false),
 })
 
 export async function POST(
@@ -78,7 +79,7 @@ export async function POST(
             return NextResponse.json({ error: "Invalid request", details: result.error }, { status: 400 })
         }
 
-        const { serverUrl, label, description, authType, authToken, catalogId, iconUrl } = result.data
+        const { serverUrl, label, description, authType, authToken, catalogId, iconUrl, requiresUserAuth } = result.data
 
         // Check for duplicate
         const existing = await prisma.webletMCPServer.findUnique({
@@ -99,6 +100,7 @@ export async function POST(
                 authToken: authToken || null,
                 catalogId: catalogId || null,
                 iconUrl: iconUrl || null,
+                requiresUserAuth,
                 isActive: true,
             },
         })
