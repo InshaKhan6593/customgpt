@@ -219,7 +219,9 @@ export default function FlowExecutionPage({ params }: { params: Promise<{ id: st
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {isHybrid
-                      ? `${agentDoneCount} of ${agentCallCount} agent call${agentCallCount !== 1 ? "s" : ""} completed`
+                      ? agentCallCount === 0
+                        ? (isFinished ? "Orchestrator completed the task" : "Orchestrator is actively running...")
+                        : `${agentDoneCount} of ${agentCallCount} sub-agent call${agentCallCount !== 1 ? "s" : ""} completed`
                       : `${completedSteps} of ${flow.steps.length} step${flow.steps.length !== 1 ? "s" : ""} completed`
                     }
                   </p>

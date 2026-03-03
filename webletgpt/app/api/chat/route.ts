@@ -1,6 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, generateId } from 'ai'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { truncateMessages, autoCompactMessages } from '@/lib/utils/truncate'
 import { langfuseSpanProcessor } from '@/instrumentation'
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { checkAccess } from '@/lib/chat/access'
@@ -155,16 +156,16 @@ print("hello")
     const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct";
     const model = getLanguageModel(modelId);
 
-    // Truncate conversation to fit within model context window (~120K tokens budget).
-    // Rough estimate: 1 token ≈ 4 chars. Keep most recent messages that fit.
-    const truncatedMessages = truncateMessages(messages, 120_000)
+    // Truncate/Compact conversation to fit within model context window (~33K tokens budget).
+    // Uses pre-flight compaction to preserve token buffer and execute summarizations.
+    const compactedMessages = await autoCompactMessages(messages, 33_000, model)
 
     const response = streamText({
       model,
       system: systemPrompt,
-      messages: truncatedMessages as any[],
+      messages: compactedMessages as any[],
       tools,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(15),
       experimental_telemetry: {
         isEnabled: true,
         metadata: {
@@ -234,39 +235,7 @@ print("hello")
   }
 }
 
-/**
- * Truncate conversation history to fit within a token budget.
- * Keeps the most recent messages. Uses a rough estimate of 1 token ≈ 4 chars.
- * Always preserves at least the last message (the user's current query).
- */
-function truncateMessages(messages: any[], maxTokens: number): any[] {
-  const estimateTokens = (msg: any): number => {
-    const content = msg.content
-    if (typeof content === "string") return Math.ceil(content.length / 4)
-    if (Array.isArray(content)) {
-      return content.reduce((sum: number, part: any) => {
-        if (part.type === "text") return sum + Math.ceil((part.text?.length || 0) / 4)
-        if (part.type === "tool-call") return sum + Math.ceil(JSON.stringify(part.args || {}).length / 4) + 20
-        if (part.type === "tool-result") return sum + Math.ceil(JSON.stringify(part.result || "").length / 4) + 20
-        return sum + 50
-      }, 0)
-    }
-    return 50
-  }
 
-  // Walk backwards from most recent, accumulate until budget is exceeded
-  let totalTokens = 0
-  let startIndex = messages.length
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const tokens = estimateTokens(messages[i])
-    if (totalTokens + tokens > maxTokens && i < messages.length - 1) break
-    totalTokens += tokens
-    startIndex = i
-  }
-
-  return messages.slice(startIndex)
-}
 
 /**
  * Normalize tool IDs so every tool-call / tool-result pair has a unique ID.

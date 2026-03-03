@@ -14,6 +14,7 @@ import { langfuseSpanProcessor } from "@/instrumentation";
 import { checkQuotas } from "@/lib/billing/quota-check";
 import { logUsage } from "@/lib/billing/usage-logger";
 import { processDeveloperOverage } from "@/lib/billing/overage";
+import { truncateTextToTokenBudget, autoCompactMessages } from "@/lib/utils/truncate";
 
 const MAX_HITL_REVISIONS = 3;
 
@@ -143,6 +144,20 @@ export const executeFlow = inngest.createFunction(
         });
       });
 
+      // Publish master start so the UI renders the coordinator
+      await step.run("publish-master-start", async () => {
+        await publishProgress(sessionId, "step_started", {
+          stepNumber: 0,
+          revision: 0,
+          webletId: flow.masterWebletId!,
+          webletName: masterInfo.name,
+          iconUrl: (masterInfo as any).iconUrl || null,
+          role: "coordinator",
+          inputMapping: "original",
+          message: `Coordinator "${masterInfo.name}" is planning the execution...`,
+        });
+      });
+
       // Execute master agent with team members as tools
       const hybridResult = await step.run("execute-master", async () => {
         // Create team member tools
@@ -150,6 +165,7 @@ export const executeFlow = inngest.createFunction(
           userId,
           sessionId,
           flowId,
+          coordinatorName: masterInfo.name,
         });
 
         // Master's own tools
@@ -239,7 +255,7 @@ FINAL SYNTHESIS:
             system: coordinatorPrompt,
             messages: [{ role: "user", content: initialInput }],
             tools: allTools,
-            stopWhen: stepCountIs(10),
+            stopWhen: stepCountIs(15),
             experimental_telemetry: {
               isEnabled: true,
               metadata: {
@@ -250,13 +266,28 @@ FINAL SYNTHESIS:
                 role: "coordinator",
               },
             },
-            onStepFinish({ toolCalls, toolResults }) {
+            async onStepFinish(stepResult) {
+              const { toolCalls, toolResults, text } = stepResult;
+
+              // Check if this step had any team tool calls
+              // If so, skip publishing — team tool execute already published text + handoff events
+              const hasTeamToolCall = toolCalls?.some((tc: any) => tc.toolName.startsWith("team_"));
+
+              // Publish coordinator's intermediate text (only for non-team-tool steps)
+              if (!hasTeamToolCall && text && text.trim()) {
+                await publishProgress(sessionId, "agent_text", {
+                  stepNumber: 0,
+                  agentName: masterInfo.name,
+                  text: text.trim(),
+                });
+              }
+
+              // Publish non-team tool calls (team handoffs are published from team-tool-factory)
               if (toolCalls && toolCalls.length > 0) {
                 for (let t = 0; t < toolCalls.length; t++) {
                   const tc = toolCalls[t] as any;
-                  // Only publish non-team tool calls (team tools publish their own events)
                   if (!tc.toolName.startsWith("team_")) {
-                    publishProgress(sessionId, "tool_call", {
+                    await publishProgress(sessionId, "tool_call", {
                       stepNumber: 0,
                       toolName: tc.toolName,
                       args: tc.args || {},
@@ -294,6 +325,18 @@ FINAL SYNTHESIS:
             await closeMCPClients(mcpClients);
           }
         }
+      });
+
+      // Publish master complete
+      await step.run("publish-master-complete", async () => {
+        await publishProgress(sessionId, "step_completed", {
+          stepNumber: 0,
+          revision: 0,
+          webletId: flow.masterWebletId!,
+          webletName: masterInfo.name,
+          role: "coordinator",
+          output: hybridResult.text,
+        });
       });
 
       // Log master usage
@@ -482,14 +525,21 @@ ${i === 0
           }
 
           // Build structured handoff message
+          // Apply truncation to previous output to prevent token limits on the next agent
+          const rawPreviousOutput = currentStep.inputMapping === "original"
+            ? (revision > 0 ? currentOutput : undefined)
+            : currentOutput || undefined;
+
+          const safePreviousOutput = truncateTextToTokenBudget(
+            rawPreviousOutput,
+            90000 // Conservative budget since the system prompt and tools also take space
+          );
+
           const userMessage = buildHandoffMessage({
             stepNumber: i + 1,
             totalSteps: steps.length,
             userMessage: initialInput,
-            previousOutput:
-              currentStep.inputMapping === "original"
-                ? (revision > 0 ? currentOutput : undefined)
-                : currentOutput || undefined,
+            previousOutput: safePreviousOutput,
             previousRole: revision > 0 ? (currentStep.role || "you (previous draft)") : (previousRole || undefined),
             reviewerFeedback,
           });
@@ -498,12 +548,18 @@ ${i === 0
           const model = getLanguageModel(modelId);
           const hasTools = Object.keys(tools).length > 0;
 
+          const safeMessages = await autoCompactMessages(
+            [{ role: "user", content: userMessage }],
+            33_000,
+            model
+          );
+
           try {
             const result = await generateText({
               model,
               system: systemPrompt,
-              messages: [{ role: "user", content: userMessage }],
-              ...(hasTools ? { tools, stopWhen: stepCountIs(5) } : {}),
+              messages: safeMessages,
+              ...(hasTools ? { tools, stopWhen: stepCountIs(15) } : {}),
               experimental_telemetry: {
                 isEnabled: true,
                 metadata: {

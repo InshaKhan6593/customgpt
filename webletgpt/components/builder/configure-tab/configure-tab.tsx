@@ -78,6 +78,8 @@ const MODELS = [
   { value: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B", provider: "Qwen", cost: "$", desc: "Very cheap, strong reasoning" },
   { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", provider: "Meta", cost: "Free", desc: "Open source, strong" },
   { value: "deepseek/deepseek-r1", label: "DeepSeek R1", provider: "DeepSeek", cost: "$", desc: "Reasoning specialist" },
+  { value: "minimax/minimax-m2.5", label: "Minimax M2.5", provider: "Minimax", cost: "$", desc: "Optimized for coding & office tasks" },
+  { value: "qwen/qwen3.5-flash-02-23", label: "Qwen 3.5 Flash", provider: "Qwen", cost: "$", desc: "Fast vision-language, 1M context" },
 ]
 
 type ConfigureTabProps = {

@@ -6,7 +6,12 @@ declare global {
 }
 
 const createPrismaClient = () => {
-  return new PrismaClient()
+  return new PrismaClient({
+    transactionOptions: {
+      maxWait: 10000,  // 10s max wait to acquire a connection (Neon cold start)
+      timeout: 15000,  // 15s transaction timeout
+    },
+  })
 }
 
 // PrismaClient is attached to the `global` object in development to prevent

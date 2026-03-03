@@ -35,6 +35,7 @@ interface TeamToolContext {
   userId: string;
   sessionId: string;
   flowId: string;
+  coordinatorName: string;
 }
 
 /**
@@ -65,17 +66,12 @@ export function createTeamMemberTools(
       parameters: z.object({
         message: z.string().describe("A clear, specific task description for this team member. Include: what to do, what format to return, and any context needed from previous results."),
       }),
-      execute: async ({ message }: { message: string }) => {
+      execute: async (args: any) => {
         const { userId, sessionId, flowId } = context;
 
-        // Publish agent_called event
-        await publishProgress(sessionId, "agent_called", {
-          agentName: info.name,
-          webletId: step.webletId,
-          iconUrl: info.iconUrl,
-          role: step.role || null,
-          message: message.slice(0, 200),
-        });
+        // LLMs sometimes hallucinate parameter names (e.g., 'problem', 'task') instead of the defined 'message'
+        const extractedMessage = args.message || args.task || args.problem || args.query || args.input || Object.values(args)[0] || "Please assist with the user's request.";
+        const message = typeof extractedMessage === "string" ? extractedMessage : JSON.stringify(extractedMessage);
 
         // Quota check
         const quota = await checkQuotas(userId, step.webletId);
@@ -177,6 +173,27 @@ YOUR RESPONSIBILITIES:
         const model = getLanguageModel(modelId);
         const hasTools = Object.keys(agentTools).length > 0;
 
+        // Generate a unique step number for this sub-agent run (using timestamp for sorting)
+        const subagentStepNumber = Date.now() + Math.floor(Math.random() * 1000);
+
+        // Publish coordinator's handoff text BEFORE sub-agent starts
+        // (onStepFinish fires too late — after tool execution completes)
+        await publishProgress(sessionId, "agent_text", {
+          stepNumber: 0,
+          agentName: context.coordinatorName,
+          text: `Delegating to **${info.name}**...`,
+        });
+
+
+        // Notify frontend that this sub-agent has been called
+        await publishProgress(sessionId, "agent_called", {
+          stepNumber: subagentStepNumber,
+          agentName: info.name,
+          webletId: step.webletId,
+          iconUrl: info.iconUrl,
+          role: step.role || null,
+        });
+
         try {
           const result = await generateText({
             model,
@@ -192,6 +209,29 @@ YOUR RESPONSIBILITIES:
                 mode: "HYBRID",
                 role: step.role || "none",
               },
+            },
+            onStepFinish: async ({ toolCalls, toolResults, text }) => {
+              // Publish sub-agent's intermediate text (reasoning, messages)
+              if (text && text.trim()) {
+                await publishProgress(sessionId, "agent_text", {
+                  stepNumber: subagentStepNumber,
+                  agentName: info.name,
+                  text: text.trim(),
+                });
+              }
+
+              if (toolCalls && toolCalls.length > 0) {
+                for (let t = 0; t < toolCalls.length; t++) {
+                  const tc = toolCalls[t] as any;
+                  await publishProgress(sessionId, "tool_call", {
+                    stepNumber: subagentStepNumber,
+                    toolName: tc.toolName,
+                    args: tc.args || {},
+                    result: (toolResults as any)?.[t]?.result ?? null,
+                    state: "completed",
+                  });
+                }
+              }
             },
           });
 
@@ -229,11 +269,12 @@ YOUR RESPONSIBILITIES:
           const responseText = result.text || "[No output generated]";
 
           await publishProgress(sessionId, "agent_completed", {
+            stepNumber: subagentStepNumber,
             agentName: info.name,
             webletId: step.webletId,
             iconUrl: info.iconUrl,
             role: step.role || null,
-            output: responseText.slice(0, 500),
+            output: responseText,
           });
 
           return { response: responseText, source: info.name };
@@ -241,6 +282,7 @@ YOUR RESPONSIBILITIES:
           console.error(`[HybridTeam] LLM error for ${info.name}:`, llmError?.message);
 
           await publishProgress(sessionId, "agent_completed", {
+            stepNumber: subagentStepNumber,
             agentName: info.name,
             webletId: step.webletId,
             role: step.role || null,
