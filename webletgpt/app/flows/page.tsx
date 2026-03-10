@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { NavHeader } from "@/components/nav-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Play, Pencil, Trash2, Workflow, GitBranch, Clock, Layers, Bot } from "lucide-react";
+import { Plus, Pencil, Trash2, Workflow, GitBranch, Clock, Layers, Bot } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -90,7 +90,7 @@ export default function FlowsPage() {
               Chain AI agents together to automate multi-step tasks.
             </p>
           </div>
-          <Button variant="secondary" onClick={createNewFlow} size="sm" className="text-sm gap-1.5">
+          <Button variant="secondary" onClick={createNewFlow} size="sm" className="text-sm gap-1.5 bg-secondary hover:bg-secondary/80 dark:bg-[#18181b] dark:hover:bg-[#27272a] dark:text-zinc-100 dark:border dark:border-zinc-800">
             <Plus className="size-3.5" />
             New Workflow
           </Button>
@@ -112,7 +112,7 @@ export default function FlowsPage() {
               <p className="text-base font-semibold text-foreground">No workflows yet</p>
               <p className="text-sm text-muted-foreground">Create your first flow to automate complex tasks.</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={createNewFlow} className="text-sm gap-1.5">
+            <Button variant="secondary" size="sm" onClick={createNewFlow} className="text-sm gap-1.5 bg-secondary hover:bg-secondary/80 dark:bg-[#18181b] dark:hover:bg-[#27272a] dark:text-zinc-100 dark:border dark:border-zinc-800">
               <Plus className="size-3.5" />
               Create Workflow
             </Button>
@@ -193,26 +193,6 @@ export default function FlowsPage() {
 
                   {/* Footer */}
                   <div className="flex items-center gap-2 pt-3 border-t">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="flex-1 text-sm gap-1.5"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!hasPrompt) {
-                          toast.error("Set a default prompt in the builder before running.");
-                          return;
-                        }
-                        if (stepCount === 0) {
-                          toast.error("Add at least one agent step before running.");
-                          return;
-                        }
-                        router.push(`/flows/run/${flow.id}`);
-                      }}
-                    >
-                      <Play className="size-3" />
-                      Run
-                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

@@ -19,7 +19,8 @@ const updateFlowSchema = z.object({
     stepPrompt: z.string().max(2000).optional(),
   })).optional(),
   masterWebletId: z.string().optional().nullable(),
-  isPublic: z.boolean().optional()
+  isPublic: z.boolean().optional(),
+  canvasState: z.any().optional(),
 });
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

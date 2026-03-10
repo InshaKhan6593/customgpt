@@ -17,7 +17,9 @@ const openai = createOpenAI({
  * from the model ID and fall back to direct Anthropic/OpenAI SDKs.
  */
 export function getLanguageModel(modelId: string) {
-  return openrouter(modelId)
+  return openrouter(modelId, {
+    plugins: [{ id: 'response-healing' }],
+  })
 }
 
 /**

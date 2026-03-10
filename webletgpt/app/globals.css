@@ -122,7 +122,58 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Custom Edge Animations for React Flow */
+.glowing-edge .react-flow__edge-path,
+.react-flow__edge.glowing-edge path {
+  stroke: #10b981;
+  /* emerald-500 */
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4));
+  animation: glowPulse 2s ease-in-out infinite, flowWire 1.5s linear infinite;
+  stroke-dasharray: 10 5 !important;
+}
+
+.completed-edge .react-flow__edge-path,
+.react-flow__edge.completed-edge path {
+  stroke: #10b981;
+  /* emerald-500 */
+  stroke-width: 1.5;
+  opacity: 0.5;
+}
+
+
+/* Fix handle connection gap — ensure wires draw exactly to the handle center */
+.react-flow__handle {
+  min-width: 6px !important;
+  min-height: 6px !important;
+}
+
+@keyframes flowWire {
+  from {
+    stroke-dashoffset: 14;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes glowPulse {
+  0% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6));
+  }
+
+  100% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3));
   }
 }

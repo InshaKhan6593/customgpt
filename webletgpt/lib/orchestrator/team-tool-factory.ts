@@ -226,8 +226,8 @@ YOUR RESPONSIBILITIES:
                   await publishProgress(sessionId, "tool_call", {
                     stepNumber: subagentStepNumber,
                     toolName: tc.toolName,
-                    args: tc.args || {},
-                    result: (toolResults as any)?.[t]?.result ?? null,
+                    args: tc.input || {},
+                    result: (toolResults as any)?.[t]?.output ?? null,
                     state: "completed",
                   });
                 }

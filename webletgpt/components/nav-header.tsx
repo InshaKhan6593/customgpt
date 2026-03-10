@@ -16,8 +16,9 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/s
 import { Menu } from "lucide-react"
 import { useSession, signOut } from "next-auth/react"
 import type { User, UserRole } from "@/lib/types"
+import { ThemeToggle } from "@/components/theme-toggle"
 
-interface NavHeaderProps {}
+interface NavHeaderProps { }
 
 function getInitials(user?: any): string {
   if (!user) return "?"
@@ -69,7 +70,7 @@ function getDropdownItems(role: UserRole) {
   return items
 }
 
-export function NavHeader({}: NavHeaderProps = {}) {
+export function NavHeader({ }: NavHeaderProps = {}) {
   const { data: session } = useSession()
   const user = session?.user
 
@@ -94,11 +95,10 @@ export function NavHeader({}: NavHeaderProps = {}) {
             <Link
               key={link.href}
               href={link.href}
-              className={`px-3 py-2 text-sm rounded-md transition-colors ${
-                pathname === link.href
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-              }`}
+              className={`px-3 py-2 text-sm rounded-md transition-colors ${pathname === link.href
+                ? "bg-accent text-accent-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`}
             >
               {link.label}
             </Link>
@@ -106,6 +106,8 @@ export function NavHeader({}: NavHeaderProps = {}) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
+
           {isLoggedIn ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -129,7 +131,7 @@ export function NavHeader({}: NavHeaderProps = {}) {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onClick={() => signOut({ callbackUrl: "/" })}
                 >
@@ -159,11 +161,10 @@ export function NavHeader({}: NavHeaderProps = {}) {
                     key={link.href}
                     href={link.href}
                     onClick={() => setMobileOpen(false)}
-                    className={`px-3 py-2 text-sm rounded-md transition-colors ${
-                      pathname === link.href
-                        ? "bg-accent text-accent-foreground font-medium"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                    }`}
+                    className={`px-3 py-2 text-sm rounded-md transition-colors ${pathname === link.href
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      }`}
                   >
                     {link.label}
                   </Link>

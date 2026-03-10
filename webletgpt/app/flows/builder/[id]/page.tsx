@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { NavHeader } from "@/components/nav-header";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Play, Save, Wand2, Plus, Trash2, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowLeft, Play, Save, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { PREDEFINED_ROLES } from "@/lib/orchestrator/roles";
 import { use } from "react";
+import {
+  FlowCanvas,
+  deserializeFlow,
+  serializeFlow,
+} from "@/components/flows/canvas/flow-canvas";
+import type { FlowNode, FlowEdge, WebletItem, NodeExecutionState } from "@/components/flows/canvas/types";
+import { useOrchestrationProgress } from "@/hooks/use-orchestration-progress";
+import { OutOfCreditsModal } from "@/components/monetization/out-of-credits-modal";
+import { Loader2, Square, CheckCircle2 } from "lucide-react";
 
 export default function BuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -22,10 +24,76 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   const { id } = use(params);
 
   const [flow, setFlow] = useState<any>(null);
-  const [weblets, setWeblets] = useState<any[]>([]);
+  const [weblets, setWeblets] = useState<WebletItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [promptError, setPromptError] = useState(false);
+  const [initialNodes, setInitialNodes] = useState<FlowNode[]>([]);
+  const [initialEdges, setInitialEdges] = useState<FlowEdge[]>([]);
+  const [canvasReady, setCanvasReady] = useState(false);
+
+  // Execution state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const { events, isConnected } = useOrchestrationProgress(sessionId);
+  const [isRunning, setIsRunning] = useState(false);
+
+  const isFinished = events.some(e => e.type === "completed" || e.type === "failed");
+
+  // Ref to hold latest canvas data for save-from-toolbar
+  const latestCanvasData = useRef<{ nodes: FlowNode[]; edges: FlowEdge[]; prompt: string } | null>(null);
+
+  // Compute execution states for the canvas
+  const executionStates = useMemo(() => {
+    const states: Record<string, NodeExecutionState> = {};
+    for (const e of events) {
+      if (!e.data?.nodeId) continue;
+      const id = e.data.nodeId;
+
+      if (!states[id]) {
+        states[id] = { status: "pending", toolCalls: [] };
+      }
+
+      switch (e.type) {
+        case "node_started":
+          states[id].status = "running";
+          states[id].toolCalls = [];
+          break;
+        case "tool_call":
+          states[id].status = "running";
+          states[id].activeTool = {
+            toolName: e.data.toolName,
+            args: e.data.args,
+          };
+          if (!states[id].toolCalls) states[id].toolCalls = [];
+          states[id].toolCalls!.push({
+            toolName: e.data.toolName,
+            args: e.data.args || {},
+            result: e.data.result ?? null,
+            state: "completed",
+          });
+          break;
+        case "node_completed":
+          states[id].status = "completed";
+          states[id].activeTool = undefined;
+          states[id].output = e.data.output || undefined;
+          break;
+        case "step_failed":
+          states[id].status = "failed";
+          states[id].activeTool = undefined;
+          break;
+      }
+    }
+    return states;
+  }, [events]);
+
+  // Handle auto-select of the last active node when finished
+  useEffect(() => {
+    if (isFinished && isRunning) {
+      setIsRunning(false);
+      // Let the canvas pick up the final node selection via a custom event later
+      window.dispatchEvent(new CustomEvent("flowExecutionCompleted", { detail: { events } }));
+    }
+  }, [isFinished, isRunning, events]);
 
   // Load flow and available weblets
   useEffect(() => {
@@ -33,7 +101,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
       try {
         const [flowRes, webletsRes] = await Promise.all([
           fetch(`/api/flows/${id}`),
-          fetch(`/api/marketplace/weblets?limit=50&all=true`) // Fetch all weblets (including private/inactive) for MVP builder
+          fetch(`/api/marketplace/weblets?limit=50&all=true`),
         ]);
 
         const flowData = await flowRes.json();
@@ -41,13 +109,66 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         if (flowRes.ok) {
           setFlow(flowData);
 
+          let webletsList: WebletItem[] = [];
           if (webletsRes.ok) {
             const webletsData = await webletsRes.json();
-            // The paginated API response structure is { data: [...], meta: {...} }
-            setWeblets(Array.isArray(webletsData.data) ? webletsData.data : []);
-          } else {
-            setWeblets([]);
+            const raw: any[] = Array.isArray(webletsData.data) ? webletsData.data : [];
+            // Merge mcpServers + capabilities → tools
+            webletsList = raw.map((w: any) => {
+              // MCP tools: id, label, iconUrl
+              const mcpTools = Array.isArray(w.mcpServers)
+                ? w.mcpServers.map((s: any) => ({ id: s.id, label: s.label, iconUrl: s.iconUrl ?? null }))
+                : [];
+
+              let capTools: any[] = [];
+              if (Array.isArray(w.capabilities)) {
+                capTools = w.capabilities.map((c: any, i: number) => ({
+                  id: `cap-${w.id}-${i}`,
+                  label: typeof c === "string" ? c : (c.name || c.label || "Capability"),
+                  iconUrl: c.iconUrl ?? null,
+                }));
+              } else if (w.capabilities && typeof w.capabilities === "object") {
+                const capMap: Record<string, string> = {
+                  webSearch: "Web Search",
+                  codeInterpreter: "Code Interpreter",
+                  imageGen: "Image Generation",
+                  fileSearch: "File Search"
+                };
+                Object.entries(w.capabilities).forEach(([key, val]) => {
+                  if (val === true && capMap[key]) {
+                    capTools.push({
+                      id: `cap-${w.id}-${key}`,
+                      label: capMap[key],
+                      iconUrl: null
+                    });
+                  }
+                });
+              }
+
+              return { ...w, tools: [...capTools, ...mcpTools] };
+            });
+            setWeblets(webletsList);
           }
+
+          // Build weblet lookup map
+          const webletMap = new Map<string, WebletItem>();
+          for (const w of webletsList) {
+            webletMap.set(w.id, w);
+          }
+
+          // Deserialize flow steps → canvas nodes/edges
+          const steps = Array.isArray(flowData.steps) ? flowData.steps : [];
+          const canvasLayout = flowData.canvasState || null;
+          const { nodes, edges } = deserializeFlow(
+            steps,
+            flowData.defaultPrompt || "",
+            webletMap,
+            canvasLayout
+          );
+
+          setInitialNodes(nodes);
+          setInitialEdges(edges);
+          setCanvasReady(true);
         } else {
           toast({ title: "Error", description: flowData.error || "Failed to load flow", variant: "destructive" });
         }
@@ -60,93 +181,131 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
     loadData();
   }, [id, toast]);
 
-  const saveFlow = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/flows/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: flow.name,
-          mode: flow.mode,
-          defaultPrompt: flow.defaultPrompt || null,
-          masterWebletId: flow.masterWebletId || null,
-          steps: flow.steps,
-        })
-      });
-      if (res.ok) {
-        toast({ title: "Saved", description: "Workflow saved successfully." });
-      } else {
-        toast({ title: "Error", description: "Failed to save workflow.", variant: "destructive" });
+  // ── Save flow ──
+  const saveFlow = useCallback(
+    async (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+      setSaving(true);
+      try {
+        const { steps, prompt, canvasState } = serializeFlow(data.nodes, data.edges);
+
+        if (steps.length === 0) {
+          toast({ title: "No agents", description: "Add at least one agent to the canvas and connect it.", variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+
+        const hasEmptyWeblet = steps.some((s) => !s.webletId);
+        if (hasEmptyWeblet) {
+          toast({ title: "Missing agent", description: "All agent nodes must have a weblet selected.", variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+
+        const res = await fetch(`/api/flows/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: flow.name,
+            mode: "SEQUENTIAL",
+            defaultPrompt: prompt || flow.defaultPrompt || null,
+            steps,
+            canvasState,
+          }),
+        });
+
+        if (res.ok) {
+          setFlow((prev: any) => ({ ...prev, defaultPrompt: prompt || prev.defaultPrompt }));
+          toast({ title: "Saved", description: "Workflow saved successfully." });
+          return true;
+        } else {
+          toast({ title: "Error", description: "Failed to save workflow.", variant: "destructive" });
+          return false;
+        }
+      } catch (err) {
+        toast({ title: "Error", description: "Network error saving workflow.", variant: "destructive" });
+        return false;
+      } finally {
+        setSaving(false);
       }
+    },
+    [id, flow, toast]
+  );
+
+  // ── Run flow directly on canvas ──
+  const runFlow = async (data?: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+    const promptNode = (data?.nodes || latestCanvasData.current?.nodes)?.find((n) => n.type === "prompt");
+    const promptText = promptNode?.data?.prompt || flow.defaultPrompt;
+    if (!promptText?.trim()) {
+      toast({ title: "No prompt", description: "Set a default prompt first (click the Input Prompt node).", variant: "destructive" });
+      return;
+    }
+
+    // Save before executing to ensure server has latest version
+    const savedData = data || latestCanvasData.current || { nodes: initialNodes, edges: initialEdges, prompt: flow.defaultPrompt };
+    const saved = await saveFlow(savedData);
+    if (!saved) return;
+
+    // Reset run state
+    setIsRunning(true);
+    setSessionId(null);
+
+    try {
+      const res = await fetch(`/api/flows/${id}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initialInput: promptText }),
+      });
+      const dataRes = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 402) {
+          setShowUpgradeModal(true);
+        } else {
+          toast({ title: "Failed to start", description: dataRes.error || "Execution failed", variant: "destructive" });
+        }
+        setIsRunning(false);
+        return;
+      }
+
+      setSessionId(dataRes.sessionId);
+      toast({ title: "Running", description: "Workflow execution started." });
     } catch (err) {
-      toast({ title: "Error", description: "Network error saving workflow.", variant: "destructive" });
-    } finally {
-      setSaving(false);
+      console.error(err);
+      toast({ title: "Error", description: "Failed to start flow execution", variant: "destructive" });
+      setIsRunning(false);
     }
   };
 
-  const addStep = () => {
-    setFlow((prev: any) => ({
-      ...prev,
-      steps: [
-        ...prev.steps,
-        {
-          webletId: "",
-          order: prev.steps.length + 1,
-          inputMapping: prev.steps.length === 0 ? "original" : "previous",
-          hitlGate: false,
-          role: "",
-          stepPrompt: "",
-        }
-      ]
-    }));
-  };
+  // ── Execute flow from canvas ──
+  const saveAndExecute = useCallback(
+    async (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+      await runFlow(data);
+    },
+    [saveFlow, id]
+  );
 
-  const updateStep = (index: number, field: string, value: any) => {
-    setFlow((prev: any) => {
-      const newSteps = [...prev.steps];
-      newSteps[index] = { ...newSteps[index], [field]: value };
-      return { ...prev, steps: newSteps };
-    });
-  };
+  // ── Callback from canvas whenever state changes ──
+  const onCanvasChange = useCallback(
+    (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+      // Only keep the latest data for saving, but don't cancel the run or clear sessionId
+      // because execution state syncs (which update nodes) trigger this callback.
+      latestCanvasData.current = data;
+    },
+    []
+  );
 
-  const removeStep = (index: number) => {
-    setFlow((prev: any) => {
-      const newSteps = prev.steps.filter((_: any, i: number) => i !== index);
-      // Re-adjust order
-      const reordered = newSteps.map((s: any, i: number) => ({ ...s, order: i + 1 }));
-      return { ...prev, steps: reordered };
-    });
-  };
+  // ── Save from top bar using latest canvas data ──
+  const handleTopBarSave = useCallback(() => {
+    if (latestCanvasData.current) {
+      saveFlow(latestCanvasData.current);
+    } else {
+      toast({ title: "Nothing to save", description: "Make changes on the canvas first.", variant: "destructive" });
+    }
+  }, [saveFlow, toast]);
 
-  const moveStep = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === flow.steps.length - 1) return;
-
-    setFlow((prev: any) => {
-      const newSteps = [...prev.steps];
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-
-      // Swap
-      const temp = newSteps[index];
-      newSteps[index] = newSteps[targetIndex];
-      newSteps[targetIndex] = temp;
-
-      // Re-adjust order
-      const reordered = newSteps.map((s: any, i: number) => ({ ...s, order: i + 1 }));
-
-      // Fix input mapping if first step is moved
-      if (reordered.length > 0) {
-        reordered[0].inputMapping = "original";
-      }
-
-      return { ...prev, steps: reordered };
-    });
-  };
-
+  // ── Auto-suggest team ──
   const autoSuggestTeam = async () => {
-    const task = prompt("Describe the task you want the AI team to accomplish:");
+    const task = window.prompt("Describe the task you want the AI team to accomplish:");
     if (!task || !task.trim()) return;
 
     toast({ title: "Auto-Suggesting Team", description: "Asking AI to recommend the perfect team..." });
@@ -163,314 +322,141 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         return;
       }
 
-      // Apply the suggested team to the flow
+      // Build weblet map
+      const webletMap = new Map<string, WebletItem>();
+      for (const w of weblets) webletMap.set(w.id, w);
+
       const suggestedSteps = data.suggestedTeam.map((member: any, idx: number) => ({
         webletId: member.webletId,
         order: idx + 1,
         inputMapping: idx === 0 ? "original" : "previous",
         hitlGate: false,
-        role: member.role,
+        role: member.role || "",
         stepPrompt: "",
       }));
 
-      setFlow((prev: any) => ({
-        ...prev,
-        mode: data.executionMode || prev.mode,
-        steps: suggestedSteps,
-      }));
+      const { nodes, edges } = deserializeFlow(
+        suggestedSteps,
+        flow.defaultPrompt || "",
+        webletMap,
+        null
+      );
+
+      setInitialNodes(nodes);
+      setInitialEdges(edges);
+      setCanvasReady(false);
+      setTimeout(() => setCanvasReady(true), 50);
 
       toast({
         title: "Team Formed!",
-        description: `AI suggested ${suggestedSteps.length} agent(s) in ${data.executionMode} mode. ${data.reasoning}`,
+        description: `AI suggested ${suggestedSteps.length} agent(s). ${data.reasoning || ""}`,
       });
     } catch (err) {
       toast({ title: "Failed", description: "AI could not suggest a team.", variant: "destructive" });
     }
   };
 
+
+
+  const stopFlow = () => {
+    setIsRunning(false);
+    setSessionId(null);
+    toast({ title: "Stopped", description: "Cleared execution state." });
+  };
+
   if (loading || !flow) {
     return (
-      <div className="flex flex-col min-h-svh bg-background">
+      <div className="flex flex-col h-svh bg-background">
         <NavHeader />
         <div className="flex-1 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-svh bg-background">
+    <div className="flex flex-col h-svh bg-background overflow-hidden">
       <NavHeader />
 
-      {/* Top Bar */}
-      <div className="border-b bg-card py-4 px-6 sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center space-x-4 flex-1">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/flows")}>
+      {/* Top bar */}
+      <div className="border-b bg-card py-2.5 px-4 flex items-center justify-between shrink-0 z-10">
+        <div className="flex items-center gap-3 flex-1">
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => router.push("/flows")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="flex-1 max-w-sm">
-            <Input
-              value={flow.name}
-              onChange={(e) => setFlow({ ...flow, name: e.target.value })}
-              className="font-bold text-lg border-transparent hover:border-border focus-visible:bg-background"
-            />
-          </div>
+          <Input
+            value={flow.name}
+            onChange={(e) => setFlow({ ...flow, name: e.target.value })}
+            className="font-semibold text-sm border-transparent hover:border-border focus-visible:bg-background max-w-xs h-8"
+          />
         </div>
-        <div className="flex items-center space-x-3">
-          <Button variant="outline" onClick={autoSuggestTeam}>
-            <Wand2 className="w-4 h-4 mr-2" />
-            Auto-Suggest Team
-          </Button>
-          <Button variant="outline" onClick={saveFlow} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? "Saving..." : "Save"}
-          </Button>
-          <Button variant="secondary" onClick={() => {
-            if (!flow.defaultPrompt?.trim()) {
-              setPromptError(true);
-              return;
-            }
-            setPromptError(false);
-            if (flow.steps.length === 0) {
-              toast({ title: "No steps", description: "Add at least one agent step before running.", variant: "destructive" });
-              return;
-            }
-            if (flow.mode === "HYBRID" && !flow.masterWebletId) {
-              toast({ title: "No master agent", description: "Select a coordinator agent for hybrid mode.", variant: "destructive" });
-              return;
-            }
-            router.push(`/flows/run/${id}`);
-          }}>
-            <Play className="w-4 h-4 mr-2" />
-            Run Flow
-          </Button>
+        <div className="flex items-center gap-2">
+          {isRunning || sessionId ? (
+            <div className="flex items-center gap-3 mr-2 px-3 py-1 bg-muted/40 rounded-full border">
+              <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground mr-1">
+                {isConnected ? (
+                  <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-500" /> Connected</span>
+                ) : (
+                  <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-red-500" /> Disconnected</span>
+                )}
+              </span>
+              {(isRunning && !isFinished) ? (
+                <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                  <Loader2 className="size-3 animate-spin" />
+                  Executing...
+                </div>
+              ) : isFinished ? (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+                  <CheckCircle2 className="size-3" />
+                  Completed
+                </div>
+              ) : null}
+              <Button variant="ghost" size="icon" onClick={stopFlow} className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-1" title="Clear Execution">
+                <Square className="size-3 fill-current" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={autoSuggestTeam}>
+                <Wand2 className="w-3.5 h-3.5 mr-1.5" />
+                Auto-Suggest
+              </Button>
+              <Button variant="outline" size="sm" disabled={saving} onClick={handleTopBarSave}>
+                <Save className="w-3.5 h-3.5 mr-1.5" />
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      <main className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto p-4 md:p-8 gap-8">
-
-        {/* Left Sidebar - Config */}
-        <aside className="w-full md:w-64 space-y-6">
-          <div>
-            <Label className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">Execution Mode</Label>
-            <Select
-              value={flow.mode}
-              onValueChange={(val) => setFlow({ ...flow, mode: val })}
-            >
-              <SelectTrigger className="mt-2 w-full">
-                <SelectValue placeholder="Select mode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="SEQUENTIAL">Sequential</SelectItem>
-                <SelectItem value="HYBRID">Hybrid (Master Agent)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-2">
-              Sequential runs each agent one after another. Hybrid relies on a Master Agent to delegate tasks dynamically.
-            </p>
+      {/* Canvas area — fills remaining space */}
+      <div className="flex-1 min-h-0">
+        {canvasReady ? (
+          <FlowCanvas
+            initialNodes={initialNodes}
+            initialEdges={initialEdges}
+            weblets={weblets}
+            defaultPrompt={flow.defaultPrompt || ""}
+            onSave={saveAndExecute}
+            saving={saving}
+            onChange={onCanvasChange}
+            readOnly={!!sessionId || isRunning}
+            executionStates={executionStates}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            Loading canvas...
           </div>
+        )}
+      </div>
 
-          {flow.mode === "HYBRID" && (
-            <div>
-              <Label className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">
-                Master Agent (Coordinator)
-              </Label>
-              <Select
-                value={flow.masterWebletId || ""}
-                onValueChange={(val) => setFlow({ ...flow, masterWebletId: val })}
-              >
-                <SelectTrigger className={cn("mt-2 w-full", !flow.masterWebletId && "border-dashed border-red-300")}>
-                  <SelectValue placeholder="Choose coordinator agent..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {weblets.map(w => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-2">
-                This agent orchestrates the team — it decides which agents to call and synthesizes their results.
-              </p>
-            </div>
-          )}
-
-          <div>
-            <Label className={cn("text-xs uppercase font-semibold tracking-wider", promptError ? "text-destructive" : "text-muted-foreground")}>
-              Default Prompt {promptError && "*"}
-            </Label>
-            <Textarea
-              value={flow.defaultPrompt || ""}
-              onChange={(e) => {
-                setFlow({ ...flow, defaultPrompt: e.target.value });
-                if (e.target.value.trim()) setPromptError(false);
-              }}
-              placeholder="e.g. Write a research report on AI trends in 2025..."
-              className={cn("mt-2 text-sm resize-none", promptError && "border-destructive ring-destructive/20 ring-2")}
-              rows={4}
-            />
-            {promptError ? (
-              <p className="text-xs text-destructive mt-2">
-                Default prompt is required to run this flow.
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-2">
-                Pre-fills the prompt when running this flow. Users can still edit it before execution.
-              </p>
-            )}
-          </div>
-        </aside>
-
-        {/* Main Canvas Area */}
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold">{flow.mode === "HYBRID" ? "Team Members" : "Workflow Steps"}</h2>
-            <Button variant="secondary" size="sm" onClick={addStep}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Step
-            </Button>
-          </div>
-
-          <div className="space-y-4">
-            {flow.steps.length === 0 ? (
-              <div className="text-center py-20 bg-muted/30 border border-dashed rounded-lg">
-                <p className="text-muted-foreground mb-4">No agents added to this flow yet.</p>
-                <Button variant="outline" onClick={addStep}>Add your first agent</Button>
-              </div>
-            ) : (
-              flow.steps.map((step: any, index: number) => (
-                <Card key={index} className="relative border shadow-sm group">
-                  <div className="absolute left-[-24px] top-1/2 -translate-y-1/2 flex flex-col items-center space-y-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => moveStep(index, 'up')} disabled={index === 0}>
-                      <ArrowUp className="w-3 h-3" />
-                    </Button>
-                    <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab" />
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => moveStep(index, 'down')} disabled={index === flow.steps.length - 1}>
-                      <ArrowDown className="w-3 h-3" />
-                    </Button>
-                  </div>
-
-                  <CardHeader className="py-3 flex flex-row items-center justify-between space-y-0 text-zinc-100">
-                    <CardTitle className="text-base font-medium flex items-center">
-                      <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2">
-                        {index + 1}
-                      </span>
-                      {flow.mode === "HYBRID" ? `Team Member ${index + 1}` : `Step ${index + 1}`}
-                    </CardTitle>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => removeStep(index)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </CardHeader>
-
-                  <CardContent className="space-y-4 pb-4">
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-
-                      <div className={cn("space-y-1.5", flow.mode === "HYBRID" ? "md:col-span-6" : "md:col-span-5")}>
-                        <Label className="text-xs">Select Agent (Weblet)</Label>
-                        <Select
-                          value={step.webletId}
-                          onValueChange={(val) => updateStep(index, "webletId", val)}
-                        >
-                          <SelectTrigger className={cn("h-9 w-full min-w-0 [&>span]:truncate", !step.webletId && "border-dashed border-red-300")}>
-                            <SelectValue placeholder="Choose an agent..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {weblets.map(w => (
-                              <SelectItem key={w.id} value={w.id}>
-                                {w.name} <span className="text-[10px] text-muted-foreground">({w.category})</span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className={cn("space-y-1.5", flow.mode === "HYBRID" ? "md:col-span-6" : "md:col-span-4")}>
-                        <Label className="text-xs">Agent Role</Label>
-                        <Select
-                          value={step.role || ""}
-                          onValueChange={(val) => updateStep(index, "role", val)}
-                        >
-                          <SelectTrigger className="h-9 w-full min-w-0 [&>span]:truncate">
-                            <SelectValue placeholder="Assign a role..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PREDEFINED_ROLES.map((role) => (
-                              <SelectItem key={role.id} value={role.label}>
-                                {role.label} — <span className="text-[10px] text-muted-foreground">{role.description}</span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {flow.mode !== "HYBRID" && (
-                        <div className="space-y-1.5 md:col-span-3">
-                          <Label className="text-xs">Input Data Source</Label>
-                          <Select
-                            value={step.inputMapping}
-                            onValueChange={(val) => updateStep(index, "inputMapping", val)}
-                            disabled={index === 0}
-                          >
-                            <SelectTrigger className="h-9 w-full">
-                              <SelectValue placeholder="Where from?" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="original">Original Prompt</SelectItem>
-                              {index > 0 && <SelectItem value="previous">Previous Step Output</SelectItem>}
-                            </SelectContent>
-                          </Select>
-                          {index === 0 && <p className="text-[9px] text-muted-foreground leading-tight">First step uses original prompt.</p>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Instructions for this Agent</Label>
-                      <Textarea
-                        value={step.stepPrompt || ""}
-                        onChange={(e) => updateStep(index, "stepPrompt", e.target.value)}
-                        placeholder={index === 0
-                          ? "Tell this agent what to do with the input prompt..."
-                          : "Tell this agent exactly what to do with the previous output..."}
-                        className="text-sm resize-none min-h-[60px]"
-                        rows={2}
-                      />
-                      <p className="text-[9px] text-muted-foreground leading-tight">
-                        Custom instructions injected into this agent&apos;s system prompt at runtime.
-                      </p>
-                    </div>
-
-                    {flow.mode !== "HYBRID" && (
-                      <div className="flex items-center justify-between pt-3 border-t">
-                        <div className="space-y-0.5">
-                          <Label className="text-xs">Human in the Loop</Label>
-                          <p className="text-[10px] text-muted-foreground">Pause for manual approval before this step.</p>
-                        </div>
-                        <Switch
-                          checked={step.hitlGate}
-                          onCheckedChange={(val) => updateStep(index, "hitlGate", val)}
-                          className="scale-90"
-                        />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
-            )}
-
-            {flow.steps.length > 0 && (
-              <div className="flex justify-center mt-6">
-                <Button variant="ghost" onClick={addStep} className="border border-dashed w-full max-w-sm">
-                  <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
-                  Append another step
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
+      <OutOfCreditsModal
+        open={showUpgradeModal}
+        onOpenChange={setShowUpgradeModal}
+        onDecline={() => setShowUpgradeModal(false)}
+      />
     </div>
   );
 }

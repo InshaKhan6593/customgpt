@@ -144,6 +144,7 @@ model UserFlow {
   description    String?
   mode           FlowMode @default(SEQUENTIAL)
   steps          Json
+  canvasState    Json?
   defaultPrompt  String?
   masterWebletId String?
   isPublic       Boolean  @default(false)

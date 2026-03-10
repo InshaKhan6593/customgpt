@@ -86,6 +86,8 @@ interface StepGroup {
   hitlHistory: HitlRecord[];
   isHybridAgent?: boolean;
   isIntermediate?: boolean;
+  // Agent output status
+  agentStatus?: "complete" | "needs_review" | "blocked";
 }
 
 export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimelineProps) {
@@ -214,6 +216,8 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
             existing.completedAt = ev.timestamp;
             if (ev.data.webletName) existing.webletName = ev.data.webletName;
             if (ev.data.role) existing.role = ev.data.role;
+            // Capture agent status
+            if (ev.data.status) existing.agentStatus = ev.data.status;
           }
           break;
         }
@@ -243,12 +247,22 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
           // Check if this text belongs to a sub-agent handoff
           const handoff = handoffMap.get(num);
           if (handoff && ev.data.text) {
-            handoff.activities.push({ type: "text", text: ev.data.text });
+            const lastActivity = handoff.activities[handoff.activities.length - 1];
+            if (lastActivity && lastActivity.type === "text") {
+              lastActivity.text += ev.data.text;
+            } else {
+              handoff.activities.push({ type: "text", text: ev.data.text });
+            }
           } else {
             // Coordinator or sequential agent text
             const existing = groups.get(num);
             if (existing && ev.data.text) {
-              existing.activities.push({ type: "text", text: ev.data.text });
+              const lastActivity = existing.activities[existing.activities.length - 1];
+              if (lastActivity && lastActivity.type === "text") {
+                lastActivity.text += ev.data.text;
+              } else {
+                existing.activities.push({ type: "text", text: ev.data.text });
+              }
             }
           }
           break;
@@ -414,8 +428,14 @@ function StepTimelineItem({
                 {group.role}
               </Badge>
             )}
+            {group.status === "completed" && (
+              <CheckCircle2 className="size-4 text-emerald-500" />
+            )}
             {group.status === "running" && (
               <Loader2 className="size-4 text-muted-foreground animate-spin" />
+            )}
+            {group.status === "failed" && (
+              <XCircle className="size-4 text-destructive" />
             )}
           </div>
           <p className="text-sm text-muted-foreground">
@@ -424,6 +444,12 @@ function StepTimelineItem({
               : `Step ${group.stepNumber}`}
             {timestamp && <> &middot; {new Date(timestamp).toLocaleTimeString()}</>}
             {group.stepNumber !== 0 && <> &middot; {inputLabel}</>}
+            {group.status === "completed" && group.agentStatus && group.agentStatus !== "complete" && (
+              <> &middot; <span className={cn(
+                group.agentStatus === "needs_review" && "text-amber-500",
+                group.agentStatus === "blocked" && "text-red-500",
+              )}>{group.agentStatus === "needs_review" ? "needs review" : "blocked"}</span></>
+            )}
           </p>
         </div>
 
@@ -437,45 +463,27 @@ function StepTimelineItem({
         {/* Activities — interleaved text, tool calls, and agent handoffs */}
         {group.activities.length > 0 && (
           <div className="mt-3 space-y-2">
-            {renderActivities(group.activities)}
+            {renderActivities(
+              group.status === "completed" && group.output
+                ? group.activities.filter(a => a.type !== "text")
+                : group.activities
+            )}
           </div>
         )}
 
-        {/* Final output — shown directly at the bottom */}
+        {/* Completed intermediate step — show output directly */}
+        {group.status === "completed" && hasOutput && !showOutputDirectly && (
+          <div className="mt-3">
+            <div className="rounded-lg border bg-card p-4">
+              <ChatMarkdown content={group.output!} />
+            </div>
+          </div>
+        )}
+
+        {/* Final step output — shown directly */}
         {hasOutput && showOutputDirectly && (
           <div className="mt-3 rounded-lg border bg-card p-4">
             <ChatMarkdown content={group.output!} />
-          </div>
-        )}
-        {/* Non-last output — toggle */}
-        {hasOutput && !showOutputDirectly && (
-          <div className="my-1.5">
-            <button
-              onClick={() => setShowOutput(!showOutput)}
-              className={cn(
-                "group flex items-center gap-1.5 w-fit py-1 transition-colors",
-                "text-sm font-medium text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <svg
-                className={cn(
-                  "size-3.5 transition-transform duration-200 shrink-0",
-                  showOutput ? "rotate-90 text-foreground" : "text-muted-foreground"
-                )}
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span>{showOutput ? "Hide output" : "View output"}</span>
-            </button>
-            {showOutput && (
-              <div className="ml-3 mt-2 border-l-2 border-muted pl-4 pb-2">
-                <div className="rounded-lg border bg-card p-4">
-                  <ChatMarkdown content={group.output!} />
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -844,3 +852,4 @@ function HitlResolvedCard({
     </div>
   );
 }
+

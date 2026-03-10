@@ -10,16 +10,16 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "12");
     const category = searchParams.get("category") as WebletCategory | null;
     const sort = searchParams.get("sort") || "newest";
-    
+
     const all = searchParams.get("all") === "true";
-    
+
     const skip = (page - 1) * limit;
 
     let whereClause: any = {};
     if (!all) {
-      whereClause = { 
-        isActive: true, 
-        isPublic: true 
+      whereClause = {
+        isActive: true,
+        isPublic: true
       };
     }
 
@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
           name: true,
           slug: true,
           description: true,
+          iconUrl: true,
           category: true,
           accessType: true,
           monthlyPrice: true,
@@ -55,6 +56,11 @@ export async function GET(req: NextRequest) {
           },
           _count: {
             select: { chatSessions: true }
+          },
+          capabilities: true,
+          mcpServers: {
+            where: { isActive: true },
+            select: { id: true, label: true, iconUrl: true },
           }
         }
       }),
