@@ -42,12 +42,12 @@ export function NodeSettingsPanel({ node, onUpdate, onDelete, onClose }: NodeSet
 
 function PanelHeader({ title, subtitle, onClose }: { title: string; subtitle?: string; onClose: () => void }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+    <div className="flex items-center justify-between px-4 py-3 border-b bg-black shrink-0">
       <div>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
         {subtitle && <p className="text-[11px] text-muted-foreground">{subtitle}</p>}
       </div>
-      <Button variant="ghost" size="icon" className="size-7" onClick={onClose}>
+      <Button variant="ghost" size="icon" className="size-7 rounded-sm hover:bg-white/10 text-zinc-500 hover:text-white transition-all shadow-none" onClick={onClose}>
         <X className="size-3.5" />
       </Button>
     </div>
@@ -79,7 +79,7 @@ function PromptSettings({
             value={data.prompt || ""}
             onChange={(e) => onUpdate(node.id, { prompt: e.target.value })}
             placeholder="e.g. Write a research report on AI trends in 2025..."
-            className="text-sm resize-none min-h-[120px]"
+            className="text-sm resize-none min-h-[120px] focus-visible:ring-amber-500 focus-visible:border-amber-500"
             rows={5}
           />
           <p className="text-[10px] text-muted-foreground">
@@ -116,8 +116,8 @@ function WebletSettings({
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Agent info header */}
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
-          <div className="size-10 rounded-lg overflow-hidden border border-border bg-background shrink-0">
+        <div className="flex items-center gap-3 p-3 rounded-sm bg-black border">
+          <div className="size-10 rounded-sm overflow-hidden border border-zinc-800 bg-black shrink-0">
             {imgErr ? (
               <div className="size-full flex items-center justify-center">
                 <Bot className="size-5 text-muted-foreground" />
@@ -128,8 +128,8 @@ function WebletSettings({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold truncate">{data.webletName}</p>
-            <p className="text-xs text-muted-foreground truncate">{data.description || data.category}</p>
+            <p className="text-sm font-semibold truncate text-white">{data.webletName}</p>
+            <p className="text-xs text-white/60 truncate">{data.description || data.category}</p>
           </div>
         </div>
 
@@ -160,7 +160,7 @@ function WebletSettings({
             value={data.stepPrompt || ""}
             onChange={(e) => onUpdate(node.id, { stepPrompt: e.target.value })}
             placeholder="Tell this agent exactly what to do..."
-            className="text-sm resize-none min-h-[100px]"
+            className="text-sm resize-none min-h-[100px] focus-visible:ring-amber-500 focus-visible:border-amber-500"
             rows={4}
           />
           <p className="text-[10px] text-muted-foreground">
@@ -169,7 +169,7 @@ function WebletSettings({
         </div>
 
         {/* HITL toggle */}
-        <div className="flex items-center justify-between p-3 rounded-lg border">
+        <div className="flex items-center justify-between p-3 rounded-sm border bg-black/40">
           <div className="space-y-0.5">
             <Label className="text-xs">Human in the Loop</Label>
             <p className="text-[10px] text-muted-foreground">Pause for approval after this agent.</p>
@@ -183,7 +183,7 @@ function WebletSettings({
         {/* Delete */}
         <Button
           variant="outline"
-          className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+          className="w-full text-rose-500 hover:bg-rose-500/10 hover:text-rose-400 border-rose-500/30 rounded-sm transition-all"
           onClick={() => {
             onDelete(node.id);
             onClose();

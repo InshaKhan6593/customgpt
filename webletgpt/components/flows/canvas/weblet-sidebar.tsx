@@ -42,17 +42,17 @@ export function WebletSidebar({ weblets, onWebletClick }: WebletSidebarProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#0a0a0a]">
+    <div className="flex flex-col h-full bg-black">
       {/* Header */}
-      <div className="px-5 pt-6 pb-4 border-b border-zinc-100 dark:border-white/5">
-        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-4 tracking-tight">Available Agents</h3>
+      <div className="px-5 pt-6 pb-4 border-b border-white/5">
+        <h3 className="text-lg font-bold text-white mb-4 tracking-tight">Available Agents</h3>
         <div className="relative group">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-500 transition-colors" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search agents..."
-            className="h-10 pl-10 text-sm font-medium text-zinc-100 bg-zinc-50 dark:bg-black/40 border-zinc-200 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-zinc-700 focus-visible:border-zinc-700 transition-all rounded-xl shadow-none"
+            className="h-10 pl-10 text-sm font-medium text-zinc-100 bg-black/40 border-white/10 focus-visible:ring-1 focus-visible:ring-zinc-700 focus-visible:border-zinc-700 transition-all rounded-sm shadow-none"
           />
         </div>
       </div>
@@ -69,7 +69,7 @@ export function WebletSidebar({ weblets, onWebletClick }: WebletSidebarProps) {
         <div className="space-y-4 mt-6 mb-4">
           {Array.from(grouped.entries()).map(([category, items]) => (
             <div key={category}>
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500 px-2 mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/50 px-2 mb-3">
                 {category}
               </p>
               <div className="space-y-2">
@@ -116,17 +116,17 @@ function WebletDragItem({
       draggable
       onDragStart={(e) => onDragStart(e, weblet)}
       onClick={() => onWebletClick?.(weblet)}
-      className="flex items-center gap-3 py-2 px-2.5 pr-1.5 rounded-lg cursor-grab active:cursor-grabbing hover:cursor-pointer
-        bg-white dark:bg-[#0a0a0a] border border-zinc-100 dark:border-white/5
-        hover:dark:bg-white/[0.02] hover:dark:border-white/10 hover:border-zinc-200 hover:shadow-sm hover:bg-zinc-50  
+      className="flex items-center gap-3 py-2 px-2.5 pr-1.5 rounded-sm cursor-grab active:cursor-grabbing hover:cursor-pointer
+        bg-black border border-white/5
+        hover:bg-white/[0.02] hover:border-white/10
         transition-all duration-200 group relative"
     >
       <div className="size-8 shrink-0 flex items-center justify-center">
         <AgentIcon iconUrl={weblet.iconUrl} name={weblet.name} />
       </div>
       <div className="min-w-0 flex-1 flex flex-col justify-center pr-6">
-        <p className="text-[13px] font-bold text-zinc-900 dark:text-zinc-50 truncate">{weblet.name}</p>
-        <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-500 truncate mt-0.5">
+        <p className="text-[13px] font-bold text-white truncate">{weblet.name}</p>
+        <p className="text-[12px] font-medium text-zinc-500 truncate mt-0.5">
           {weblet.description ? weblet.description : "Agent node"}
         </p>
       </div>
@@ -137,15 +137,15 @@ function WebletDragItem({
             <button
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
-              className="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-white/10 text-zinc-400 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              className="p-1 rounded-sm hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
             >
               <MoreVertical className="size-4" />
             </button>
           </PopoverTrigger>
-          <PopoverContent side="right" align="start" sideOffset={10} className="w-64 p-3 bg-white dark:bg-[#0a0a0a] border border-zinc-200 dark:border-white/10 shadow-xl rounded-xl">
+          <PopoverContent side="right" align="start" sideOffset={10} className="w-64 p-3 bg-black border border-white/10 shadow-xl rounded-sm">
             <div className="flex flex-col gap-1.5">
-              <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-50">{weblet.name}</h4>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed whitespace-pre-wrap">
+              <h4 className="font-bold text-sm text-white">{weblet.name}</h4>
+              <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
                 {weblet.description || "No description available for this agent."}
               </p>
             </div>

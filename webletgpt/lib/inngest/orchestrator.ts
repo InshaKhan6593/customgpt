@@ -42,25 +42,18 @@ export const executeFlow = inngest.createFunction(
   async ({ event, step }) => {
     const { flowId, sessionId, userId, initialInput } = event.data;
 
-    const flow = await step.run("fetch-flow", async () => {
-      const data = await prisma.userFlow.findUnique({ where: { id: flowId } });
-      if (!data) throw new Error("Flow not found");
-      return data;
-    });
+    const flow = await prisma.userFlow.findUnique({ where: { id: flowId } });
+    if (!flow) throw new Error("Flow not found");
 
     const steps = flow.steps as any[];
     if (!steps || steps.length === 0) {
-      await step.run("publish-no-steps", async () => {
-        await publishProgress(sessionId, "failed", { message: "No steps defined in this flow." });
-      });
+      await publishProgress(sessionId, "failed", { message: "No steps defined in this flow." });
       return { status: "failed", reason: "No steps defined" };
     }
 
-    await step.run("publish-start", async () => {
-      await publishProgress(sessionId, "started", {
-        message: `Starting flow "${flow.name}" with ${steps.length} step(s)`,
-        mode: flow.mode,
-      });
+    await publishProgress(sessionId, "started", {
+      message: `Starting flow "${flow.name}" with ${steps.length} step(s)`,
+      mode: flow.mode,
     });
 
     // ═══════════════════════════════════════════════════════════
@@ -443,26 +436,20 @@ FINAL SYNTHESIS:
         }
 
         // ── Credit quota check ──
-        const quotaResult = await step.run(`check-quota-${nodeId}`, async () => {
-          const result = await checkQuotas(userId, webletId);
-          return { allowed: result.allowed, reason: result.reason, triggerReload: result.triggerReload || false };
-        });
+        const qRes = await checkQuotas(userId, webletId);
+        const quotaResult = { allowed: qRes.allowed, reason: qRes.reason, triggerReload: qRes.triggerReload || false };
 
         if (!quotaResult.allowed) {
-          await step.run(`publish-quota-fail-${nodeId}`, async () => {
-            await publishProgress(sessionId, "failed", {
-              message: `Node ${webletInfo.name} failed: ${quotaResult.reason}`,
-              quotaExceeded: true,
-              reason: quotaResult.reason,
-            });
+          await publishProgress(sessionId, "failed", {
+            message: `Node ${webletInfo.name} failed: ${quotaResult.reason}`,
+            quotaExceeded: true,
+            reason: quotaResult.reason,
           });
           return { nodeId, status: "failed", reason: quotaResult.reason };
         }
 
         if (quotaResult.triggerReload) {
-          await step.run(`auto-reload-${nodeId}`, async () => {
-            await processDeveloperOverage(webletInfo.developerId);
-          });
+          await processDeveloperOverage(webletInfo.developerId);
         }
 
         let revision = 0;
@@ -472,7 +459,7 @@ FINAL SYNTHESIS:
         while (revision <= MAX_HITL_REVISIONS) {
           const revSuffix = revision === 0 ? "" : `-rev${revision}`;
 
-          await step.run(`publish-step-${nodeId}${revSuffix}`, async () => {
+          const nodeExec = await step.run(`execute-node-full-${nodeId}${revSuffix}`, async () => {
             // Let the UI know this node started (for animations/glow)
             await publishProgress(sessionId, "node_started", {
               nodeId,
@@ -489,28 +476,25 @@ FINAL SYNTHESIS:
               webletId,
               webletName: webletInfo.name,
             });
-          });
 
-          // Fetch previous outputs explicitly feeding into this node
-          // Truncate each to ~8K tokens (~32K chars) to prevent context overflow and slow generation
-          const MAX_PREV_OUTPUT_CHARS = 32_000;
-          const incomingEdges = edges.filter(e => e.target === nodeId);
-          const previousOutputs = incomingEdges.map(e => {
-            const sourceNode = nodes.find(sn => sn.id === e.source);
-            if (sourceNode && sourceNode.type === "weblet" && nodeOutputs[e.source]) {
-              let output = nodeOutputs[e.source].text;
-              if (output.length > MAX_PREV_OUTPUT_CHARS) {
-                output = output.substring(0, MAX_PREV_OUTPUT_CHARS) + "\n\n...[Output truncated for context efficiency]...";
+            // Fetch previous outputs explicitly feeding into this node
+            const MAX_PREV_OUTPUT_CHARS = 32_000;
+            const incomingEdges = edges.filter(e => e.target === nodeId);
+            const previousOutputs = incomingEdges.map(e => {
+              const sourceNode = nodes.find(sn => sn.id === e.source);
+              if (sourceNode && sourceNode.type === "weblet" && nodeOutputs[e.source]) {
+                let output = nodeOutputs[e.source].text;
+                if (output.length > MAX_PREV_OUTPUT_CHARS) {
+                  output = output.substring(0, MAX_PREV_OUTPUT_CHARS) + "\n\n...[Output truncated for context efficiency]...";
+                }
+                return {
+                  agentName: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
+                  output,
+                };
               }
-              return {
-                agentName: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
-                output,
-              };
-            }
-            return null;
-          }).filter(Boolean) as { agentName: string; output: string }[];
+              return null;
+            }).filter(Boolean) as { agentName: string; output: string }[];
 
-          const stepResult = await step.run(`execute-step-${nodeId}${revSuffix}`, async (): Promise<StepExecutionResult> => {
             // Build system prompt — agent's own instructions
             let systemPrompt = activeVersion.prompt;
             if (node.data.role) {
@@ -557,7 +541,7 @@ FINAL SYNTHESIS:
             const toolNames = Object.keys(tools);
             const hasTools = toolNames.length > 0;
             if (hasTools) {
-              systemPrompt += `\n\nYou have access to the following tools: ${toolNames.join(", ")}. Use these tools if necessary to gather information. You do not need to use tools if you already know the answer or have sufficient context.`;
+              systemPrompt += `\n\nYou have access to the following tools: ${toolNames.join(", ")}. Use these tools if necessary to gather information. You do not need to use tools if you already know the answer or have sufficient context.\n\nIMPORTANT: Do not call any single tool more than 3 times for the same task. If you cannot find what you need after 3 attempts, proceed with the best information you have to avoid infinite loops.`;
             }
 
             const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct";
@@ -567,12 +551,14 @@ FINAL SYNTHESIS:
 
             console.log(`[Orchestrator] Agent "${webletInfo.name}": tools=[${toolNames.join(", ")}], stepInstructions=${!!node.data.stepPrompt?.trim()}, previousOutputs=${previousOutputs.length}`);
 
+            let stepResult: StepExecutionResult;
+
             try {
               const maxSteps = hasTools ? 5 : 3;
 
               console.log(`[Orchestrator] Calling streamText for node "${webletInfo.name}" (model: ${modelId}, tools: ${Object.keys(tools).length}, messages: ${safeMessages.length})`);
               const abortController = new AbortController();
-              const timeoutId = setTimeout(() => abortController.abort(), 300_000); // 5 min timeout
+              const timeoutId = setTimeout(() => abortController.abort(), 900_000); // 15 min timeout
 
               const toolCallsMap: Record<string, number> = {};
               const toolCallDetails: ToolCallDetail[] = [];
@@ -594,8 +580,9 @@ FINAL SYNTHESIS:
                     for (let t = 0; t < toolCalls.length; t++) {
                       const tc = toolCalls[t] as any;
                       toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
-                      const result = (toolResults as any)?.[t]?.output ?? null;
-                      toolCallDetails.push({ toolName: tc.toolName, args: tc.input || {}, result });
+                      const tr = (toolResults as any[])?.find(r => r.toolCallId === tc.toolCallId);
+                      const result = tr ? tr.result : null;
+                      toolCallDetails.push({ toolName: tc.toolName, args: tc.args || tc.input || {}, result });
                       await publishProgress(sessionId, "tool_call", {
                         stepNumber: iteration, toolName: tc.toolName,
                         args: tc.input || {}, result, state: "completed", nodeId,
@@ -641,7 +628,19 @@ FINAL SYNTHESIS:
               const tokensIn = usage?.promptTokens || 0;
               const tokensOut = usage?.completionTokens || 0;
 
-              let outputText = finalText || "[No output generated]";
+              let outputText = finalText;
+
+              if (!outputText && toolCallDetails.length > 0) {
+                const lastTool = toolCallDetails[toolCallDetails.length - 1];
+                if (lastTool.result) {
+                  const resStr = typeof lastTool.result === 'string' ? lastTool.result : JSON.stringify(lastTool.result, null, 2);
+                  outputText = `**[Auto-generated output from ${lastTool.toolName}]**\n\n\`\`\`\n${resStr}\n\`\`\``;
+                } else {
+                  outputText = `**[Auto-generated output]**\n\nThe agent executed ${toolCallDetails.length} tool(s) (last: ${lastTool.toolName}) but produced no final text summary.`;
+                }
+              }
+
+              outputText = outputText || "[No output generated]";
               let outputStatus: "complete" | "needs_review" | "blocked" = "complete";
 
               // If this node feeds into downstream agents, extract clean structured content
@@ -669,26 +668,20 @@ FINAL SYNTHESIS:
               }
               console.log(`[Orchestrator] Stream completed for "${webletInfo.name}": length=${outputText.length}, status=${outputStatus}, tokens=${tokensIn}+${tokensOut}`);
 
-              return { text: outputText, status: outputStatus, tokensIn, tokensOut, modelId, toolCalls: toolCallsMap, toolCallDetails, developerId: webletInfo.developerId };
+              stepResult = { text: outputText, status: outputStatus, tokensIn, tokensOut, modelId, toolCalls: toolCallsMap, toolCallDetails, developerId: webletInfo.developerId };
 
             } catch (llmError: any) {
               console.error(`[Orchestrator] LLM error for "${webletInfo.name}":`, llmError?.message || llmError);
-              return { text: `[Error]: ${llmError?.message || "Unknown error"}`, status: "blocked" as const, tokensIn: 0, tokensOut: 0, modelId: activeVersion.model || "", toolCalls: {}, toolCallDetails: [], developerId: webletInfo.developerId };
+              stepResult = { text: `[Error]: ${llmError?.message || "Unknown error"}`, status: "blocked" as const, tokensIn: 0, tokensOut: 0, modelId: activeVersion.model || "", toolCalls: {}, toolCallDetails: [], developerId: webletInfo.developerId };
             } finally {
               if (mcpClients.length > 0) await closeMCPClients(mcpClients);
             }
-          });
 
-          stepExecutionResult = stepResult;
-
-          // Deduct credits and log
-          if (stepResult.tokensIn > 0 || stepResult.tokensOut > 0) {
-            await step.run(`log-usage-${nodeId}${revSuffix}`, async () => {
+            // Deduct credits and log
+            if (stepResult.tokensIn > 0 || stepResult.tokensOut > 0) {
               await logUsage({ userId, webletId, developerId: stepResult.developerId, sessionId, workflowId: flowId, tokensIn: stepResult.tokensIn, tokensOut: stepResult.tokensOut, modelId: stepResult.modelId, toolCalls: Object.keys(stepResult.toolCalls).length > 0 ? stepResult.toolCalls : null, source: "ORCHESTRATION" });
-            });
-          }
+            }
 
-          await step.run(`publish-step-done-${nodeId}${revSuffix}`, async () => {
             // The UI will use this to turn off node glow animations
             await publishProgress(sessionId, "node_completed", { nodeId, output: stepResult.text, status: stepResult.status });
 
@@ -698,7 +691,15 @@ FINAL SYNTHESIS:
               status: stepResult.status,
               toolCallDetails: stepResult.toolCallDetails.length > 0 ? stepResult.toolCallDetails : undefined,
             });
+
+            return { status: "success", result: stepResult };
           });
+
+          if (nodeExec.status === "failed") {
+            return { nodeId, status: "failed", reason: (nodeExec as any).reason || "Execution failed" };
+          }
+          
+          stepExecutionResult = nodeExec.result as StepExecutionResult;
 
           if (!node.data.hitlGate) break;
 
@@ -708,19 +709,17 @@ FINAL SYNTHESIS:
 
           const hitlEvent = await step.waitForEvent(`wait-approval-${nodeId}${revSuffix}`, { event: "flow/hitl.response", timeout: "24h", match: "data.sessionId" });
           if (!hitlEvent || hitlEvent.data.action === "reject") {
-            await step.run(`publish-hitl-reject-${nodeId}`, async () => {
+            await step.run(`publish-hitl-reject-${nodeId}${revSuffix}`, async () => {
               await publishProgress(sessionId, "failed", { message: "Flow terminated by user rejection." });
             });
             return { nodeId, status: "terminated", reason: "Rejected" };
           }
 
           const hasFeedback = !!hitlEvent.data.feedback?.trim();
-          await step.run(`publish-hitl-resolved-${nodeId}${revSuffix}`, async () => {
+          await step.run(`publish-hitl-approve-${nodeId}${revSuffix}`, async () => {
             await publishProgress(sessionId, "hitl_completed", { nodeId, action: "approved", willRevise: hasFeedback && revision < MAX_HITL_REVISIONS });
-          });
-
-          // Node has completed successfully
-          await step.run(`publish-completed-${nodeId}${revSuffix}`, async () => {
+            
+            // Node has completed successfully
             await publishProgress(sessionId, "node_completed", {
               nodeId,
               revision,

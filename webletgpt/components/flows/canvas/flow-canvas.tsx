@@ -53,12 +53,12 @@ const edgeTypes: EdgeTypes = {
 // ── Default edge style ──
 const defaultEdgeOptions = {
   type: "interactive",
-  animated: false,
+  animated: true,
   markerEnd: {
     type: MarkerType.ArrowClosed,
     width: 6,
     height: 6,
-    color: "#71717a",
+    color: "#a1a1aa", // zinc-400
   },
 };
 
@@ -67,13 +67,14 @@ function normalizeEdges(edges: FlowEdge[]): FlowEdge[] {
   return edges.map((e) => ({
     ...e,
     type: "interactive",
+    animated: true,
     markerEnd: defaultEdgeOptions.markerEnd,
   }));
 }
 
 const connectionLineStyle = {
-  stroke: "#71717a", // zinc-500
-  strokeWidth: 1,
+  stroke: "#a1a1aa", // zinc-400 (consistent with arrows)
+  strokeWidth: 1.5,
 };
 
 // ── Props ──
@@ -87,6 +88,7 @@ interface FlowCanvasProps {
   onChange?: (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => void;
   readOnly?: boolean;
   executionStates?: Record<string, NodeExecutionState>;
+  isFinished?: boolean;
 }
 
 function FlowCanvasInner({
@@ -99,6 +101,7 @@ function FlowCanvasInner({
   onChange,
   readOnly = false,
   executionStates,
+  isFinished = false,
 }: FlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -114,6 +117,39 @@ function FlowCanvasInner({
     window.addEventListener("openWebletSidebar", handleOpenSidebar);
     return () => window.removeEventListener("openWebletSidebar", handleOpenSidebar);
   }, []);
+
+  // Custom event to force open the output panel for a specific node
+  useEffect(() => {
+    const handleOpenNodeOutput = (e: CustomEvent) => {
+      const nodeId = e.detail?.nodeId;
+      if (nodeId) {
+        const targetNode = nodes.find((n) => n.id === nodeId);
+        if (targetNode) {
+          setOutputPanelNode(targetNode);
+          setSelectedNode(null);
+        }
+      }
+    };
+    window.addEventListener("openNodeOutput", handleOpenNodeOutput as EventListener);
+    return () => window.removeEventListener("openNodeOutput", handleOpenNodeOutput as EventListener);
+  }, [nodes]);
+
+  // Custom event to select a node (opening the settings panel)
+  useEffect(() => {
+    const handleSelectNode = (e: CustomEvent) => {
+      const nodeId = e.detail?.nodeId;
+      if (nodeId) {
+        const targetNode = nodes.find((n) => n.id === nodeId);
+        if (targetNode) {
+          setSelectedNode(targetNode);
+          setOutputPanelNode(null);
+          setIsSidebarOpen(false);
+        }
+      }
+    };
+    window.addEventListener("selectNode", handleSelectNode as EventListener);
+    return () => window.removeEventListener("selectNode", handleSelectNode as EventListener);
+  }, [nodes]);
 
   // Listen for flow finish event to auto-select the last active node
   useEffect(() => {
@@ -157,15 +193,26 @@ function FlowCanvasInner({
     // Sync edge execution states (animations)
     setEdges((eds) =>
       eds.map((e) => {
+        // If the flow is finished, reset all edges to default state
+        if (isFinished) {
+          return {
+            ...e,
+            className: "",
+            animated: true,
+          };
+        }
+
         const targetState = executionStates[e.target];
         const sourceState = executionStates[e.source];
 
         let className = "";
-        let animated = false;
+        let animated = true;
 
-        // If the target node is running, make the edge flow into it glow
-        if (targetState?.status === "running") {
-          className = "glowing-edge";
+        // If target or source node is running, make the edge glow
+        if (targetState?.status === "running" || sourceState?.status === "running") {
+          const sourceNode = nodes.find(n => n.id === e.source);
+          const isFromPrompt = sourceNode?.type === "prompt";
+          className = isFromPrompt ? "input-glowing-edge" : "glowing-edge";
           animated = true;
         }
         // If the source node is completed, the edge is "done" transferring
@@ -180,7 +227,7 @@ function FlowCanvasInner({
         };
       })
     );
-  }, [executionStates, setNodes, setEdges]);
+  }, [executionStates, isFinished, setNodes, setEdges]);
 
   // ── Connect nodes ──
   const onConnect: OnConnect = useCallback(
@@ -353,8 +400,10 @@ function FlowCanvasInner({
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
+          minZoom={0.2}
+          maxZoom={1.5}
           fitView
-          fitViewOptions={{ padding: 0.3 }}
+          fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
           snapToGrid
           snapGrid={[20, 20]}
           deleteKeyCode={["Backspace", "Delete"]}
@@ -365,36 +414,74 @@ function FlowCanvasInner({
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="currentColor" className="text-zinc-300 dark:text-zinc-800/80" />
           <Controls className="!bg-white dark:!bg-zinc-900 !border-zinc-200 dark:!border-zinc-800 !shadow-sm !rounded-lg overflow-hidden [&>button]:!bg-white dark:[&>button]:!bg-zinc-900 [&>button]:!border-zinc-200 dark:[&>button]:!border-zinc-800 [&>button]:!text-zinc-600 dark:[&>button]:!text-zinc-400 hover:[&>button]:!bg-zinc-100 dark:hover:[&>button]:!bg-zinc-800" />
+          
+          {/* Custom SVG Markers for consistent arrowhead colors (8px for precision) */}
+          <svg style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0 }}>
+            <defs>
+              <marker
+                id="arrow-amber"
+                markerWidth="6"
+                markerHeight="6"
+                refX="6"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b" />
+              </marker>
+              <marker
+                id="arrow-zinc-200"
+                markerWidth="6"
+                markerHeight="6"
+                refX="6"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L6,3 L0,6 Z" fill="#e4e4e7" />
+              </marker>
+              <marker
+                id="arrow-zinc-400"
+                markerWidth="6"
+                markerHeight="6"
+                refX="6"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L6,3 L0,6 Z" fill="#a1a1aa" />
+              </marker>
+            </defs>
+          </svg>
         </ReactFlow>
-
-        {/* Top Right Floating Add Button */}
-        {!isSidebarOpen && !readOnly && (
-          <div className="absolute top-3 right-3 z-10 flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setIsSidebarOpen(true)}
-              className="transition-colors shadow-sm rounded-lg size-7 bg-white hover:bg-zinc-50 text-zinc-600 border-zinc-200"
-            >
-              <Plus className="size-3.5" />
-            </Button>
-          </div>
-        )}
-
-        {!readOnly && onSave && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-white hover:bg-zinc-100 text-zinc-900 border border-zinc-200 dark:bg-[#18181b] dark:hover:bg-[#27272a] dark:text-zinc-100 dark:border-zinc-800 shadow-lg shadow-black/5 dark:shadow-black/40 px-5 py-2 rounded-full font-medium tracking-wide flex items-center gap-2 transition-colors"
-            >
-              <Play className="size-3.5 fill-current" />
-              {saving ? "Saving..." : "Execute workflow"}
-            </Button>
-          </div>
-        )}
-
       </div>
+
+      {/* Top Right Floating Add Button */}
+      {!isSidebarOpen && !readOnly && (
+        <div className="absolute top-3 right-3 z-50 flex gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setIsSidebarOpen(true)}
+            className="transition-colors shadow-sm rounded-lg size-7 bg-white hover:bg-zinc-50 text-zinc-600 border-zinc-200"
+          >
+            <Plus className="size-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {!readOnly && onSave && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-white hover:bg-zinc-100 text-zinc-900 border border-zinc-200 dark:bg-[#18181b] dark:hover:bg-[#27272a] dark:text-zinc-100 dark:border-zinc-800 shadow-lg shadow-black/5 dark:shadow-black/40 px-5 py-2 rounded-full font-medium tracking-wide flex items-center gap-2 transition-colors"
+          >
+            <Play className="size-3.5 fill-current" />
+            {saving ? "Saving..." : "Execute workflow"}
+          </Button>
+        </div>
+      )}
 
       {/* Right sidebars */}
       {readOnly && outputPanelNode && executionStates && executionStates[outputPanelNode.id] ? (

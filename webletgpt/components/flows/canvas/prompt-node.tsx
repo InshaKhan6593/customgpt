@@ -1,11 +1,14 @@
 "use client";
 
 import { memo } from "react";
-import { Handle, Position, type NodeProps, useNodeId, useEdges } from "@xyflow/react";
-import { MessageSquareText, Zap, Plus } from "lucide-react";
+import { Handle, Position, type NodeProps, useNodeId, useEdges, useReactFlow } from "@xyflow/react";
+import { MessageSquareText, Zap, Plus, Trash2, MoreHorizontal, AlertTriangle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PromptNodeData } from "./types";
 
-function PromptNodeComponent({ data, selected }: NodeProps & { data: PromptNodeData }) {
+function PromptNodeComponent({ id, data, selected }: NodeProps & { data: PromptNodeData }) {
+  const { deleteElements } = useReactFlow();
   const nodeId = useNodeId();
   const edges = useEdges();
 
@@ -17,51 +20,135 @@ function PromptNodeComponent({ data, selected }: NodeProps & { data: PromptNodeD
   };
 
   return (
-    <div className="relative flex flex-col items-center group">
-      {/* Trigger pill — n8n style */}
+    <div className="relative group/node" style={{ width: 170 }}>
+      {/* Extended connection line + button */}
+      {!hasOutgoingConnection && (
+        <div className="absolute left-full top-1/2 -translate-y-1/2 flex items-center z-50 ml-3">
+          <div className="w-10 h-[1.5px] bg-zinc-700/60" />
+          <TooltipProvider delayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onAddClick}
+                  className="size-4 bg-black border border-zinc-700/80 rounded-sm flex items-center justify-center text-zinc-500 hover:text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/40 transition-all shadow-xl -ml-px"
+                >
+                  <Plus className="size-2" strokeWidth={3} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" hideArrow={true} className="bg-black border border-white/40 text-[10px] font-medium text-zinc-100 px-2 py-1 rounded-none shadow-2xl">
+                Connect Next Step
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
+
+      <TooltipProvider delayDuration={0}>
+        <div className="absolute -right-2 -top-2 z-50 flex items-center gap-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="size-4 rounded-sm bg-black border border-zinc-700/80 shadow-md flex items-center justify-center text-zinc-500 hover:text-rose-500 hover:bg-rose-500/10 hover:border-rose-500/50 transition-all"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteElements({ nodes: [{ id }] });
+                }}
+              >
+                <Trash2 className="size-2.5" strokeWidth={2.5} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" hideArrow={true} className="bg-black border border-white/40 text-[10px] font-medium text-zinc-100 px-2 py-1 rounded-none shadow-2xl">
+              Delete Node
+            </TooltipContent>
+          </Tooltip>
+
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className="size-4 rounded-sm bg-black border border-zinc-700/80 shadow-md flex items-center justify-center text-zinc-500 hover:text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/40 transition-all"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    <MoreHorizontal className="size-2.5" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top" hideArrow={true} className="bg-black border border-white/40 text-[10px] font-medium text-zinc-100 px-2 py-1 rounded-none shadow-2xl">
+                View Details
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent
+              className="w-56 bg-black border-zinc-800 p-2.5 shadow-xl rounded-sm"
+              align="start"
+              side="right"
+              onPointerDown={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              <div className="flex flex-col gap-2">
+                <div className="text-[10px] font-semibold text-white uppercase tracking-wider">Input Source Details</div>
+                <div className="text-[10px] text-zinc-400 leading-snug break-words">
+                  This is the entry point of your workflow. It triggers the first step based on user input or a specified event.
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </TooltipProvider>
+
       <div
         className={`
-          relative w-[48px] h-[36px] bg-white dark:bg-zinc-950 border shadow-sm
-          flex items-center justify-center
-          rounded-l-full rounded-r-lg
-          ${selected
-            ? "border-zinc-400 ring-1 ring-zinc-400/20 dark:border-zinc-500 dark:ring-zinc-500/20"
-            : "border-zinc-200 dark:border-zinc-800 hover:shadow-md"
-          }
+          flex flex-col relative
+          bg-black shadow-xl rounded-sm border
+          ${selected ? "border-amber-500/50 ring-1 ring-amber-500/20" : "border-zinc-800 hover:border-zinc-700"}
+          transition-all duration-200
         `}
       >
-        {/* Lightning bolt indicator */}
-        <div className="absolute -left-[6px] top-1/2 -translate-y-1/2 z-10 size-4 bg-transparent flex items-center justify-center text-amber-500">
-          <Zap className="size-2.5" />
-        </div>
-
-        <MessageSquareText className="size-3 text-zinc-600 dark:text-zinc-400" strokeWidth={1.5} />
-
         <Handle
           type="source"
           position={Position.Right}
-          className="!w-3 !h-3 !min-w-0 !min-h-0 !bg-zinc-400 dark:!bg-zinc-600 !border-[3px] !border-zinc-50 dark:!border-zinc-950 !rounded-full !-right-[6px] !z-20"
+          className="!w-2.5 !h-2.5 !bg-zinc-950 !border-2 !border-amber-600/80 !rounded-full !-right-[6px] z-20"
         />
-
-        {/* Extending Handle & Add Button */}
-        {!hasOutgoingConnection && (
-          <div className="absolute left-[calc(100%+3px)] top-1/2 -translate-y-1/2 flex items-center z-10 gap-0">
-            <div className="w-6 h-[1px] bg-zinc-300 dark:bg-zinc-500" />
-            <button
-              onClick={onAddClick}
-              className="size-2.5 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-[2px] flex items-center justify-center text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-            >
-              <Plus className="size-1.5" strokeWidth={3} />
-            </button>
+        {/* Node Header */}
+        <div className="p-2 flex items-center gap-2">
+          <div className="size-6 bg-black rounded-sm border border-zinc-800 p-1 flex items-center justify-center shrink-0">
+            <Zap className="size-4.5 text-amber-500" />
           </div>
-        )}
-      </div>
 
-      {/* Label below */}
-      <div className="mt-1.5 w-max max-w-[100px]">
-        <p className="text-[10px] text-zinc-600 dark:text-zinc-400 font-medium text-center leading-tight">
-          When chat message received
-        </p>
+          <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+            <div className="text-[11px] font-semibold text-zinc-100 truncate flex items-center gap-1">
+              Input Source
+            </div>
+            <span className="text-[9px] text-zinc-500 truncate leading-tight">Flow entry point</span>
+          </div>
+        </div>
+
+        <div className="px-2 pb-2 flex justify-center">
+          <div className="w-full bg-black border border-zinc-800/60 rounded-sm px-2 py-1 flex items-center justify-between">
+            <span className="text-[10px] text-white truncate">Waiting for trigger</span>
+            {data.prompt ? (
+              <div className="size-1.5 rounded-full bg-amber-500 animate-pulse shrink-0 ml-2" />
+            ) : (
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="shrink-0 ml-2 cursor-help">
+                      <AlertTriangle className="size-3 text-rose-500" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" hideArrow={true} className="bg-black border border-white/40 text-[10px] font-medium text-white px-2 py-1 rounded-none shadow-2xl">
+                    Add a prompt to start the flow
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

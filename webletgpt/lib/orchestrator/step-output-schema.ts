@@ -46,23 +46,25 @@ export function buildAgentMessage(opts: {
 }): string {
   const parts: string[] = [];
 
-  // Step instructions from the workflow creator (what this agent should do)
-  if (opts.stepInstructions?.trim()) {
-    parts.push(`## Your Task\n${opts.stepInstructions.trim()}`);
-  }
+  // 1. The original user request / trigger prompt
+  parts.push(`## Original User Request\n${opts.userTask}`);
 
-  // The original user request / trigger prompt
-  parts.push(`## User's Request\n${opts.userTask}`);
-
-  // Context from previous agents
+  // 2. Context from previous agents
   if (opts.previousOutputs && opts.previousOutputs.length > 0) {
-    parts.push(`## Context from Previous Agents\nUse the following outputs from previous agents to inform your work:\n`);
+    parts.push(`## Findings from Previous Agents\nThe following are the results and findings provided by previous agents in this workflow. Use this context to inform your work:\n`);
     for (const prev of opts.previousOutputs) {
-      parts.push(`### ${prev.agentName}\n${prev.output}`);
+      parts.push(`### Agent: ${prev.agentName}\n${prev.output}`);
     }
   }
 
-  // Reviewer feedback (HITL revision)
+  // 3. Step instructions (what this specific agent should do)
+  if (opts.stepInstructions?.trim()) {
+    parts.push(`## Your Specific Instructions & Role\n**CRITICAL**: You must strictly focus on the following instructions and your specific role. Do not repeat the work of previous agents, but rather build upon it as instructed below:\n\n${opts.stepInstructions.trim()}`);
+  } else {
+    parts.push(`## Your Role\n**CRITICAL**: You must strictly focus on your assigned role and provide the best possible output based on the user's request and any previous context provided.`);
+  }
+
+  // 4. Reviewer feedback (HITL revision)
   if (opts.reviewerFeedback?.trim()) {
     parts.push(
       `## Reviewer Feedback\nA human reviewer has provided feedback on your previous output. Address every point:\n\n${opts.reviewerFeedback.trim()}`

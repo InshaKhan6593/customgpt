@@ -242,12 +242,16 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
     // Save before executing to ensure server has latest version
     const savedData = data || latestCanvasData.current || { nodes: initialNodes, edges: initialEdges, prompt: flow.defaultPrompt };
-    const saved = await saveFlow(savedData);
-    if (!saved) return;
-
-    // Reset run state
+    
+    // Reset run state immediately so UI updates
     setIsRunning(true);
     setSessionId(null);
+
+    const saved = await saveFlow(savedData);
+    if (!saved) {
+      setIsRunning(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/flows/${id}/execute`, {
@@ -393,7 +397,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         </div>
         <div className="flex items-center gap-2">
           {isRunning || sessionId ? (
-            <div className="flex items-center gap-3 mr-2 px-3 py-1 bg-muted/40 rounded-full border">
+            <div className="flex items-center gap-3 mr-2 px-3 py-1 bg-muted/40 rounded-sm border">
               <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground mr-1">
                 {isConnected ? (
                   <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-500" /> Connected</span>
@@ -444,6 +448,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
             onChange={onCanvasChange}
             readOnly={!!sessionId || isRunning}
             executionStates={executionStates}
+            isFinished={isFinished}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">

@@ -7,6 +7,8 @@ export interface McpToolInfo {
   id: string;
   label: string;
   iconUrl: string | null;
+  toolName?: string;
+  description?: string;
 }
 
 export interface PromptNodeData {

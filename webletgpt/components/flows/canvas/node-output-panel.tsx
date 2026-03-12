@@ -35,13 +35,13 @@ export function NodeOutputPanel({
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden w-full">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30 shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-black shrink-0 text-white">
                 <div className="flex items-center gap-2.5">
                     {nodeIcon ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={nodeIcon} alt={nodeName} className="w-5 h-5 object-contain" />
                     ) : (
-                        <Bot className="w-5 h-5 text-muted-foreground" />
+                        <Bot className="w-5 h-5 text-zinc-400" />
                     )}
                     <h3 className="font-semibold text-sm tracking-tight">{nodeName} Output</h3>
                 </div>
@@ -55,7 +55,7 @@ export function NodeOutputPanel({
                             onClick={handleCopy}
                             title="Copy output"
                         >
-                            {copied ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5 text-muted-foreground" />}
+                            {copied ? <CheckCircle2 className="size-3.5 text-amber-500" /> : <Copy className="size-3.5 text-muted-foreground" />}
                         </Button>
                     )}
                     <Button
@@ -69,39 +69,17 @@ export function NodeOutputPanel({
                 </div>
             </div>
 
-            {/* Status Bar */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/10 shrink-0">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</div>
-                {executionState.status === "completed" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                        <CheckCircle2 className="size-3" />
-                        Completed
-                    </span>
-                )}
-                {executionState.status === "running" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                        <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        Running...
-                    </span>
-                )}
-                {executionState.status === "failed" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-[10px] font-medium text-rose-700 dark:text-rose-400">
-                        Failed
-                    </span>
-                )}
-            </div>
-
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto min-h-24">
                 {/* Tool Calls History */}
                 {executionState.toolCalls && executionState.toolCalls.length > 0 && (
-                    <div className="border-b bg-muted/5 px-4 py-3 shrink-0">
-                        <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Tools Used</h4>
-                        <div className="flex flex-col gap-2">
-                            {executionState.toolCalls.map((tool, idx) => (
-                                <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-background border text-xs shadow-sm shadow-black/5">
-                                    <div className="size-1.5 rounded-full bg-emerald-500" />
-                                    <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate max-w-[220px]">{tool.toolName}</span>
+                    <div className="border-b bg-black px-4 py-3 shrink-0">
+                        <h4 className="text-xs font-medium text-zinc-400 mb-2.5">Tools Used</h4>
+                        <div className="flex flex-wrap gap-2">
+                            {Array.from(new Set(executionState.toolCalls.map(t => t.toolName))).map((toolName, idx) => (
+                                <div key={idx} className="flex items-center gap-2 px-2.5 py-1 rounded-sm bg-black border border-zinc-800 text-[11px] font-medium text-white shadow-sm tracking-wide">
+                                    <div className="size-1.5 rounded-full bg-amber-500/80" />
+                                    <span>{toolName}</span>
                                 </div>
                             ))}
                         </div>
@@ -115,16 +93,17 @@ export function NodeOutputPanel({
                             <ChatMarkdown content={output} />
                         </div>
                     ) : executionState.status === "running" ? (
-                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                                <span className="size-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
-                                <span className="size-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
-                                <span className="size-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+                        <div className="flex h-32 flex-col items-center justify-center gap-3 bg-black border border-amber-500/20 rounded-sm mt-2 mx-1 shadow-[0_0_15px_-3px_rgba(245,158,11,0.1)] relative overflow-hidden group">
+                            <div className="absolute inset-0 bg-gradient-to-t from-amber-500/5 to-transparent animate-pulse" />
+                            <div className="flex items-center gap-2 relative z-10">
+                                <span className="size-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+                                <span className="size-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+                                <span className="size-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "300ms" }} />
                             </div>
-                            <p className="text-xs font-medium uppercase tracking-wider">Agent is thinking...</p>
+                            <span className="text-[11px] uppercase tracking-widest font-medium animate-pulse text-white">Running Agent</span>
                         </div>
                     ) : (
-                        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground italic bg-muted/20 border border-dashed rounded-lg mt-2 mx-1">
+                        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground italic bg-muted/20 border border-dashed rounded-sm mt-2 mx-1">
                             No output generated.
                         </div>
                     )}

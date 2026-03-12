@@ -40,6 +40,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --dash-animation: flowDash 1s linear infinite;
+}
+
+@keyframes flowDash {
+  to {
+    stroke-dashoffset: -8;
+  }
 }
 
 .dark {
@@ -128,23 +135,38 @@
   }
 }
 
-/* Custom Edge Animations for React Flow */
+/* Custom Edge Animations for React Flow (Consistent Theme Yellow) */
 .glowing-edge .react-flow__edge-path,
-.react-flow__edge.glowing-edge path {
-  stroke: #10b981;
-  /* emerald-500 */
-  stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4));
-  animation: glowPulse 2s ease-in-out infinite, flowWire 1.5s linear infinite;
-  stroke-dasharray: 10 5 !important;
+.react-flow__edge.glowing-edge .react-flow__edge-path {
+  stroke: #f59e0b; /* amber-500 */
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.4));
+  stroke-dasharray: 4 4 !important;
+  animation: flowWire 0.4s linear infinite !important;
+}
+
+/* Fast Amber Animation for Input Node (Spark Effect) */
+.input-glowing-edge .react-flow__edge-path,
+.react-flow__edge.input-glowing-edge .react-flow__edge-path {
+  stroke: #f59e0b; /* amber-500 */
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+  stroke-dasharray: 4 4 !important;
+  animation: flowWire 0.4s linear infinite !important;
+}
+
+/* Ensure default edges are also dotted and flowing (more subtle) */
+.react-flow__edge:not(.glowing-edge):not(.input-glowing-edge) .react-flow__edge-path {
+  stroke-dasharray: 3 3 !important;
+  animation: flowWire 6s linear infinite;
 }
 
 .completed-edge .react-flow__edge-path,
 .react-flow__edge.completed-edge path {
-  stroke: #10b981;
-  /* emerald-500 */
+  stroke: #a1a1aa;
+  /* zinc-400 */
   stroke-width: 1.5;
-  opacity: 0.5;
+  opacity: 0.8;
 }
 
 
@@ -164,15 +186,52 @@
   }
 }
 
+@keyframes rotate-gear {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes glow-amber-pulse {
+  0% {
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.7));
+  }
+  100% {
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.4));
+  }
+}
+
+/* Tool Call Gear Animation */
+.animate-gear-rotate {
+  display: inline-block !important;
+  transform-origin: center !important;
+  animation: rotate-gear 1.5s linear infinite !important;
+}
+
+.glow-amber {
+  display: inline-block;
+  filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.6));
+  animation: glow-amber-pulse 1.5s ease-in-out infinite;
+}
+
+/* Ensure node draggability isn't blocked by children unless intended */
+.react-flow__node {
+  pointer-events: auto !important;
+}
+
 @keyframes glowPulse {
   0% {
     filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3));
   }
-
   50% {
     filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6));
   }
-
   100% {
     filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3));
   }

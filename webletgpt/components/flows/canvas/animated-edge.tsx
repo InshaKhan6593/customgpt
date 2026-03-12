@@ -25,7 +25,7 @@ export function AnimatedEdge({
     targetPosition,
   });
 
-  const strokeColor = selected ? "#6366f1" : "#c4c4c8";
+  const strokeColor = selected ? "#3b82f6" : "rgba(113, 113, 122, 0.5)";
 
   return (
     <>
@@ -35,14 +35,14 @@ export function AnimatedEdge({
         style={{
           stroke: strokeColor,
           strokeWidth: 1.5,
-          strokeDasharray: "6 4",
+          strokeDasharray: "4 4",
           fill: "none",
           transition: "stroke 0.2s ease",
         }}
       />
-      {/* Animated dot traveling along the dashed edge */}
-      <circle r="2.5" fill={selected ? "#6366f1" : "#a1a1aa"} opacity={0.6}>
-        <animateMotion dur="4s" repeatCount="indefinite" path={edgePath} />
+      {/* Premium glowing animated dot traveling along the edge */}
+      <circle r="3" fill="#3b82f6" filter="drop-shadow(0 0 4px rgba(59,130,246,0.8))">
+        <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
       </circle>
     </>
   );
