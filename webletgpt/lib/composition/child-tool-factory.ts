@@ -1,4 +1,3 @@
-import { tool } from "ai"
 import { z } from "zod"
 import { executeChildWeblet } from "./executor"
 
@@ -23,13 +22,17 @@ const MAX_DEPTH = 3
  * When the LLM invokes the tool, it calls the child weblet through
  * the full chat engine (so the child gets its own tools, RAG, etc.).
  *
+ * Uses the same raw object format as other tools in the registry
+ * (inputSchema + execute) for consistent provider compatibility.
+ *
  * @param compositions - WebletComposition records with populated childWeblet
  * @param currentDepth - Current nesting depth (for recursion prevention)
  * @returns Record of tool definitions
  */
 export function createChildWebletTools(
     compositions: CompositionInput[],
-    currentDepth: number = 0
+    currentDepth: number = 0,
+    userId?: string
 ): Record<string, any> {
     const tools: Record<string, any> = {}
 
@@ -42,15 +45,23 @@ export function createChildWebletTools(
         const child = comp.childWeblet
         const toolName = `weblet_${child.slug.replace(/[^a-z0-9_]/g, "_")}`
 
-        tools[toolName] = tool({
+        tools[toolName] = {
             description: `Use the "${child.name}" weblet: ${child.description || "A specialized AI assistant"}`,
-            parameters: z.object({
+            inputSchema: z.object({
                 message: z.string().describe("What to ask this weblet"),
             }),
             execute: async ({ message }: { message: string }) => {
                 try {
-                    const result = await executeChildWeblet(child.id, message, currentDepth + 1)
-                    return { response: result, source: child.name }
+                    const result = await executeChildWeblet(child.id, message, currentDepth + 1, userId)
+                    return {
+                        response: result.text,
+                        source: child.name,
+                        _childExecution: {
+                            toolCalls: result.toolCalls,
+                            stepsUsed: result.stepsUsed,
+                            durationMs: result.durationMs,
+                        },
+                    }
                 } catch (error: any) {
                     return {
                         error: `Failed to get response from ${child.name}: ${error.message}`,
@@ -58,7 +69,7 @@ export function createChildWebletTools(
                     }
                 }
             },
-        } as any)
+        }
     }
 
     return tools

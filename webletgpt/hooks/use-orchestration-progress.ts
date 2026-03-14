@@ -1,13 +1,12 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import * as Ably from "ably";
 
 export interface ProgressEvent {
   type: string;
   data: any;
   timestamp: Date;
 }
-
-let globalAblyClient: Ably.Realtime | null = null;
 
 export function useOrchestrationProgress(sessionId: string | null) {
   const [events, setEvents] = useState<ProgressEvent[]>([]);
@@ -16,51 +15,58 @@ export function useOrchestrationProgress(sessionId: string | null) {
   useEffect(() => {
     if (!sessionId) {
       setEvents([]);
+      setIsConnected(false);
       return;
     }
 
-    setEvents([]); // Clear old events when a new session starts
+    setEvents([]);
+    let aborted = false;
+    let reader: ReadableStreamDefaultReader<any> | null = null;
 
-    const key = process.env.NEXT_PUBLIC_ABLY_KEY;
-    if (!key) {
-      console.warn("NEXT_PUBLIC_ABLY_KEY is missing. Realtime updates won't work.");
-      return;
-    }
+    const run = async () => {
+      try {
+        // Fetch a short-lived subscription token scoped to this session's channel
+        const res = await fetch(
+          `/api/flows/realtime-token?sessionId=${encodeURIComponent(sessionId)}`
+        );
+        if (!res.ok || aborted) return;
+        const { token } = await res.json();
+        if (aborted) return;
 
-    if (!globalAblyClient) {
-      globalAblyClient = new Ably.Realtime({ key });
-    }
+        // Dynamic import keeps this off the SSR bundle
+        const { subscribe } = await import("@inngest/realtime");
+        const stream = await subscribe(token);
+        if (aborted) return;
 
-    const ably = globalAblyClient;
+        setIsConnected(true);
+        reader = (stream as ReadableStream<any>).getReader();
 
-    const onConnected = () => setIsConnected(true);
-    const onDisconnected = () => setIsConnected(false);
+        while (!aborted) {
+          const { done, value } = await reader.read();
+          if (done || aborted) break;
+          // Each message: { topic: "events", data: { event: string, data: any } }
+          const payload = value?.data as { event: string; data: any } | undefined;
+          if (payload?.event) {
+            setEvents(prev => [
+              ...prev,
+              { type: payload.event, data: payload.data ?? {}, timestamp: new Date() },
+            ]);
+          }
+        }
+      } catch (err) {
+        if (!aborted) console.error("[Realtime] Subscription error:", err);
+      } finally {
+        reader?.releaseLock();
+        if (!aborted) setIsConnected(false);
+      }
+    };
 
-    // Check initial state
-    if (ably.connection.state === "connected") setIsConnected(true);
-
-    ably.connection.on("connected", onConnected);
-    ably.connection.on("disconnected", onDisconnected);
-    ably.connection.on("failed", onDisconnected);
-
-    const channel = ably.channels.get(`orchestration:${sessionId}`);
-
-    channel.subscribe((msg) => {
-      setEvents((prev) => {
-        const newEvent = { type: msg.name || "unknown", data: msg.data, timestamp: new Date() };
-        console.log("[Execution Event]:", newEvent);
-        return [...prev, newEvent];
-      });
-    });
+    run();
 
     return () => {
-      // Unsubscribe from this specific channel
-      channel.unsubscribe();
-
-      // Remove listeners so we don't leak them
-      ably.connection.off("connected", onConnected);
-      ably.connection.off("disconnected", onDisconnected);
-      ably.connection.off("failed", onDisconnected);
+      aborted = true;
+      reader?.cancel().catch(() => {});
+      setIsConnected(false);
     };
   }, [sessionId]);
 

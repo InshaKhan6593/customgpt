@@ -20,7 +20,6 @@ import {
   Bot,
   Lock,
   MessageSquare,
-  ArrowRightLeft,
   ChevronRight,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
@@ -50,22 +49,10 @@ interface LiveToolCall {
   state: "running" | "completed";
 }
 
-interface AgentHandoff {
-  stepNumber: number;
-  agentName: string;
-  webletId?: string;
-  iconUrl?: string | null;
-  role?: string | null;
-  status: "running" | "completed" | "failed";
-  activities: AgentActivity[];
-  output?: string;
-}
-
 interface AgentActivity {
-  type: "text" | "tool_call" | "agent_handoff";
+  type: "text" | "tool_call";
   text?: string;
   toolCall?: LiveToolCall;
-  agentHandoff?: AgentHandoff;
 }
 
 interface StepGroup {
@@ -84,17 +71,12 @@ interface StepGroup {
   completedAt?: Date;
   hitlPending?: boolean;
   hitlHistory: HitlRecord[];
-  isHybridAgent?: boolean;
-  isIntermediate?: boolean;
-  // Agent output status
   agentStatus?: "complete" | "needs_review" | "blocked";
 }
 
 export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimelineProps) {
   const { stepGroups, flowStatus, flowMessage, finalOutput } = useMemo(() => {
     const groups: Map<number, StepGroup> = new Map();
-    // Track sub-agent handoffs by their step number for fast lookup
-    const handoffMap: Map<number, AgentHandoff> = new Map();
     let status: "idle" | "running" | "completed" | "failed" = "idle";
     let message = "";
     let final = "";
@@ -105,6 +87,7 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
           status = "running";
           message = ev.data.message;
           break;
+
         case "step_started":
         case "step_revision": {
           const num = ev.data.stepNumber;
@@ -127,106 +110,50 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
               liveToolCalls: [],
               activities: [],
               hitlHistory: [],
-              isHybridAgent: ev.data.isHybridAgent || num === 0,
             });
           }
           break;
         }
+
         case "tool_call": {
           const num = ev.data.stepNumber;
-          // Check if this tool call belongs to a sub-agent (nested inside a handoff)
-          const handoff = handoffMap.get(num);
-          if (handoff) {
+          const existing = groups.get(num);
+          if (existing) {
             const tc: LiveToolCall = {
               toolName: ev.data.toolName,
               args: ev.data.args || {},
               result: ev.data.result ?? null,
               state: ev.data.state === "completed" ? "completed" : "running",
             };
-            handoff.activities.push({ type: "tool_call", toolCall: tc });
-          } else {
-            // Regular tool call for step group (coordinator or sequential agent)
-            const existing = groups.get(num);
-            if (existing) {
-              const tc: LiveToolCall = {
-                toolName: ev.data.toolName,
-                args: ev.data.args || {},
-                result: ev.data.result ?? null,
-                state: ev.data.state === "completed" ? "completed" : "running",
-              };
-              existing.liveToolCalls.push(tc);
-              existing.activities.push({ type: "tool_call", toolCall: tc });
-            }
+            existing.liveToolCalls.push(tc);
+            existing.activities.push({ type: "tool_call", toolCall: tc });
           }
           break;
         }
-        case "agent_called": {
-          // HYBRID mode: nest sub-agent as a handoff activity inside coordinator (step 0)
-          const agentNum = ev.data.stepNumber || (Date.now() + Math.random());
-          const coordinator = groups.get(0);
 
-          if (coordinator) {
-            const handoff: AgentHandoff = {
-              stepNumber: agentNum,
-              agentName: ev.data.agentName || "Agent",
-              webletId: ev.data.webletId,
-              iconUrl: ev.data.iconUrl || null,
-              role: ev.data.role,
-              status: "running",
-              activities: [],
-            };
-            handoffMap.set(agentNum, handoff);
-            coordinator.activities.push({ type: "agent_handoff", agentHandoff: handoff });
-          } else {
-            // No coordinator (non-hybrid flow) — create as a separate group
-            groups.set(agentNum, {
-              stepNumber: agentNum,
-              webletName: ev.data.agentName || "Agent",
-              webletId: ev.data.webletId,
-              iconUrl: ev.data.iconUrl || null,
-              role: ev.data.role,
-              inputMapping: "original",
-              status: "running",
-              revision: 0,
-              startedAt: ev.timestamp,
-              liveToolCalls: [],
-              activities: [],
-              hitlHistory: [],
-              isHybridAgent: true,
-            });
-          }
-          break;
-        }
         case "step_completed": {
           const num = ev.data.stepNumber;
           const existing = groups.get(num);
-
           if (existing) {
             existing.status = "completed";
-            // For coordinator (step 0), append final output as an activity so it flows naturally
-            if (num === 0 && ev.data.output && handoffMap.size > 0) {
-              existing.output = ev.data.output;
-            } else {
-              existing.output = ev.data.output;
-            }
-            for (const tc of existing.liveToolCalls) {
-              tc.state = "completed";
-            }
+            existing.output = ev.data.output;
+            for (const tc of existing.liveToolCalls) tc.state = "completed";
             existing.revision = ev.data.revision || existing.revision;
             existing.completedAt = ev.timestamp;
             if (ev.data.webletName) existing.webletName = ev.data.webletName;
             if (ev.data.role) existing.role = ev.data.role;
-            // Capture agent status
             if (ev.data.status) existing.agentStatus = ev.data.status;
           }
           break;
         }
+
         case "hitl_required": {
           const num = ev.data.stepNumber;
           const existing = groups.get(num);
           if (existing) existing.hitlPending = true;
           break;
         }
+
         case "hitl_completed": {
           for (const [, g] of groups) {
             if (g.hitlPending) {
@@ -240,66 +167,26 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
           }
           break;
         }
-        case "hybrid_team":
-          break;
+
         case "agent_text": {
           const num = ev.data.stepNumber;
-          // Check if this text belongs to a sub-agent handoff
-          const handoff = handoffMap.get(num);
-          if (handoff && ev.data.text) {
-            const lastActivity = handoff.activities[handoff.activities.length - 1];
+          const existing = groups.get(num);
+          if (existing && ev.data.text) {
+            const lastActivity = existing.activities[existing.activities.length - 1];
             if (lastActivity && lastActivity.type === "text") {
               lastActivity.text += ev.data.text;
             } else {
-              handoff.activities.push({ type: "text", text: ev.data.text });
-            }
-          } else {
-            // Coordinator or sequential agent text
-            const existing = groups.get(num);
-            if (existing && ev.data.text) {
-              const lastActivity = existing.activities[existing.activities.length - 1];
-              if (lastActivity && lastActivity.type === "text") {
-                lastActivity.text += ev.data.text;
-              } else {
-                existing.activities.push({ type: "text", text: ev.data.text });
-              }
+              existing.activities.push({ type: "text", text: ev.data.text });
             }
           }
           break;
         }
-        case "agent_completed": {
-          // Mark the handoff as completed
-          const stepNum = ev.data.stepNumber;
-          if (stepNum) {
-            const handoff = handoffMap.get(stepNum);
-            if (handoff) {
-              handoff.status = ev.data.error ? "failed" : "completed";
-              handoff.output = ev.data.output;
-            } else {
-              // Fallback: separate group
-              const g = groups.get(stepNum);
-              if (g) {
-                g.status = ev.data.error ? "failed" : "completed";
-                g.output = ev.data.output;
-                g.completedAt = ev.timestamp;
-              }
-            }
-          } else {
-            // Fallback: Find matching running handoff by webletId
-            for (const [, h] of handoffMap) {
-              if (h.webletId === ev.data.webletId && h.status === "running") {
-                h.status = ev.data.error ? "failed" : "completed";
-                h.output = ev.data.output;
-                break;
-              }
-            }
-          }
-          break;
-        }
+
         case "completed":
           status = "completed";
           final = ev.data.finalOutput || "";
           break;
+
         case "failed":
           status = "failed";
           message = ev.data.message;
@@ -309,8 +196,6 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
 
     return {
       stepGroups: Array.from(groups.values()).sort((a, b) => {
-        if (a.stepNumber === 0) return -1;
-        if (b.stepNumber === 0) return 1;
         const timeA = a.startedAt ? new Date(a.startedAt).getTime() : 0;
         const timeB = b.startedAt ? new Date(b.startedAt).getTime() : 0;
         return timeA - timeB;
@@ -439,11 +324,9 @@ function StepTimelineItem({
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {group.stepNumber === 0
-              ? "Orchestrating Workflow"
-              : `Step ${group.stepNumber}`}
+            {`Step ${group.stepNumber}`}
             {timestamp && <> &middot; {new Date(timestamp).toLocaleTimeString()}</>}
-            {group.stepNumber !== 0 && <> &middot; {inputLabel}</>}
+            <> &middot; {inputLabel}</>
             {group.status === "completed" && group.agentStatus && group.agentStatus !== "complete" && (
               <> &middot; <span className={cn(
                 group.agentStatus === "needs_review" && "text-amber-500",
@@ -532,7 +415,6 @@ function renderActivities(activities: AgentActivity[]): React.ReactNode[] {
     const act = activities[i];
 
     if (act.type === "text" && act.text) {
-      // Autocompact: merge consecutive text activities into one block
       const textParts: string[] = [act.text];
       i++;
       while (i < activities.length && activities[i].type === "text" && activities[i].text) {
@@ -556,11 +438,6 @@ function renderActivities(activities: AgentActivity[]): React.ReactNode[] {
           <GroupedToolCallToggle key={`tc-${i}-${g}`} group={grouped[g]} />
         );
       }
-    } else if (act.type === "agent_handoff" && act.agentHandoff) {
-      elements.push(
-        <AgentHandoffToggle key={`handoff-${i}`} handoff={act.agentHandoff} />
-      );
-      i++;
     } else {
       i++;
     }
@@ -569,71 +446,7 @@ function renderActivities(activities: AgentActivity[]): React.ReactNode[] {
   return elements;
 }
 
-/* ── Agent Handoff Toggle (nested sub-agent) ── */
-
-function AgentHandoffToggle({ handoff }: { handoff: AgentHandoff }) {
-  const isRunning = handoff.status === "running";
-  const [open, setOpen] = useState(isRunning);
-  const hasNestedContent = handoff.activities.length > 0 || !!handoff.output;
-
-  const [wasRunning, setWasRunning] = useState(isRunning);
-  if (isRunning && !wasRunning) {
-    setOpen(true);
-    setWasRunning(true);
-  }
-  if (!isRunning && wasRunning) {
-    setWasRunning(false);
-  }
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger
-        className={cn(
-          "flex items-center gap-2 w-full py-1.5 px-2 rounded-md transition-colors",
-          "text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50",
-          open && "text-foreground"
-        )}
-      >
-        <ChevronRight className={cn(
-          "size-3.5 transition-transform duration-200 shrink-0",
-          open && "rotate-90"
-        )} />
-        <ArrowRightLeft className="size-3.5 shrink-0" />
-        <div className="size-5 rounded-full overflow-hidden border border-border shrink-0">
-          <AgentIcon iconUrl={handoff.iconUrl} name={handoff.agentName} />
-        </div>
-        <span className="truncate">{handoff.agentName}</span>
-        {isRunning && (
-          <Loader2 className="size-3.5 animate-spin shrink-0 ml-auto text-muted-foreground" />
-        )}
-        {!isRunning && handoff.status === "completed" && (
-          <CheckCircle2 className="size-3.5 shrink-0 ml-auto text-muted-foreground" />
-        )}
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        {hasNestedContent && (
-          <div className="ml-5 mt-1.5 border-l-2 border-border/60 pl-4 pb-2 space-y-2">
-            {handoff.activities.length > 0 && renderActivities(handoff.activities)}
-            {handoff.output && (
-              <div className="text-sm text-muted-foreground">
-                <ChatMarkdown content={handoff.output} />
-              </div>
-            )}
-            {isRunning && handoff.activities.length === 0 && !handoff.output && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                <Loader2 className="size-3 animate-spin" />
-                Working...
-              </p>
-            )}
-          </div>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-/* ── Flow Tool Call Toggle (Vercel-style) ── */
+/* ── Tool Call Toggle ── */
 
 /** Friendly display names for built-in capability tools */
 const TOOL_DISPLAY_NAMES: Record<string, { label: string; action: string }> = {
@@ -738,18 +551,37 @@ function groupToolCalls(calls: LiveToolCall[]): ToolCallGroup[] {
 }
 
 function GroupedToolCallToggle({ group }: { group: ToolCallGroup }) {
+  const [open, setOpen] = useState(false);
   const isLoading = group.state === "running";
   const count = group.calls.length;
 
   const singleAction = count === 1 ? formatFlowToolName(group.calls[0].toolName).action : "";
   const summaryText = count === 1 && singleAction
     ? `${group.label}: ${singleAction}`
-    : `${group.label} ${count > 1 ? `(${count} calls)` : ""}`;
+    : `${group.label}${count > 1 ? ` (${count} calls)` : ""}`;
 
   return (
-    <div className="flex items-center gap-2 py-1 px-2 text-sm text-muted-foreground">
-      <span>{summaryText}</span>
-    </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className={cn(
+        "flex items-center gap-1.5 w-full py-1 px-2 rounded-md text-sm transition-colors",
+        "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+        open && "text-foreground"
+      )}>
+        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")} />
+        {isLoading
+          ? <Loader2 className="size-3.5 shrink-0 animate-spin" />
+          : <span className="size-3.5 shrink-0" />}
+        <span className="truncate">{summaryText}</span>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent>
+        <div className="ml-5 mt-1 border-l-2 border-border/50 pl-4 pb-2 space-y-4">
+          {group.calls.map((call, i) => (
+            <IndividualToolCall key={i} toolCall={call} hideHeader={count === 1} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

@@ -90,7 +90,7 @@ print("hello")
 - If you use any tools to look up information, present the findings naturally without exposing raw tool output.
 - When you are uncertain about something, say so clearly rather than guessing.`
 
-    const systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
+    let systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
     // Get real authenticated user (needed for MCP user tokens + quotas)
     const session = await auth()
@@ -121,8 +121,16 @@ print("hello")
 
     // 3.2 Composition Tools — expose child weblets as callable tools
     if (weblet.parentCompositions && weblet.parentCompositions.length > 0) {
-      const childTools = createChildWebletTools(weblet.parentCompositions)
+      const childTools = createChildWebletTools(weblet.parentCompositions, 0, userId)
       tools = { ...tools, ...childTools }
+
+      // Tell the parent about its child agents so it knows when to delegate
+      const childDescriptions = weblet.parentCompositions.map((comp: any) => {
+        const child = comp.childWeblet
+        return `- **${child.name}** (tool: \`weblet_${child.slug.replace(/[^a-z0-9_]/g, "_")}\`): ${child.description || "A specialized AI assistant"}`
+      }).join("\n")
+
+      systemPrompt += `\n\n## Specialized Agents\nYou have access to the following specialized agent weblets. Delegate tasks to them when the task falls within their expertise — they have their own tools and capabilities.\n${childDescriptions}\n\nWhen delegating, send a clear, specific task description as the message. The agent will work autonomously and return its result to you. Then synthesize the result into your response to the user.`
     }
 
     // Ensure session exists
@@ -176,8 +184,22 @@ print("hello")
         },
       },
       async onFinish({ text, steps, usage, finishReason }) {
+        // If the model ended on a tool call with no final text, fall back to
+        // the last tool result so we never save a blank assistant message.
+        let finalText = text;
+        if (!finalText.trim() && steps && steps.length > 0) {
+          const lastStep = steps[steps.length - 1];
+          const results = (lastStep as any).toolResults;
+          if (results && results.length > 0) {
+            const last = results[results.length - 1];
+            finalText = typeof last.result === "string"
+              ? last.result
+              : JSON.stringify(last.result, null, 2);
+          }
+        }
+
         // Save assistant response
-        await saveMessage(activeSessionId as string, "assistant", text, usage?.totalTokens)
+        await saveMessage(activeSessionId as string, "assistant", finalText, usage?.totalTokens)
 
         // Count tool usages across ALL steps (multi-step execution can have up to 5 steps)
         const toolCounts: Record<string, number> = {};

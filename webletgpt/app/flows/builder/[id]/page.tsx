@@ -41,6 +41,8 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
   // Ref to hold latest canvas data for save-from-toolbar
   const latestCanvasData = useRef<{ nodes: FlowNode[]; edges: FlowEdge[]; prompt: string } | null>(null);
+  // Track whether canvas has unsaved changes — avoids redundant saves on Execute
+  const isDirty = useRef(false);
 
   // Compute execution states for the canvas
   const executionStates = useMemo(() => {
@@ -215,6 +217,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
         if (res.ok) {
           setFlow((prev: any) => ({ ...prev, defaultPrompt: prompt || prev.defaultPrompt }));
+          isDirty.current = false;
           toast({ title: "Saved", description: "Workflow saved successfully." });
           return true;
         } else {
@@ -240,24 +243,30 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
       return;
     }
 
-    // Save before executing to ensure server has latest version
-    const savedData = data || latestCanvasData.current || { nodes: initialNodes, edges: initialEdges, prompt: flow.defaultPrompt };
-    
-    // Reset run state immediately so UI updates
     setIsRunning(true);
-    setSessionId(null);
 
-    const saved = await saveFlow(savedData);
-    if (!saved) {
-      setIsRunning(false);
-      return;
+    // Generate sessionId client-side so we can start subscribing to the
+    // realtime channel immediately — before save + execute round-trips finish.
+    const earlySessionId = crypto.randomUUID();
+    setSessionId(earlySessionId);
+
+    const savedData = data || latestCanvasData.current || { nodes: initialNodes, edges: initialEdges, prompt: flow.defaultPrompt };
+
+    // Only save if the canvas has unsaved changes — skip the round-trip otherwise.
+    if (isDirty.current) {
+      const saved = await saveFlow(savedData);
+      if (!saved) {
+        setIsRunning(false);
+        setSessionId(null);
+        return;
+      }
     }
 
     try {
       const res = await fetch(`/api/flows/${id}/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initialInput: promptText }),
+        body: JSON.stringify({ initialInput: promptText, sessionId: earlySessionId }),
       });
       const dataRes = await res.json();
 
@@ -268,15 +277,16 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
           toast({ title: "Failed to start", description: dataRes.error || "Execution failed", variant: "destructive" });
         }
         setIsRunning(false);
+        setSessionId(null);
         return;
       }
 
-      setSessionId(dataRes.sessionId);
       toast({ title: "Running", description: "Workflow execution started." });
     } catch (err) {
       console.error(err);
       toast({ title: "Error", description: "Failed to start flow execution", variant: "destructive" });
       setIsRunning(false);
+      setSessionId(null);
     }
   };
 
@@ -291,11 +301,12 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   // ── Callback from canvas whenever state changes ──
   const onCanvasChange = useCallback(
     (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
-      // Only keep the latest data for saving, but don't cancel the run or clear sessionId
-      // because execution state syncs (which update nodes) trigger this callback.
       latestCanvasData.current = data;
+      // Mark dirty only when not in read-only execution mode — execution state
+      // syncs also trigger this callback and should not count as user edits.
+      if (!sessionId) isDirty.current = true;
     },
-    []
+    [sessionId]
   );
 
   // ── Save from top bar using latest canvas data ──

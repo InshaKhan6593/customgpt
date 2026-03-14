@@ -4,6 +4,7 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { isToolUIPart, getToolName } from "ai"
 import type { UIMessagePart } from "ai"
+import { ChatMarkdown } from "@/components/ui/chat-markdown"
 
 /** Image tools render their result as a visual image, not as JSON output */
 const IMAGE_TOOL_NAMES = new Set(["imageGeneration"])
@@ -90,6 +91,11 @@ function getActionDescription(label: string, action: string): string {
   return `Used ${label}: ${action}`
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
 export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
   const [open, setOpen] = useState(false)
 
@@ -114,6 +120,12 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
   const imageError = isImageTool && output && typeof output === "object" && (output as any).error
     ? (output as any).error
     : null
+
+  // ── Special: Child weblet tool — rich rendering ──
+  const isChildWeblet = toolName.startsWith("weblet_") && output && typeof output === "object" && (output as any)._childExecution
+  const childExec = isChildWeblet ? (output as any)._childExecution : null
+  const childResponse = isChildWeblet ? (output as any).response : null
+  const childSource = isChildWeblet ? (output as any).source : null
 
   // ── Special: Image tool shows label + image below ──
   if (isImageTool) {
@@ -174,6 +186,89 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
             <p className="text-sm text-red-400">{imageError}</p>
           </div>
         )}
+      </div>
+    )
+  }
+
+  // ── Special: Child weblet tool — shows agent activity + response ──
+  if (isChildWeblet) {
+    const toolCallCount = childExec?.toolCalls?.length || 0
+    const duration = childExec?.durationMs ? formatDuration(childExec.durationMs) : null
+    const headerParts = [childSource || action || label]
+    if (toolCallCount > 0) headerParts.push(`${toolCallCount} tool call${toolCallCount > 1 ? "s" : ""}`)
+    if (duration) headerParts.push(duration)
+
+    return (
+      <div className="my-1.5">
+        {/* Header */}
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 w-full text-left py-1 cursor-pointer"
+        >
+          <svg
+            className={cn(
+              "size-3 text-zinc-500 transition-transform duration-200 shrink-0",
+              open && "rotate-90"
+            )}
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="text-[13px] text-zinc-400">
+            Used <span className="text-zinc-300 font-medium">{childSource || action}</span>
+            {(toolCallCount > 0 || duration) && (
+              <span className="text-zinc-600 ml-1.5">
+                ({[
+                  toolCallCount > 0 ? `${toolCallCount} tool call${toolCallCount > 1 ? "s" : ""}` : null,
+                  duration,
+                ].filter(Boolean).join(", ")})
+              </span>
+            )}
+          </span>
+          {isLoading && (
+            <svg className="size-3 animate-spin text-zinc-500 shrink-0 ml-auto" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+              <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
+
+        {/* Expanded content */}
+        <div className={cn(
+          "ml-2.5 border-l border-zinc-800 pl-4 space-y-3",
+          !open && "hidden"
+        )}>
+          {/* Child's tool calls */}
+          {childExec?.toolCalls && childExec.toolCalls.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Agent Tool Calls</span>
+              {childExec.toolCalls.map((tc: any, idx: number) => (
+                <ChildToolCallItem key={idx} toolCall={tc} />
+              ))}
+            </div>
+          )}
+
+          {/* Child's response */}
+          {childResponse && (
+            <div>
+              <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Agent Response</span>
+              <div className="mt-1.5 text-sm prose prose-sm prose-invert max-w-none rounded-lg bg-zinc-900/50 border border-zinc-800/50 px-3 py-2.5">
+                <ChatMarkdown content={childResponse} />
+              </div>
+            </div>
+          )}
+
+          {/* Input message sent to child */}
+          {input?.message && (
+            <div>
+              <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Task Given</span>
+              <pre className="mt-1 text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all font-mono bg-zinc-900/50 rounded px-2.5 py-2 border border-zinc-800/50">
+                {input.message}
+              </pre>
+            </div>
+          )}
+        </div>
       </div>
     )
   }
@@ -255,6 +350,66 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Individual tool call made by the child weblet — collapsible */
+function ChildToolCallItem({ toolCall }: { toolCall: { toolName: string; args: Record<string, any>; result: any } }) {
+  const [expanded, setExpanded] = useState(false)
+  const { label, action } = formatToolName(toolCall.toolName)
+  const displayName = action || label
+  const hasDetails = (toolCall.args && Object.keys(toolCall.args).length > 0) || toolCall.result != null
+
+  return (
+    <div>
+      <button
+        onClick={() => hasDetails && setExpanded(!expanded)}
+        className={cn(
+          "flex items-center gap-2 py-0.5 text-left w-full",
+          hasDetails ? "cursor-pointer" : "cursor-default"
+        )}
+      >
+        <svg className="size-3.5 text-zinc-500 shrink-0" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="3" fill="currentColor" />
+        </svg>
+        <span className="text-[12px] text-zinc-400">
+          {displayName}
+          {label !== displayName && <span className="text-zinc-600 ml-1">({label})</span>}
+        </span>
+        {hasDetails && (
+          <svg
+            className={cn(
+              "size-2.5 text-zinc-600 transition-transform duration-150 shrink-0 ml-auto",
+              expanded && "rotate-90"
+            )}
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-5 mt-1 space-y-1.5 pb-1">
+          {toolCall.args && Object.keys(toolCall.args).length > 0 && (
+            <div>
+              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Input</span>
+              <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40">
+                {JSON.stringify(toolCall.args, null, 2)}
+              </pre>
+            </div>
+          )}
+          {toolCall.result != null && (
+            <div>
+              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Output</span>
+              <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40 max-h-40 overflow-y-auto">
+                {formatResult(toolCall.result)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

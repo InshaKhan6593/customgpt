@@ -1,14 +1,23 @@
-import { ably } from "@/lib/ably";
+import { channel, topic } from "@inngest/realtime";
 
-export async function publishProgress(sessionId: string, event: string, data: any) {
-  if (!ably) {
-    // ABLY_API_KEY not configured — skip silently in dev without crashing
-    return;
-  }
+// Typed channel for orchestration progress events.
+// Each message carries { event: string, data: any } so the frontend
+// can use the same event-type dispatch it was already doing with Ably.
+export const orchestrationChannel = channel(
+  (sessionId: string) => `orchestration:${sessionId}`
+).addTopic(topic("events").type<{ event: string; data: any }>());
+
+export type OrchestratorPublish = (msg: any) => Promise<void>;
+
+export async function publishProgress(
+  publish: OrchestratorPublish,
+  sessionId: string,
+  event: string,
+  data: any
+) {
   try {
-    const channel = ably.channels.get(`orchestration:${sessionId}`);
-    await channel.publish(event, data);
+    await publish(orchestrationChannel(sessionId).events({ event, data }));
   } catch (error) {
-    console.error("Failed to publish Ably event:", event, error);
+    console.error("[Realtime] Failed to publish:", event, error);
   }
 }

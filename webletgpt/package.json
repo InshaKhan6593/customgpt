@@ -15,6 +15,7 @@
     "@auth/prisma-adapter": "^2.11.1",
     "@e2b/code-interpreter": "^2.3.3",
     "@hookform/resolvers": "^3.9.1",
+    "@inngest/realtime": "^0.4.6",
     "@langfuse/otel": "^4.6.1",
     "@langfuse/tracing": "^4.6.1",
     "@modelcontextprotocol/sdk": "^1.27.1",

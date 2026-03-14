@@ -10,4 +10,5 @@ export const { GET, POST, PUT } = serve({
     resetBillingCycles,
     executeFlow,
   ],
+  streaming: "allow",
 });
