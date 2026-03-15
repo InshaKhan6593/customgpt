@@ -199,7 +199,8 @@ export async function POST(req: NextRequest) {
       async onFinish({ text, steps, usage, finishReason }) {
         // If the model ended on a tool call with no final text, fall back to
         // the last tool result so we never save a blank assistant message.
-        let finalText = text;
+        // Note: text can be undefined in AI SDK when finish reason is "tool-calls"
+        let finalText = text ?? "";
         if (!finalText.trim() && steps && steps.length > 0) {
           const lastStep = steps[steps.length - 1];
           const results = (lastStep as any).toolResults;
@@ -208,18 +209,26 @@ export async function POST(req: NextRequest) {
             if (typeof last.result === "string") {
               finalText = last.result;
             } else if (last.result && typeof last.result === 'object') {
-              if (last.result.text) {
+              // Child weblet tool returns { response, source }
+              if (last.result.response) {
+                finalText = last.result.response;
+              } else if (last.result.text) {
                 finalText = last.result.text;
               } else if (last.result.stdout) {
                 finalText = last.result.stdout;
+              } else if (last.result.error) {
+                finalText = last.result.error;
               } else {
-                finalText = JSON.stringify({ stdout: last.result.stdout, stderr: last.result.stderr, error: last.result.error });
+                finalText = JSON.stringify(last.result, null, 2);
               }
             } else {
               finalText = JSON.stringify(last.result, null, 2);
             }
           }
         }
+
+        // Ensure we never write an empty/undefined content to the DB
+        if (!finalText?.trim()) finalText = "(No response)"
 
         // Save assistant response
         await saveMessage(activeSessionId as string, "assistant", finalText, usage?.totalTokens)
