@@ -45,6 +45,7 @@ import {
   Activity,
   Scale,
   Package,
+  Sparkles,
 } from "lucide-react"
 import { useState } from "react"
 import type { BuilderState } from "../builder-layout"
@@ -352,6 +353,30 @@ export function ConfigureTab({ state, onUpdate }: ConfigureTabProps) {
           value={state.privacyPolicy}
           onChange={(e) => onUpdate({ privacyPolicy: e.target.value })}
         />
+      </div>
+
+      {/* RSIL — Self-Improving Loop */}
+      <div className="flex flex-col gap-2 rounded-md border p-4 bg-card">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              Self-Improving Loop (RSIL)
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Automatically optimize this weblet&apos;s prompt using user feedback scores. Runs A/B tests and promotes winners daily.
+            </p>
+          </div>
+          <Switch
+            checked={state.rsilEnabled}
+            onCheckedChange={(checked) => onUpdate({ rsilEnabled: checked })}
+          />
+        </div>
+        {state.rsilEnabled && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded px-2 py-1.5 border border-amber-200 dark:border-amber-800">
+            RSIL is active. User thumbs-up/down ratings on conversations will be analyzed nightly and used to auto-improve this weblet&apos;s instructions via A/B testing.
+          </p>
+        )}
       </div>
 
       {/* Access Toggle */}

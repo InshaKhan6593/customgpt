@@ -81,6 +81,7 @@ export default function BuilderStudioPage({
                 fileSearch: false,
               },
               isActive: w.isActive ?? false,
+              rsilEnabled: w.rsilEnabled ?? false,
             },
           })
         }

@@ -23,6 +23,7 @@ export type BuilderState = {
   openapiSchema: string // OpenAPI specification (JSON string)
   capabilities: WebletCapabilities
   isActive: boolean
+  rsilEnabled: boolean
 }
 
 const defaultState: BuilderState = {
@@ -45,6 +46,7 @@ const defaultState: BuilderState = {
   },
   openapiSchema: "",
   isActive: false,
+  rsilEnabled: false,
 }
 
 type BuilderLayoutProps = {
@@ -75,9 +77,10 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
             iconUrl: updatedState.iconUrl || undefined,
             category: updatedState.category || undefined,
             accessType: updatedState.accessType,
-            monthlyPrice: updatedState.monthlyPrice, // Added
+            monthlyPrice: updatedState.monthlyPrice,
             capabilities: updatedState.capabilities,
             isActive: updatedState.isActive,
+            rsilEnabled: updatedState.rsilEnabled,
             instructions: updatedState.instructions || undefined,
             model: updatedState.model || undefined,
             openapiSchema: updatedState.openapiSchema || undefined,
@@ -116,9 +119,10 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           iconUrl: state.iconUrl || undefined,
           category: state.category || undefined,
           accessType: state.accessType,
-          monthlyPrice: state.monthlyPrice, // Added
+          monthlyPrice: state.monthlyPrice,
           capabilities: state.capabilities,
           isActive: false,
+          rsilEnabled: state.rsilEnabled,
           instructions: state.instructions || undefined,
           model: state.model || undefined,
           openapiSchema: state.openapiSchema || undefined,

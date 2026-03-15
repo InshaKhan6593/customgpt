@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { sanitizeSlug } from "@/lib/utils/slugify";
 import { WebletCategory, AccessType, Prisma } from "@prisma/client";
+import { syncPromptToLangfuse } from "@/lib/langfuse/prompt-sync";
 
 const updateSchema = z.object({
   name: z.string().min(3).max(50).optional(),
@@ -123,25 +124,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (activeVersion) {
+        const finalPrompt = instructions !== undefined ? instructions : activeVersion.prompt;
         await prisma.webletVersion.update({
           where: { id: activeVersion.id },
           data: {
-            prompt: instructions !== undefined ? instructions : activeVersion.prompt,
+            prompt: finalPrompt,
             model: model !== undefined ? model : activeVersion.model,
             ...(parsedSchema !== undefined && { openapiSchema: parsedSchema === null ? Prisma.JsonNull : parsedSchema as Prisma.InputJsonValue }),
           }
         });
+        // Sync prompt to Langfuse for RSIL observability — fire and forget
+        syncPromptToLangfuse({
+          webletId: id,
+          webletName: updated.name,
+          prompt: finalPrompt,
+          versionNum: activeVersion.versionNum,
+          isActive: true,
+        }).catch(() => {/* non-fatal */});
       } else {
+        const initialPrompt = instructions || "You are a helpful assistant.";
         await prisma.webletVersion.create({
           data: {
             webletId: id,
             versionNum: 1,
-            prompt: instructions || "You are a helpful assistant.",
+            prompt: initialPrompt,
             model: model || "anthropic/claude-3.5-sonnet",
             openapiSchema: parsedSchema === null || parsedSchema === undefined ? Prisma.JsonNull : parsedSchema as Prisma.InputJsonValue,
             status: "ACTIVE"
           }
         });
+        // Sync new version to Langfuse
+        syncPromptToLangfuse({
+          webletId: id,
+          webletName: updated.name,
+          prompt: initialPrompt,
+          versionNum: 1,
+          isActive: true,
+        }).catch(() => {/* non-fatal */});
       }
     }
 
