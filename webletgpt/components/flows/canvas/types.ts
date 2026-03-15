@@ -1,5 +1,8 @@
 import type { Node, Edge } from "@xyflow/react";
 
+// ── Flow mode ──
+export type FlowMode = "SEQUENTIAL" | "PARALLEL" | "HYBRID";
+
 // ── Node data types ──
 
 // MCP tool info from the server
@@ -29,6 +32,7 @@ export interface WebletNodeData {
   description: string;
   tools?: McpToolInfo[];
   executionState?: NodeExecutionState;
+  isOrchestrator?: boolean;
   [key: string]: unknown;
 }
 
@@ -57,7 +61,8 @@ export interface NodeExecutionState {
 
 export type PromptNode = Node<PromptNodeData, "prompt">;
 export type WebletNode = Node<WebletNodeData, "weblet">;
-export type FlowNode = PromptNode | WebletNode;
+export type OrchestratorNode = Node<WebletNodeData, "orchestrator">;
+export type FlowNode = PromptNode | WebletNode | OrchestratorNode;
 
 // ── Edge type ──
 
@@ -91,4 +96,6 @@ export interface FlowStepSerialized {
 export interface CanvasState {
   nodes: FlowNode[];
   edges: FlowEdge[];
+  mode?: FlowMode;
+  masterWebletId?: string | null;
 }

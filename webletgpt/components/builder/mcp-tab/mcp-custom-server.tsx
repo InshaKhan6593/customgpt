@@ -45,7 +45,7 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                     description: description.trim() || null,
                     authType,
                     authToken: authToken.trim() || null,
-                    requiresUserAuth,
+                    requiresUserAuth: authType === "OAUTH" ? true : requiresUserAuth,
                 }),
             })
 
@@ -138,11 +138,12 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                                 <SelectItem value="NONE">None</SelectItem>
                                 <SelectItem value="API_KEY">API Key</SelectItem>
                                 <SelectItem value="BEARER_TOKEN">Bearer Token</SelectItem>
+                                <SelectItem value="OAUTH">OAuth 2.1</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
 
-                    {authType !== "NONE" && (
+                    {authType !== "NONE" && authType !== "OAUTH" && (
                         <div className="space-y-1.5">
                             <Label htmlFor="auth-token" className="text-xs">
                                 {authType === "API_KEY" ? "API Key" : "Token"}
@@ -157,20 +158,29 @@ export function MCPCustomServer({ webletId, onServerAdded }: MCPCustomServerProp
                             />
                         </div>
                     )}
+                    {authType === "OAUTH" && (
+                        <div className="space-y-1.5 flex items-end">
+                            <p className="text-[11px] text-muted-foreground pb-2">
+                                Users will authenticate via OAuth popup when using this tool.
+                            </p>
+                        </div>
+                    )}
                 </div>
 
-                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <div className="space-y-0.5">
-                        <Label className="text-xs font-medium">Require User Authentication</Label>
-                        <p className="text-[11px] text-muted-foreground">
-                            Users will be prompted to enter their own token in the chat.
-                        </p>
+                {authType !== "OAUTH" && (
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="space-y-0.5">
+                            <Label className="text-xs font-medium">Require User Authentication</Label>
+                            <p className="text-[11px] text-muted-foreground">
+                                Users will be prompted to enter their own token in the chat.
+                            </p>
+                        </div>
+                        <Switch
+                            checked={requiresUserAuth}
+                            onCheckedChange={setRequiresUserAuth}
+                        />
                     </div>
-                    <Switch
-                        checked={requiresUserAuth}
-                        onCheckedChange={setRequiresUserAuth}
-                    />
-                </div>
+                )}
 
                 <Button
                     onClick={handleDiscover}

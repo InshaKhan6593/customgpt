@@ -22,15 +22,17 @@ import "@xyflow/react/dist/style.css";
 
 import { PromptNodeMemo } from "./prompt-node";
 import { WebletNodeMemo } from "./weblet-node";
+import { OrchestratorNodeMemo } from "./orchestrator-node";
 import { InteractiveEdge } from "./interactive-edge";
 import { WebletSidebar } from "./weblet-sidebar";
-import { Plus, Play } from "lucide-react";
+import { Plus, Play, Network, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NodeSettingsPanel } from "./node-settings-panel";
 import { NodeOutputPanel } from "./node-output-panel";
 import type {
   FlowNode,
   FlowEdge,
+  FlowMode,
   WebletItem,
   WebletNodeData,
   PromptNodeData,
@@ -43,6 +45,7 @@ import type {
 const nodeTypes: NodeTypes = {
   prompt: PromptNodeMemo,
   weblet: WebletNodeMemo,
+  orchestrator: OrchestratorNodeMemo,
 } as unknown as NodeTypes;
 
 // ── Edge type registry ──
@@ -58,24 +61,173 @@ const defaultEdgeOptions = {
     type: MarkerType.ArrowClosed,
     width: 6,
     height: 6,
-    color: "#a1a1aa", // zinc-400
+    color: "#a1a1aa",
   },
 };
 
+const hybridEdgeOptions = {
+  ...defaultEdgeOptions,
+  markerEnd: { ...defaultEdgeOptions.markerEnd, color: "#f59e0b" },
+};
+
 /** Ensure all edges use the interactive type + correct marker */
-function normalizeEdges(edges: FlowEdge[]): FlowEdge[] {
+function normalizeEdges(edges: FlowEdge[], mode?: FlowMode): FlowEdge[] {
+  const opts = mode === "HYBRID" ? hybridEdgeOptions : defaultEdgeOptions;
   return edges.map((e) => ({
     ...e,
     type: "interactive",
     animated: true,
-    markerEnd: defaultEdgeOptions.markerEnd,
+    markerEnd: opts.markerEnd,
   }));
 }
 
 const connectionLineStyle = {
-  stroke: "#a1a1aa", // zinc-400 (consistent with arrows)
+  stroke: "#a1a1aa",
   strokeWidth: 1.5,
 };
+
+// ── Mode Selector Component ──
+function ModeSelector({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: FlowMode;
+  onChange: (m: FlowMode) => void;
+  disabled?: boolean;
+}) {
+  const modes: { value: FlowMode; label: string; icon: React.ReactNode; title: string }[] = [
+    {
+      value: "PARALLEL",
+      label: "DAG",
+      icon: <Network className="size-3" />,
+      title: "Free-form DAG — wire any topology: chains, fan-out, fan-in, branches. No restrictions.",
+    },
+    {
+      value: "HYBRID",
+      label: "Hybrid",
+      icon: <Crown className="size-3" />,
+      title: "One master orchestrator delegates tasks dynamically to sub-agents at runtime",
+    },
+  ];
+
+  return (
+    <div className="flex gap-0.5 p-0.5 bg-black/90 border border-zinc-800 rounded-sm shadow-xl backdrop-blur-sm">
+      {modes.map((m) => (
+        <button
+          key={m.value}
+          title={m.title}
+          disabled={disabled}
+          onClick={() => onChange(m.value)}
+          className={`
+            flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-[2px] transition-all
+            ${mode === m.value
+              ? m.value === "HYBRID"
+                ? "bg-amber-950/80 text-amber-400 border border-amber-700/50"
+                : "bg-zinc-900 text-zinc-100 border border-zinc-700"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50 border border-transparent"}
+            disabled:opacity-40 disabled:cursor-not-allowed
+          `}
+        >
+          {m.icon}
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Layout transform for mode switching ──
+function transformCanvasForMode(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  targetMode: FlowMode,
+  currentMasterWebletId: string | null
+): { nodes: FlowNode[]; edges: FlowEdge[]; masterWebletId: string | null } {
+  const promptNode = nodes.find((n) => n.type === "prompt");
+  const webletNodes = nodes.filter((n) => n.type === "weblet" || n.type === "orchestrator");
+
+  if (webletNodes.length === 0) {
+    return { nodes, edges, masterWebletId: null };
+  }
+
+  if (targetMode === "PARALLEL" || targetMode === "SEQUENTIAL") {
+    // Keep positions, just convert any orchestrator node back to weblet
+    const newNodes = nodes.map((n) =>
+      n.type === "orchestrator"
+        ? ({ ...n, type: "weblet", data: { ...n.data, isOrchestrator: false } } as FlowNode)
+        : n
+    );
+    return { nodes: newNodes, edges, masterWebletId: null };
+  }
+
+  if (targetMode === "HYBRID") {
+    // Orchestrator in center, sub-agents radiate around it
+    const masterWebletNode = currentMasterWebletId
+      ? webletNodes.find((n) => n.data.webletId === currentMasterWebletId)
+      : webletNodes[0];
+
+    const masterNode = masterWebletNode || webletNodes[0];
+    const masterId = masterNode.data.webletId as string;
+    const subAgents = webletNodes.filter((n) => n.id !== masterNode.id);
+
+    const centerX = 400;
+    const centerY = 300;
+    const radius = subAgents.length <= 2 ? 220 : subAgents.length <= 4 ? 260 : 320;
+
+    const newNodes: FlowNode[] = [];
+    const newEdges: FlowEdge[] = [];
+
+    // Prompt node top-left
+    if (promptNode) {
+      newNodes.push({ ...promptNode, position: { x: centerX - 80, y: centerY - 240 } });
+    }
+
+    // Orchestrator center
+    newNodes.push({
+      ...masterNode,
+      type: "orchestrator",
+      position: { x: centerX - 95, y: centerY - 60 },
+      data: { ...masterNode.data, isOrchestrator: true },
+    } as FlowNode);
+
+    // Sub-agents in a radial layout
+    subAgents.forEach((n, i) => {
+      const angle = (i / subAgents.length) * 2 * Math.PI - Math.PI / 2;
+      newNodes.push({
+        ...n,
+        type: "weblet",
+        position: {
+          x: centerX + radius * Math.cos(angle) - 85,
+          y: centerY + radius * Math.sin(angle) + 80,
+        },
+        data: { ...n.data, isOrchestrator: false },
+      } as FlowNode);
+
+      // Edge: sub-agent → orchestrator (sub-agents feed INTO orchestrator)
+      newEdges.push({
+        id: `e-${n.id}-${masterNode.id}`,
+        source: n.id,
+        target: masterNode.id,
+        ...hybridEdgeOptions,
+      });
+    });
+
+    // Prompt → orchestrator
+    if (promptNode) {
+      newEdges.push({
+        id: `e-prompt-${masterNode.id}`,
+        source: promptNode.id,
+        target: masterNode.id,
+        ...hybridEdgeOptions,
+      });
+    }
+
+    return { nodes: newNodes, edges: newEdges, masterWebletId: masterId };
+  }
+
+  return { nodes, edges, masterWebletId: currentMasterWebletId };
+}
 
 // ── Props ──
 interface FlowCanvasProps {
@@ -83,9 +235,23 @@ interface FlowCanvasProps {
   initialEdges: FlowEdge[];
   weblets: WebletItem[];
   defaultPrompt: string;
-  onSave?: (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => void;
+  mode?: FlowMode;
+  masterWebletId?: string | null;
+  onSave?: (data: {
+    nodes: FlowNode[];
+    edges: FlowEdge[];
+    prompt: string;
+    mode: FlowMode;
+    masterWebletId: string | null;
+  }) => void;
   saving?: boolean;
-  onChange?: (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => void;
+  onChange?: (data: {
+    nodes: FlowNode[];
+    edges: FlowEdge[];
+    prompt: string;
+    mode: FlowMode;
+    masterWebletId: string | null;
+  }) => void;
   readOnly?: boolean;
   executionStates?: Record<string, NodeExecutionState>;
   isFinished?: boolean;
@@ -96,6 +262,8 @@ function FlowCanvasInner({
   initialEdges,
   weblets,
   defaultPrompt,
+  mode: propMode,
+  masterWebletId: propMasterWebletId,
   onSave,
   saving,
   onChange,
@@ -106,11 +274,25 @@ function FlowCanvasInner({
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
 
+  // Legacy SEQUENTIAL flows load as PARALLEL (DAG) — sequential is just a linear DAG topology
+  const [flowMode, setFlowMode] = useState<FlowMode>(
+    propMode === "SEQUENTIAL" ? "PARALLEL" : (propMode ?? "PARALLEL")
+  );
+  const [masterWebletId, setMasterWebletId] = useState<string | null>(propMasterWebletId ?? null);
+
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(normalizeEdges(initialEdges));
+  const [edges, setEdges, onEdgesChange] = useEdgesState(normalizeEdges(initialEdges, propMode));
+
+  // Stable ref to current nodes — used inside setEdges callback to avoid
+  // adding `nodes` to the execution states effect dependency array (which causes infinite loops)
+  const nodesRef = useRef(nodes);
+  useEffect(() => { nodesRef.current = nodes; });
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [outputPanelNode, setOutputPanelNode] = useState<FlowNode | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Right-click context menu for "Set as Orchestrator" in HYBRID mode
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; webletId: string } | null>(null);
 
   useEffect(() => {
     const handleOpenSidebar = () => setIsSidebarOpen(true);
@@ -118,47 +300,36 @@ function FlowCanvasInner({
     return () => window.removeEventListener("openWebletSidebar", handleOpenSidebar);
   }, []);
 
-  // Custom event to force open the output panel for a specific node
   useEffect(() => {
     const handleOpenNodeOutput = (e: CustomEvent) => {
       const nodeId = e.detail?.nodeId;
       if (nodeId) {
         const targetNode = nodes.find((n) => n.id === nodeId);
-        if (targetNode) {
-          setOutputPanelNode(targetNode);
-          setSelectedNode(null);
-        }
+        if (targetNode) { setOutputPanelNode(targetNode); setSelectedNode(null); }
       }
     };
     window.addEventListener("openNodeOutput", handleOpenNodeOutput as EventListener);
     return () => window.removeEventListener("openNodeOutput", handleOpenNodeOutput as EventListener);
   }, [nodes]);
 
-  // Custom event to select a node (opening the settings panel)
   useEffect(() => {
     const handleSelectNode = (e: CustomEvent) => {
       const nodeId = e.detail?.nodeId;
       if (nodeId) {
         const targetNode = nodes.find((n) => n.id === nodeId);
-        if (targetNode) {
-          setSelectedNode(targetNode);
-          setOutputPanelNode(null);
-          setIsSidebarOpen(false);
-        }
+        if (targetNode) { setSelectedNode(targetNode); setOutputPanelNode(null); setIsSidebarOpen(false); }
       }
     };
     window.addEventListener("selectNode", handleSelectNode as EventListener);
     return () => window.removeEventListener("selectNode", handleSelectNode as EventListener);
   }, [nodes]);
 
-  // Listen for flow finish event to auto-select the last active node
   useEffect(() => {
     const handleExecComplete = (e: CustomEvent) => {
       const events = e.detail?.events || [];
-      // Find the last node that completed or failed
       const lastEvent = [...events].reverse().find((ev: any) => ev.type === "node_completed" || ev.type === "step_failed");
       if (lastEvent?.data?.nodeId) {
-        const targetNode = nodes.find(n => n.id === lastEvent.data.nodeId);
+        const targetNode = nodes.find((n) => n.id === lastEvent.data.nodeId);
         if (targetNode) setOutputPanelNode(targetNode);
       }
     };
@@ -166,80 +337,115 @@ function FlowCanvasInner({
     return () => window.removeEventListener("flowExecutionCompleted", handleExecComplete as EventListener);
   }, [nodes]);
 
-  // If we change from execution -> builder, clear output panel
   useEffect(() => {
-    if (!readOnly) {
-      setOutputPanelNode(null);
-    } else {
-      setSelectedNode(null); // Clear settings panel if running starts
-    }
+    if (!readOnly) { setOutputPanelNode(null); }
+    else { setSelectedNode(null); }
   }, [readOnly]);
 
-  // ── Sync execution states ──
+  // ── Sync execution states + FIXED animation bug ──
+  // NOTE: `nodes` is intentionally NOT in the dep array — we use `nodesRef` instead.
+  // Including `nodes` causes an infinite loop: setEdges → ReactFlow internal update
+  // → nodes changes → effect re-fires → setEdges again → ...
   useEffect(() => {
     if (!executionStates) return;
-    // Sync node execution states
+
     setNodes((nds) =>
       nds.map((n) => {
         const state = executionStates[n.id];
         if (!state) return n;
-        return {
-          ...n,
-          data: { ...n.data, executionState: state }
-        } as FlowNode;
+        return { ...n, data: { ...n.data, executionState: state } } as FlowNode;
       })
     );
 
-    // Sync edge execution states (animations)
     setEdges((eds) =>
       eds.map((e) => {
-        // If the flow is finished, reset all edges to default state
         if (isFinished) {
-          return {
-            ...e,
-            className: "",
-            animated: true,
-          };
+          return { ...e, className: "", animated: true };
         }
 
-        const targetState = executionStates[e.target];
         const sourceState = executionStates[e.source];
+        const targetState = executionStates[e.target];
+        // Use ref to read current nodes without adding to deps
+        const sourceNode = nodesRef.current.find((n) => n.id === e.source);
+        const isFromPrompt = sourceNode?.type === "prompt";
 
         let className = "";
-        let animated = true;
 
-        // If target or source node is running, make the edge glow
-        if (targetState?.status === "running" || sourceState?.status === "running") {
-          const sourceNode = nodes.find(n => n.id === e.source);
-          const isFromPrompt = sourceNode?.type === "prompt";
+        // Glow the edge whose TARGET is running — shows data arriving at the active node.
+        // e.g. prompt→Node1 glows while Node1 runs; Node1→Node2 glows while Node2 runs.
+        // Do NOT glow the outgoing edge of a running node (data hasn't left yet).
+        if (targetState?.status === "running") {
           className = isFromPrompt ? "input-glowing-edge" : "glowing-edge";
-          animated = true;
-        }
-        // If the source node is completed, the edge is "done" transferring
-        else if (sourceState?.status === "completed") {
+        } else if (sourceState?.status === "completed" && (!targetState || targetState.status === "pending")) {
+          // Upstream done, downstream hasn't started — dim waiting pulse
+          className = "waiting-edge";
+        } else if (sourceState?.status === "completed" && targetState?.status === "completed") {
           className = "completed-edge";
         }
 
-        return {
-          ...e,
-          className,
-          animated,
-        };
+        return { ...e, className, animated: true };
       })
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionStates, isFinished, setNodes, setEdges]);
+
+  // ── Mode switch ──
+  // Read nodes/edges directly (they're stable refs from useNodesState/useEdgesState)
+  // then call all setters independently — never nest setters inside each other.
+  const handleModeChange = useCallback(
+    (newMode: FlowMode) => {
+      const { nodes: newNodes, edges: newEdges, masterWebletId: newMasterId } =
+        transformCanvasForMode(nodes as FlowNode[], edges as FlowEdge[], newMode, masterWebletId);
+      setFlowMode(newMode);
+      setMasterWebletId(newMasterId);
+      setNodes(newNodes as any);
+      setEdges(normalizeEdges(newEdges, newMode) as any);
+    },
+    [nodes, edges, masterWebletId, setNodes, setEdges]
+  );
+
+  // ── Set orchestrator in HYBRID mode ──
+  const setAsOrchestrator = useCallback(
+    (nodeId: string, webletId: string) => {
+      const currentNodes = nodes as FlowNode[];
+      const newNodes = currentNodes.map((n) => {
+        if (n.id === nodeId) return { ...n, type: "orchestrator", data: { ...n.data, isOrchestrator: true } } as FlowNode;
+        if (n.type === "orchestrator") return { ...n, type: "weblet", data: { ...n.data, isOrchestrator: false } } as FlowNode;
+        return n;
+      });
+      const promptEdges = (edges as FlowEdge[]).filter((e) => {
+        const src = currentNodes.find((n) => n.id === e.source);
+        return src?.type === "prompt";
+      });
+      const subAgentEdges = currentNodes
+        .filter((n) => n.id !== nodeId && (n.type === "weblet" || n.type === "orchestrator"))
+        .map((n) => ({
+          id: `e-${n.id}-${nodeId}`,
+          source: n.id,
+          target: nodeId,
+          ...hybridEdgeOptions,
+        }));
+      setMasterWebletId(webletId);
+      setNodes(newNodes as any);
+      setEdges(normalizeEdges([...promptEdges, ...subAgentEdges], "HYBRID") as any);
+      setContextMenu(null);
+    },
+    [nodes, edges, setNodes, setEdges]
+  );
 
   // ── Connect nodes ──
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
-      setEdges((eds) => addEdge({ ...params, ...defaultEdgeOptions }, eds));
+      const opts = flowMode === "HYBRID" ? hybridEdgeOptions : defaultEdgeOptions;
+      setEdges((eds) => addEdge({ ...params, ...opts }, eds));
     },
-    [setEdges]
+    [setEdges, flowMode]
   );
 
-  // ── Node click → open settings or output ──
+  // ── Node click ──
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: FlowNode) => {
+      setContextMenu(null);
       if (readOnly) {
         setOutputPanelNode(node);
         setSelectedNode(null);
@@ -251,11 +457,23 @@ function FlowCanvasInner({
     [readOnly]
   );
 
-  // ── Pane click → close settings & sidebar ──
+  // ── Right-click: show "Set as Orchestrator" in HYBRID mode ──
+  const onNodeContextMenu = useCallback(
+    (e: React.MouseEvent, node: FlowNode) => {
+      if (readOnly || flowMode !== "HYBRID" || node.type === "prompt" || node.type === "orchestrator") return;
+      e.preventDefault();
+      const data = node.data as WebletNodeData;
+      setContextMenu({ x: e.clientX, y: e.clientY, nodeId: node.id, webletId: data.webletId });
+    },
+    [readOnly, flowMode]
+  );
+
+  // ── Pane click ──
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setIsSidebarOpen(false);
     setOutputPanelNode(null);
+    setContextMenu(null);
   }, []);
 
   // ── Update node data ──
@@ -287,7 +505,117 @@ function FlowCanvasInner({
     [setNodes, setEdges]
   );
 
-  // ── Drop weblet from sidebar onto canvas ──
+  // ── Build a new weblet node, wiring it appropriately per mode ──
+  const addWebletNode = useCallback(
+    (weblet: WebletItem, position: { x: number; y: number }) => {
+      const nodeId = `weblet-${Date.now()}`;
+
+      if (flowMode === "HYBRID") {
+        // Check if we already have an orchestrator
+        const orchestratorNode = nodes.find((n) => n.type === "orchestrator");
+
+        if (!orchestratorNode) {
+          // First weblet in HYBRID becomes the orchestrator
+          const newNode: FlowNode = {
+            id: nodeId,
+            type: "orchestrator",
+            position,
+            data: {
+              label: weblet.name,
+              webletId: weblet.id,
+              webletName: weblet.name,
+              iconUrl: weblet.iconUrl,
+              category: weblet.category,
+              role: "",
+              stepPrompt: "",
+              hitlGate: false,
+              description: weblet.description || "",
+              tools: weblet.tools || [],
+              isOrchestrator: true,
+            },
+          };
+          setNodes((nds) => [...nds, newNode]);
+          setMasterWebletId(weblet.id);
+
+          // Connect prompt → orchestrator
+          const promptNode = nodes.find((n) => n.type === "prompt");
+          if (promptNode) {
+            setEdges((eds) => [
+              ...eds,
+              {
+                id: `e-${promptNode.id}-${nodeId}`,
+                source: promptNode.id,
+                target: nodeId,
+                ...hybridEdgeOptions,
+              },
+            ]);
+          }
+        } else {
+          // Subsequent weblets become sub-agents: position radiating from orchestrator
+          const subAgentCount = nodes.filter((n) => n.type === "weblet").length;
+          const angle = (subAgentCount / Math.max(subAgentCount + 1, 3)) * 2 * Math.PI - Math.PI / 2;
+          const radius = 280;
+          const orchPos = orchestratorNode.position;
+          const subPos = {
+            x: orchPos.x + radius * Math.cos(angle),
+            y: orchPos.y + radius * Math.sin(angle) + 80,
+          };
+
+          const newNode: FlowNode = {
+            id: nodeId,
+            type: "weblet",
+            position: subPos,
+            data: {
+              label: weblet.name,
+              webletId: weblet.id,
+              webletName: weblet.name,
+              iconUrl: weblet.iconUrl,
+              category: weblet.category,
+              role: "",
+              stepPrompt: "",
+              hitlGate: false,
+              description: weblet.description || "",
+              tools: weblet.tools || [],
+              isOrchestrator: false,
+            },
+          };
+          setNodes((nds) => [...nds, newNode]);
+          // Sub-agent → orchestrator edge
+          setEdges((eds) => [
+            ...eds,
+            {
+              id: `e-${nodeId}-${orchestratorNode.id}`,
+              source: nodeId,
+              target: orchestratorNode.id,
+              ...hybridEdgeOptions,
+            },
+          ]);
+        }
+      } else {
+        // DAG mode — plain weblet node, user wires any topology they want
+        const newNode: FlowNode = {
+          id: nodeId,
+          type: "weblet",
+          position,
+          data: {
+            label: weblet.name,
+            webletId: weblet.id,
+            webletName: weblet.name,
+            iconUrl: weblet.iconUrl,
+            category: weblet.category,
+            role: "",
+            stepPrompt: "",
+            hitlGate: false,
+            description: weblet.description || "",
+            tools: weblet.tools || [],
+          },
+        };
+        setNodes((nds) => [...nds, newNode]);
+      }
+    },
+    [flowMode, nodes, setNodes, setEdges]
+  );
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -296,69 +624,24 @@ function FlowCanvasInner({
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-
       const data = e.dataTransfer.getData("application/weblet");
       if (!data) return;
-
       const weblet: WebletItem = JSON.parse(data);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-
-      const newNode: FlowNode = {
-        id: `weblet-${Date.now()}`,
-        type: "weblet",
-        position,
-        data: {
-          label: weblet.name,
-          webletId: weblet.id,
-          webletName: weblet.name,
-          iconUrl: weblet.iconUrl,
-          category: weblet.category,
-          role: "",
-          stepPrompt: "",
-          hitlGate: false,
-          description: weblet.description || "",
-          tools: weblet.tools || [],
-        },
-      };
-
-      setNodes((nds) => [...nds, newNode]);
+      addWebletNode(weblet, position);
     },
-    [screenToFlowPosition, setNodes]
+    [screenToFlowPosition, addWebletNode]
   );
 
-  // ── Click weblet from sidebar to add to canvas ──
   const onWebletClick = useCallback(
     (weblet: WebletItem) => {
-      // Place the new node roughly in the center of the screen
-      const position = screenToFlowPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2
-      });
-
-      const newNode: FlowNode = {
-        id: `weblet-${Date.now()}`,
-        type: "weblet",
-        position,
-        data: {
-          label: weblet.name,
-          webletId: weblet.id,
-          webletName: weblet.name,
-          iconUrl: weblet.iconUrl,
-          category: weblet.category,
-          role: "",
-          stepPrompt: "",
-          hitlGate: false,
-          description: weblet.description || "",
-          tools: weblet.tools || [],
-        },
-      };
-
-      setNodes((nds) => [...nds, newNode]);
+      const position = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      addWebletNode(weblet, position);
     },
-    [screenToFlowPosition, setNodes]
+    [screenToFlowPosition, addWebletNode]
   );
 
-  // ── Get current prompt from prompt node ──
+  // ── Current prompt ──
   const currentPrompt = useMemo(() => {
     const promptNode = nodes.find((n) => n.type === "prompt");
     return (promptNode?.data as PromptNodeData)?.prompt || "";
@@ -372,13 +655,21 @@ function FlowCanvasInner({
       nodes: nodes as FlowNode[],
       edges: edges as FlowEdge[],
       prompt: currentPrompt,
+      mode: flowMode,
+      masterWebletId,
     });
-  }, [nodes, edges, currentPrompt]);
+  }, [nodes, edges, currentPrompt, flowMode, masterWebletId]);
 
   // ── Save handler ──
   const handleSave = useCallback(() => {
-    onSave?.({ nodes: nodes as FlowNode[], edges: edges as FlowEdge[], prompt: currentPrompt });
-  }, [nodes, edges, currentPrompt, onSave]);
+    onSave?.({
+      nodes: nodes as FlowNode[],
+      edges: edges as FlowEdge[],
+      prompt: currentPrompt,
+      mode: flowMode,
+      masterWebletId,
+    });
+  }, [nodes, edges, currentPrompt, onSave, flowMode, masterWebletId]);
 
   return (
     <div className="flex h-full relative overflow-hidden bg-zinc-50 dark:bg-zinc-950">
@@ -391,6 +682,7 @@ function FlowCanvasInner({
           onEdgesChange={readOnly ? undefined : onEdgesChange}
           onConnect={readOnly ? undefined : onConnect}
           onNodeClick={onNodeClick}
+          onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           onDragOver={readOnly ? undefined : onDragOver}
           onDrop={readOnly ? undefined : onDrop}
@@ -414,49 +706,57 @@ function FlowCanvasInner({
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="currentColor" className="text-zinc-300 dark:text-zinc-800/80" />
           <Controls className="!bg-white dark:!bg-zinc-900 !border-zinc-200 dark:!border-zinc-800 !shadow-sm !rounded-lg overflow-hidden [&>button]:!bg-white dark:[&>button]:!bg-zinc-900 [&>button]:!border-zinc-200 dark:[&>button]:!border-zinc-800 [&>button]:!text-zinc-600 dark:[&>button]:!text-zinc-400 hover:[&>button]:!bg-zinc-100 dark:hover:[&>button]:!bg-zinc-800" />
-          
-          {/* Custom SVG Markers for consistent arrowhead colors (8px for precision) */}
-          <svg style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0 }}>
+
+          {/* Mode selector — centered top overlay */}
+          {!readOnly && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+              <ModeSelector mode={flowMode} onChange={handleModeChange} />
+            </div>
+          )}
+
+          {/* HYBRID mode hint */}
+          {!readOnly && flowMode === "HYBRID" && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-40 mt-1">
+              <span className="text-[9px] text-amber-600/70 font-medium">
+                First agent added becomes the orchestrator · right-click any agent to promote
+              </span>
+            </div>
+          )}
+
+          {/* Custom SVG Markers */}
+          <svg style={{ position: "absolute", top: 0, left: 0, width: 0, height: 0 }}>
             <defs>
-              <marker
-                id="arrow-amber"
-                markerWidth="6"
-                markerHeight="6"
-                refX="6"
-                refY="3"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
+              <marker id="arrow-amber" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
                 <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b" />
               </marker>
-              <marker
-                id="arrow-zinc-200"
-                markerWidth="6"
-                markerHeight="6"
-                refX="6"
-                refY="3"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
+              <marker id="arrow-zinc-200" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
                 <path d="M0,0 L6,3 L0,6 Z" fill="#e4e4e7" />
               </marker>
-              <marker
-                id="arrow-zinc-400"
-                markerWidth="6"
-                markerHeight="6"
-                refX="6"
-                refY="3"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
+              <marker id="arrow-zinc-400" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
                 <path d="M0,0 L6,3 L0,6 Z" fill="#a1a1aa" />
               </marker>
             </defs>
           </svg>
         </ReactFlow>
+
+        {/* Right-click context menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-[9999] bg-black border border-zinc-800 rounded-sm shadow-2xl py-1 min-w-[160px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-amber-400 hover:bg-amber-950/60 transition-colors"
+              onClick={() => setAsOrchestrator(contextMenu.nodeId, contextMenu.webletId)}
+            >
+              <Crown className="size-3" />
+              Set as Orchestrator
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Top Right Floating Add Button */}
+      {/* Top Right: Add button */}
       {!isSidebarOpen && !readOnly && (
         <div className="absolute top-3 right-3 z-50 flex gap-2">
           <Button
@@ -470,6 +770,7 @@ function FlowCanvasInner({
         </div>
       )}
 
+      {/* Execute button */}
       {!readOnly && onSave && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50">
           <Button
@@ -485,7 +786,7 @@ function FlowCanvasInner({
 
       {/* Right sidebars */}
       {readOnly && outputPanelNode && executionStates && executionStates[outputPanelNode.id] ? (
-        <div className="w-80 border-l border-zinc-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] shrink-0 flex flex-col z-20 shadow-none transition-all h-full relative">
+        <div className="w-80 border-l border-zinc-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] shrink-0 flex flex-col z-20 shadow-none h-full relative">
           <NodeOutputPanel
             nodeId={outputPanelNode.id}
             nodeName={outputPanelNode.data?.webletName as string || "Agent"}
@@ -495,7 +796,7 @@ function FlowCanvasInner({
           />
         </div>
       ) : !readOnly && selectedNode ? (
-        <div className="w-80 border-l border-zinc-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] shrink-0 flex flex-col z-20 shadow-none transition-all h-full relative">
+        <div className="w-80 border-l border-zinc-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] shrink-0 flex flex-col z-20 shadow-none h-full relative">
           <NodeSettingsPanel
             node={selectedNode}
             onUpdate={updateNodeData}
@@ -545,7 +846,7 @@ export function deserializeFlow(
     const nodes = canvasLayout.nodes
       .filter((n) => (n.type as string) !== "output")
       .map((n) => {
-        if (n.type === "weblet" && n.data?.webletId) {
+        if ((n.type === "weblet" || n.type === "orchestrator") && n.data?.webletId) {
           const weblet = webletMap.get(n.data.webletId as string);
           if (weblet) {
             return {
@@ -570,10 +871,10 @@ export function deserializeFlow(
     };
   }
 
+  // Fallback: build from steps array
   const nodes: FlowNode[] = [];
   const edges: FlowEdge[] = [];
 
-  // Prompt node (always first)
   const promptNode: FlowNode = {
     id: "prompt-1",
     type: "prompt",
@@ -582,8 +883,7 @@ export function deserializeFlow(
   };
   nodes.push(promptNode);
 
-  // Weblet nodes from steps
-  const xSpacing = 200;
+  const xSpacing = 220;
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const weblet = webletMap.get(step.webletId);
@@ -607,7 +907,6 @@ export function deserializeFlow(
     };
     nodes.push(webletNode);
 
-    // Edge from previous node
     const sourceId = i === 0 ? "prompt-1" : nodes[i].id;
     edges.push({
       id: `e-${sourceId}-${webletNode.id}`,
@@ -622,34 +921,38 @@ export function deserializeFlow(
 
 /**
  * Convert canvas nodes + edges → DB steps array for saving.
- * Walks the graph from prompt → output, following edges in order.
  */
 export function serializeFlow(
   nodes: FlowNode[],
-  edges: FlowEdge[]
-): { steps: FlowStepSerialized[]; prompt: string; canvasState: CanvasState } {
+  edges: FlowEdge[],
+  mode?: FlowMode,
+  masterWebletId?: string | null
+): {
+  steps: FlowStepSerialized[];
+  prompt: string;
+  canvasState: CanvasState;
+  mode: FlowMode;
+  masterWebletId: string | null;
+} {
   const promptNode = nodes.find((n) => n.type === "prompt");
   const prompt = (promptNode?.data as PromptNodeData)?.prompt || "";
 
-  // Build adjacency: source → target
   const adj = new Map<string, string[]>();
   for (const e of edges) {
     if (!adj.has(e.source)) adj.set(e.source, []);
     adj.get(e.source)!.push(e.target);
   }
 
-  // Walk graph from prompt node following edges
   const steps: FlowStepSerialized[] = [];
   const visited = new Set<string>();
 
   function walk(nodeId: string, order: number) {
     if (visited.has(nodeId)) return;
     visited.add(nodeId);
-
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
 
-    if (node.type === "weblet") {
+    if (node.type === "weblet" || node.type === "orchestrator") {
       const data = node.data as WebletNodeData;
       if (data.webletId) {
         steps.push({
@@ -663,29 +966,43 @@ export function serializeFlow(
       }
     }
 
-    // Follow outgoing edges
     const targets = adj.get(nodeId) || [];
     for (const targetId of targets) {
-      walk(targetId, node.type === "weblet" ? order + 1 : order);
+      walk(targetId, node.type === "weblet" || node.type === "orchestrator" ? order + 1 : order);
     }
   }
 
-  if (promptNode) {
-    walk(promptNode.id, 1);
-  }
+  if (promptNode) walk(promptNode.id, 1);
 
-  // Sort by order
   steps.sort((a, b) => a.order - b.order);
-
-  // Re-number
   steps.forEach((s, i) => {
     s.order = i + 1;
     s.inputMapping = i === 0 ? "original" : "previous";
   });
 
+  // In HYBRID, ensure master weblet is listed as step 1
+  if (mode === "HYBRID" && masterWebletId) {
+    const masterIdx = steps.findIndex((s) => s.webletId === masterWebletId);
+    if (masterIdx > 0) {
+      const [master] = steps.splice(masterIdx, 1);
+      steps.unshift(master);
+      steps.forEach((s, i) => { s.order = i + 1; });
+    }
+  }
+
+  // Map legacy SEQUENTIAL → PARALLEL; new flows are always DAG or HYBRID
+  const resolvedMode: FlowMode = (mode === "SEQUENTIAL" || !mode) ? "PARALLEL" : mode;
+
   return {
     steps,
     prompt,
-    canvasState: { nodes: nodes as FlowNode[], edges: edges as FlowEdge[] },
+    canvasState: {
+      nodes: nodes as FlowNode[],
+      edges: edges as FlowEdge[],
+      mode: resolvedMode,
+      masterWebletId: masterWebletId ?? null,
+    },
+    mode: resolvedMode,
+    masterWebletId: masterWebletId ?? null,
   };
 }

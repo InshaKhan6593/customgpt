@@ -53,14 +53,10 @@ export function createChildWebletTools(
             execute: async ({ message }: { message: string }) => {
                 try {
                     const result = await executeChildWeblet(child.id, message, currentDepth + 1, userId)
+                    // Return only text to the LLM — _childExecution metadata inflates tokens
                     return {
                         response: result.text,
                         source: child.name,
-                        _childExecution: {
-                            toolCalls: result.toolCalls,
-                            stepsUsed: result.stepsUsed,
-                            durationMs: result.durationMs,
-                        },
                     }
                 } catch (error: any) {
                     return {

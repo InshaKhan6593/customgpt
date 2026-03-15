@@ -15,9 +15,11 @@ interface MessageBubbleProps {
   message: UIMessage
   weblet: { name: string; iconUrl: string | null }
   onRateMessage: (messageId: string, rating: "UP" | "DOWN") => void
+  onMCPAuthComplete?: () => void
+  isStreaming?: boolean
 }
 
-export function MessageBubble({ message, weblet, onRateMessage }: MessageBubbleProps) {
+export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplete, isStreaming = false }: MessageBubbleProps) {
   const getMessageText = (parts: UIMessage["parts"] = []) => {
     return parts.filter(p => p.type === "text").map((p: any) => p.text).join("\n")
   }
@@ -37,16 +39,16 @@ export function MessageBubble({ message, weblet, onRateMessage }: MessageBubbleP
   // ── User message ──
   if (message.role === "user") {
     return (
-      <div className="flex gap-3 group justify-end w-full">
+      <div className="flex gap-2.5 group justify-end w-full">
         <div className="max-w-[80%] min-w-0">
           {textContent.length > 0 && (
-            <div className="rounded-2xl px-4 py-2 bg-primary text-primary-foreground text-[15px] shadow-sm break-words whitespace-pre-wrap">
+            <div className="rounded-lg px-3.5 py-2 bg-primary text-primary-foreground text-[14px] shadow-sm break-words whitespace-pre-wrap">
               {textContent}
             </div>
           )}
         </div>
-        <Avatar className="h-8 w-8 shrink-0 mt-0.5 shadow-sm">
-          <AvatarFallback className="bg-primary/90 text-primary-foreground text-xs font-semibold">U</AvatarFallback>
+        <Avatar className="h-7 w-7 shrink-0 mt-0.5 shadow-sm">
+          <AvatarFallback className="bg-primary/90 text-primary-foreground text-[10px] font-semibold">U</AvatarFallback>
         </Avatar>
       </div>
     )
@@ -54,25 +56,25 @@ export function MessageBubble({ message, weblet, onRateMessage }: MessageBubbleP
 
   // ── Assistant message ──
   return (
-    <div className="flex gap-4 group justify-start w-full">
-      <Avatar className="h-8 w-8 shrink-0 mt-0.5 shadow-sm border border-border/50">
+    <div className="flex gap-2.5 group justify-start w-full">
+      <Avatar className="h-7 w-7 shrink-0 mt-0.5 shadow-sm border border-border/50">
         <AvatarImage src={weblet.iconUrl || undefined} />
-        <AvatarFallback className="text-xs bg-muted font-semibold">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
+        <AvatarFallback className="text-[10px] bg-muted font-semibold">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>
 
-      <div className="flex-1 min-w-0 space-y-2 max-w-[calc(100%-3rem)]">
+      <div className="flex-1 min-w-0 space-y-1.5 max-w-[calc(100%-2.5rem)]">
         {message.parts.map((part, i) => {
           if (part.type === "text" && part.text.trim()) {
             return <ChatMarkdown key={i} content={part.text} />
           }
           if (isToolUIPart(part)) {
-            return <ToolInvocationToggle key={i} part={part} />
+            return <ToolInvocationToggle key={i} part={part} onMCPAuthComplete={onMCPAuthComplete} />
           }
           return null
         })}
 
-        {/* Message actions */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Message actions — hidden while streaming */}
+        <div className={`flex items-center gap-0.5 transition-opacity ${isStreaming ? "hidden" : "opacity-0 group-hover:opacity-100"}`}>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => handleCopy(textContent)}>
             <Copy className="h-3.5 w-3.5" />
           </Button>

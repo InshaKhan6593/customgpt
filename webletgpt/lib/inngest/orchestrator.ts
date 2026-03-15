@@ -10,6 +10,7 @@ import { getToolsFromOpenAPI } from "@/lib/tools/openapi";
 import { getMCPTools, closeMCPClients } from "@/lib/mcp/client";
 import { createChildWebletTools } from "@/lib/composition/child-tool-factory";
 import { generateText, streamText, stepCountIs, Output } from "ai";
+import { stopWhenAny, toolLoopDetected, noProgressDetected } from "@/lib/ai/stop-conditions";
 import { langfuseSpanProcessor } from "@/instrumentation";
 import { checkQuotas } from "@/lib/billing/quota-check";
 import { logUsage } from "@/lib/billing/usage-logger";
@@ -17,6 +18,48 @@ import { processDeveloperOverage } from "@/lib/billing/overage";
 import { autoCompactMessages } from "@/lib/utils/truncate";
 
 const MAX_HITL_REVISIONS = 3;
+const FLOW_ITERATION_LIMIT = 50; // Safety cap — prevents infinite loops on malformed DAGs
+
+/**
+ * Validate DAG before execution.
+ * Returns the first error found, or null if valid.
+ */
+function validateDAG(nodes: any[], edges: any[]): string | null {
+  const nodeIds = new Set(nodes.map((n: any) => n.id));
+
+  // Check for self-loops
+  for (const e of edges) {
+    if (e.source === e.target) return `Self-loop detected on node ${e.source}`
+  }
+
+  // Check for dangling edge targets (target node doesn't exist)
+  for (const e of edges) {
+    if (!nodeIds.has(e.target)) return `Edge target "${e.target}" not found in nodes`
+  }
+
+  // Cycle detection via DFS coloring (0=unvisited, 1=in-stack, 2=done)
+  const color = new Map<string, number>()
+  const adj = new Map<string, string[]>()
+  for (const n of nodes) adj.set(n.id, [])
+  for (const e of edges) adj.get(e.source)?.push(e.target)
+
+  function dfs(id: string): boolean {
+    if (color.get(id) === 1) return true  // back-edge = cycle
+    if (color.get(id) === 2) return false
+    color.set(id, 1)
+    for (const next of (adj.get(id) || [])) {
+      if (dfs(next)) return true
+    }
+    color.set(id, 2)
+    return false
+  }
+
+  for (const n of nodes) {
+    if (!color.has(n.id) && dfs(n.id)) return `Cycle detected in flow graph`
+  }
+
+  return null
+}
 
 /**
  * Remove a leading raw JSON artifact that some LLMs echo verbatim from tool results.
@@ -113,9 +156,6 @@ export const executeFlow = inngest.createFunction(
     }
 
     const webletNodes = nodes.filter(n => n.type === "weblet");
-    const nodeOutputs: Record<string, StepExecutionResult> = {};
-    const completedNodeIds = new Set<string>();
-    let finalOutput = "";
 
     // Batch-fetch all weblet info + active versions in a single step (one Inngest pause/resume)
     const { webletInfoMap, activeVersionMap } = await step.run("fetch-weblet-data", async () => {
@@ -140,11 +180,182 @@ export const executeFlow = inngest.createFunction(
       return { webletInfoMap: wMap, activeVersionMap: vMap };
     });
 
+    // ═══════════════════════════════════════════════════════════
+    // ── HYBRID MODE: Master weblet orchestrates dynamically  ──
+    // ═══════════════════════════════════════════════════════════
+    if (flow.mode === "HYBRID" && webletNodes.length > 0) {
+      // Use dedicated masterWebletId if set, otherwise fall back to first weblet node
+      const masterWebletId = (flow as any).masterWebletId
+        || webletNodes[0]?.data?.webletId;
+      const masterNode = webletNodes.find(n => n.data.webletId === masterWebletId) || webletNodes[0];
+      const subAgentNodes = webletNodes.filter(n => n.id !== masterNode.id);
+      const masterInfo = webletInfoMap[masterWebletId];
+      const masterVersion = activeVersionMap[masterWebletId];
+
+      if (!masterInfo || !masterVersion) {
+        await publishProgress(pub, sessionId, "failed", { message: "Master weblet configuration missing." });
+        return { status: "failed", reason: "Master weblet missing config" };
+      }
+
+      const qRes = await checkQuotas(userId, masterWebletId);
+      if (!qRes.allowed) {
+        await publishProgress(pub, sessionId, "failed", { message: qRes.reason, quotaExceeded: true });
+        return { status: "failed", reason: qRes.reason };
+      }
+      if (qRes.triggerReload) await processDeveloperOverage(masterInfo.developerId);
+
+      const hybridResult = await step.run("execute-hybrid-master", async () => {
+        await publishProgress(pub, sessionId, "node_started", {
+          nodeId: masterNode.id, webletId: masterWebletId,
+          webletName: masterInfo.name, iconUrl: masterInfo.iconUrl,
+          message: `${masterInfo.name} is orchestrating...`,
+        });
+
+        // Sub-agents become tools the master can call
+        const subAgentTools: Record<string, any> = {};
+        for (const subNode of subAgentNodes) {
+          const subInfo = webletInfoMap[subNode.data.webletId];
+          if (!subInfo) continue;
+          const toolName = `agent_${subInfo.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+          subAgentTools[toolName] = {
+            description: `Delegate a task to ${subInfo.name}. ${subNode.data.stepPrompt || ""}`.trim(),
+            parameters: {
+              type: "object",
+              properties: { task: { type: "string", description: "The specific task to delegate" } },
+              required: ["task"],
+            },
+            execute: async ({ task }: { task: string }) => {
+              const { executeChildWeblet } = await import("@/lib/composition/executor");
+              await publishProgress(pub, sessionId, "tool_call", {
+                toolName, args: { task }, state: "running", nodeId: subNode.id,
+              });
+              const res = await executeChildWeblet(subNode.data.webletId, task, 1, userId);
+              await publishProgress(pub, sessionId, "tool_call", {
+                toolName, args: { task }, result: res.text, state: "completed", nodeId: subNode.id,
+              });
+              return { agent: subInfo.name, response: res.text };
+            },
+          };
+        }
+
+        let masterTools = getToolsFromCapabilities(masterInfo.capabilities, masterInfo.id);
+        if (masterVersion.openapiSchema) {
+          masterTools = {
+            ...masterTools,
+            ...getToolsFromOpenAPI(
+              typeof masterVersion.openapiSchema === "string"
+                ? masterVersion.openapiSchema
+                : JSON.stringify(masterVersion.openapiSchema)
+            ),
+          };
+        }
+        masterTools = { ...masterTools, ...subAgentTools };
+
+        const masterModel = getLanguageModel(masterVersion.model || "meta-llama/llama-3.3-70b-instruct");
+        const agentList = subAgentNodes
+          .map(n => webletInfoMap[n.data.webletId])
+          .filter(Boolean)
+          .map(w => `- ${w.name}: ${w.category || "AI assistant"}`)
+          .join("\n");
+
+        const masterSystem = `${masterVersion.prompt}
+
+You are the master orchestrator of a multi-agent workflow. You have these sub-agents available as tools:
+${agentList}
+
+Your job:
+1. Analyze the user's request
+2. Break it into tasks and delegate each to the appropriate sub-agent tool
+3. Synthesize all results into a final, cohesive response
+4. NEVER echo raw tool output — always integrate and present information naturally`;
+
+        let tokensIn = 0, tokensOut = 0;
+        const toolCallsMap: Record<string, number> = {};
+        const toolCallDetails: ToolCallDetail[] = [];
+
+        const stream = streamText({
+          model: masterModel,
+          system: masterSystem,
+          messages: [{ role: "user", content: initialInput }],
+          tools: masterTools,
+          stopWhen: stopWhenAny(stepCountIs(10), toolLoopDetected(3), noProgressDetected(5)),
+          experimental_telemetry: {
+            isEnabled: true,
+            metadata: { webletId: masterWebletId, sessionId, flowId, mode: "HYBRID" },
+          },
+          async onStepFinish({ toolCalls, toolResults }: any) {
+            if (toolCalls?.length > 0) {
+              for (let t = 0; t < toolCalls.length; t++) {
+                const tc = toolCalls[t] as any;
+                toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
+                const tr = (toolResults as any[])?.find(r => r.toolCallId === tc.toolCallId);
+                toolCallDetails.push({ toolName: tc.toolName, args: tc.args || {}, result: tr?.result ?? null });
+              }
+            }
+          },
+        });
+
+        let textBuffer = "";
+        let lastFlush = Date.now();
+        for await (const chunk of stream.textStream) {
+          textBuffer += chunk;
+          const now = Date.now();
+          if (textBuffer.length >= 150 || (now - lastFlush >= 400 && textBuffer.length > 0)) {
+            await publishProgress(pub, sessionId, "agent_text", {
+              stepNumber: 1, agentName: masterInfo.name, text: textBuffer, nodeId: masterNode.id,
+            });
+            textBuffer = "";
+            lastFlush = now;
+          }
+        }
+        if (textBuffer.trim()) {
+          await publishProgress(pub, sessionId, "agent_text", {
+            stepNumber: 1, agentName: masterInfo.name, text: textBuffer, nodeId: masterNode.id,
+          });
+        }
+
+        await langfuseSpanProcessor.forceFlush();
+        const finalText = await stream.text;
+        const usage = await stream.usage as any;
+        tokensIn = usage?.promptTokens || 0;
+        tokensOut = usage?.completionTokens || 0;
+
+        return { text: finalText || "[No output from master]", tokensIn, tokensOut, toolCallsMap, toolCallDetails };
+      });
+
+      if (hybridResult.tokensIn > 0 || hybridResult.tokensOut > 0) {
+        await logUsage({
+          userId, webletId: masterWebletId, developerId: masterInfo.developerId,
+          sessionId, workflowId: flowId,
+          tokensIn: hybridResult.tokensIn, tokensOut: hybridResult.tokensOut,
+          modelId: masterVersion.model || "meta-llama/llama-3.3-70b-instruct",
+          toolCalls: Object.keys(hybridResult.toolCallsMap).length > 0 ? hybridResult.toolCallsMap : null,
+          source: "ORCHESTRATION",
+        });
+      }
+
+      await step.run("publish-hybrid-completed", async () => {
+        await publishProgress(pub, sessionId, "completed", { finalOutput: hybridResult.text });
+      });
+      return { status: "success", finalOutput: hybridResult.text };
+    }
+
+    // Validate DAG before any execution
+    const dagError = validateDAG(nodes, edges);
+    if (dagError) {
+      await publishProgress(pub, sessionId, "failed", { message: `Invalid flow graph: ${dagError}` });
+      return { status: "failed", reason: dagError };
+    }
+
+    const nodeOutputs: Record<string, StepExecutionResult> = {};
+    const completedNodeIds = new Set<string>();
+    let finalOutput = "";
+
     let currentFrontier = webletNodes.filter(n => {
       const incomingEdges = edges.filter(e => e.target === n.id);
       return incomingEdges.every(e => {
         const sourceNode = nodes.find(sn => sn.id === e.source);
-        return sourceNode?.type === "prompt" || !sourceNode;
+        return sourceNode?.type === "prompt";
       });
     });
 
@@ -152,6 +363,11 @@ export const executeFlow = inngest.createFunction(
 
     while (currentFrontier.length > 0) {
       iteration++;
+
+      if (iteration > FLOW_ITERATION_LIMIT) {
+        await publishProgress(pub, sessionId, "failed", { message: `Flow exceeded ${FLOW_ITERATION_LIMIT} iteration limit — possible infinite loop.` });
+        return { status: "failed", reason: "Iteration limit exceeded" };
+      }
 
       const frontierResults = await Promise.all(
         currentFrontier.map(async (node) => {
@@ -292,7 +508,7 @@ export const executeFlow = inngest.createFunction(
                   system: systemPrompt,
                   messages: safeMessages,
                   ...(hasTools ? { tools } : {}),
-                  stopWhen: stepCountIs(maxSteps),
+                  stopWhen: stopWhenAny(stepCountIs(maxSteps), toolLoopDetected(3), noProgressDetected(5)),
                   abortSignal: abortController.signal,
                   experimental_telemetry: {
                     isEnabled: true,
@@ -523,7 +739,7 @@ export const executeFlow = inngest.createFunction(
         const incomingEdges = edges.filter(e => e.target === n.id);
         return incomingEdges.every(e => {
           const sourceNode = nodes.find(sn => sn.id === e.source);
-          return sourceNode?.type === "prompt" || completedNodeIds.has(e.source) || !sourceNode;
+          return sourceNode?.type === "prompt" || completedNodeIds.has(e.source);
         });
       });
     }

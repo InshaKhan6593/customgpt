@@ -29,6 +29,10 @@ HOW IT WORKS:
 - You must craft a highly detailed, descriptive prompt.
 - The tool will generate the image and it will be displayed automatically to the user.
 - IMPORTANT: Do NOT write markdown image syntax like ![](url). The image is rendered automatically from the tool result. Just acknowledge that the image was generated and add any relevant commentary about it.`,
+  experimental_toToolResultContent: (result: any) => {
+    if (result?.error) return [{ type: 'text' as const, text: result.error }]
+    return [{ type: 'text' as const, text: `Image generated successfully. The image is now displayed to the user.` }]
+  },
   inputSchema: z.object({
     prompt: z.string().describe("A highly detailed, descriptive prompt for the image generator. You MUST specify the style (e.g., photorealistic, watercolor, 3D render), lighting, composition, time period, and color scheme. Do not request text rendering inside the image. Be extremely specific."),
   }),

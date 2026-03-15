@@ -13,6 +13,7 @@ interface MessageListProps {
   isLoading: boolean
   onStarterClick: (starter: string) => void
   onRateMessage: (messageId: string, rating: "UP" | "DOWN") => void
+  onMCPAuthComplete?: () => void
   scrollRef: RefObject<HTMLDivElement | null>
 }
 
@@ -23,24 +24,27 @@ export function MessageList({
   isLoading,
   onStarterClick,
   onRateMessage,
+  onMCPAuthComplete,
   scrollRef
 }: MessageListProps) {
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8" ref={scrollRef}>
+    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6" ref={scrollRef}>
       {messages.length === 0 ? (
-        <StarterChips 
-          weblet={weblet} 
-          conversationStarters={conversationStarters} 
-          onStarterClick={onStarterClick} 
+        <StarterChips
+          weblet={weblet}
+          conversationStarters={conversationStarters}
+          onStarterClick={onStarterClick}
         />
       ) : (
-        <div className="max-w-3xl w-full mx-auto space-y-6 pb-24 overflow-x-hidden">
-          {messages.map((m) => (
-            <MessageBubble 
-              key={m.id} 
-              message={m} 
-              weblet={weblet} 
-              onRateMessage={onRateMessage} 
+        <div className="max-w-2xl w-full mx-auto space-y-5 pb-20 overflow-x-hidden">
+          {messages.map((m, idx) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              weblet={weblet}
+              onRateMessage={onRateMessage}
+              onMCPAuthComplete={onMCPAuthComplete}
+              isStreaming={isLoading && idx === messages.length - 1 && m.role === "assistant"}
             />
           ))}
           

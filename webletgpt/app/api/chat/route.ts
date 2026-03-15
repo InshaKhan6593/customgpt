@@ -1,7 +1,8 @@
 import { streamText, convertToModelMessages, stepCountIs, generateId } from 'ai'
+import { stopWhenAny, toolLoopDetected, noProgressDetected } from '@/lib/ai/stop-conditions'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { truncateMessages, autoCompactMessages } from '@/lib/utils/truncate'
+import { autoCompactMessages } from '@/lib/utils/truncate'
 import { langfuseSpanProcessor } from '@/instrumentation'
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { checkAccess } from '@/lib/chat/access'
@@ -15,7 +16,23 @@ import { logUsage } from '@/lib/billing/usage-logger'
 import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
 import { getMCPTools, closeMCPClients } from '@/lib/mcp/client'
 import { createChildWebletTools } from '@/lib/composition/child-tool-factory'
+import { upsertTrace } from '@/lib/langfuse/client'
 import { z } from 'zod'
+
+// Module-level constant — avoids re-creating the string on every request
+const FORMATTING_INSTRUCTIONS = `
+
+## Response Guidelines
+- Format all responses using Markdown for readability.
+- When including code, ALWAYS use fenced code blocks with the language specified:
+\`\`\`python
+print("hello")
+\`\`\`
+- Use headings (##, ###), **bold**, bullet lists, and numbered lists to structure longer responses.
+- Never output raw code without fenced code blocks.
+- Be direct and helpful — answer the user's question first, then provide additional context if needed.
+- If you use any tools to look up information, present the findings naturally without exposing raw tool output.
+- When you are uncertain about something, say so clearly rather than guessing.`
 
 const chatSchema = z.object({
   messages: z.array(z.object({
@@ -53,7 +70,13 @@ export async function POST(req: NextRequest) {
       where: { id: webletId },
       select: {
         capabilities: true, category: true, developerId: true,
-        mcpServers: { where: { isActive: true } },
+        mcpServers: {
+          where: { isActive: true },
+          select: {
+            id: true, serverUrl: true, label: true, authToken: true,
+            requiresUserAuth: true, isActive: true, catalogId: true, tools: true,
+          },
+        },
         parentCompositions: {
           include: {
             childWeblet: {
@@ -68,36 +91,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Weblet not found" }, { status: 404 })
     }
 
-    // 2. Load System Prompt (Active Version)
-    const activeVersion = await getActiveVersion(webletId)
-    if (!activeVersion) {
-      return NextResponse.json({ error: "No active instructions found for this Weblet" }, { status: 400 })
-    }
-
-    // Prepare system instructions — append formatting guidelines
-    // so the LLM always uses proper markdown (code fences, headings, etc.)
-    const FORMATTING_INSTRUCTIONS = `
-
-## Response Guidelines
-- Format all responses using Markdown for readability.
-- When including code, ALWAYS use fenced code blocks with the language specified:
-\`\`\`python
-print("hello")
-\`\`\`
-- Use headings (##, ###), **bold**, bullet lists, and numbered lists to structure longer responses.
-- Never output raw code without fenced code blocks.
-- Be direct and helpful — answer the user's question first, then provide additional context if needed.
-- If you use any tools to look up information, present the findings naturally without exposing raw tool output.
-- When you are uncertain about something, say so clearly rather than guessing.`
-
-    let systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
-
     // Get real authenticated user (needed for MCP user tokens + quotas)
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     const userId = session.user.id
+
+    // 2. Load System Prompt (Active Version)
+    const activeVersion = await getActiveVersion(webletId, userId)
+    if (!activeVersion) {
+      return NextResponse.json({ error: "No active instructions found for this Weblet" }, { status: 400 })
+    }
+
+    let systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
 
     // 3. Assemble Tools based on Weblet capabilities config, custom Actions, and MCP servers
     let tools = getToolsFromCapabilities(weblet.capabilities, webletId)
@@ -114,7 +121,8 @@ print("hello")
     // 3.1 MCP Server Tools — pass userId so requiresUserAuth servers use the user's token
     let mcpClients: Array<{ close: () => Promise<void> }> = []
     if (weblet.mcpServers && weblet.mcpServers.length > 0) {
-      const mcpResult = await getMCPTools(weblet.mcpServers, userId)
+      const serversWithWebletId = weblet.mcpServers.map((s: any) => ({ ...s, webletId }))
+      const mcpResult = await getMCPTools(serversWithWebletId, userId)
       tools = { ...tools, ...mcpResult.tools }
       mcpClients = mcpResult.clients
     }
@@ -173,13 +181,18 @@ print("hello")
       system: systemPrompt,
       messages: compactedMessages as any[],
       tools,
-      stopWhen: stepCountIs(15),
+      stopWhen: stopWhenAny(stepCountIs(15), toolLoopDetected(3), noProgressDetected(6)),
       experimental_telemetry: {
         isEnabled: true,
+        functionId: `weblet-${webletId}`,
         metadata: {
           webletId,
           sessionId: activeSessionId,
           userId,
+          developerId: weblet.developerId,
+          modelId,
+          versionId: activeVersion.id,
+          versionNum: String(activeVersion.versionNum),
           mode: "DIRECT_CHAT",
         },
       },
@@ -192,14 +205,43 @@ print("hello")
           const results = (lastStep as any).toolResults;
           if (results && results.length > 0) {
             const last = results[results.length - 1];
-            finalText = typeof last.result === "string"
-              ? last.result
-              : JSON.stringify(last.result, null, 2);
+            if (typeof last.result === "string") {
+              finalText = last.result;
+            } else if (last.result && typeof last.result === 'object') {
+              if (last.result.text) {
+                finalText = last.result.text;
+              } else if (last.result.stdout) {
+                finalText = last.result.stdout;
+              } else {
+                finalText = JSON.stringify({ stdout: last.result.stdout, stderr: last.result.stderr, error: last.result.error });
+              }
+            } else {
+              finalText = JSON.stringify(last.result, null, 2);
+            }
           }
         }
 
         // Save assistant response
         await saveMessage(activeSessionId as string, "assistant", finalText, usage?.totalTokens)
+
+        // Save Langfuse trace ID to ChatSession for score linking
+        // We use activeSessionId as the Langfuse trace ID so scores can always be linked
+        const traceId = activeSessionId as string
+        upsertTrace({
+          id: traceId,
+          name: `weblet-${webletId}`,
+          userId,
+          sessionId: traceId,
+          output: finalText,
+          metadata: { webletId, modelId, versionId: activeVersion.id, versionNum: String(activeVersion.versionNum) },
+          tags: [`webletId:${webletId}`, `versionId:${activeVersion.id}`],
+        }).catch(err => console.error("Langfuse upsertTrace failed:", err))
+
+        // Save langfuseTraceId to ChatSession
+        prisma.chatSession.update({
+          where: { id: traceId },
+          data: { langfuseTraceId: traceId },
+        }).catch(err => console.error("Failed to save langfuseTraceId:", err))
 
         // Count tool usages across ALL steps (multi-step execution can have up to 5 steps)
         const toolCounts: Record<string, number> = {};

@@ -14,6 +14,9 @@ HOW IT WORKS:
   inputSchema: z.object({
     query: z.string().describe("A concise, targeted search query consisting of keywords. Optimize this query for a search engine, not a conversational question. Keep it under 50 characters for best results."),
   }),
+  experimental_toToolResultContent: (result: any) => {
+    return [{ type: 'text' as const, text: JSON.stringify(result) }]
+  },
   execute: async ({ query }: any) => {
     const apiKey = process.env.TAVILY_API_KEY
 

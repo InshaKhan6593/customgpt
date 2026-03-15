@@ -31,7 +31,7 @@ export async function suggestTeam(task: string, availableWeblets: WebletSummary[
           reason: z.string(),
         })
       ),
-      executionMode: z.nativeEnum(FlowMode),
+      executionMode: z.enum(["PARALLEL", "HYBRID"]),
       reasoning: z.string(),
     }),
     prompt: `You are an AI workflow architect. Given a user's task and a list of available AI agents, design the optimal team composition.
@@ -46,13 +46,13 @@ INSTRUCTIONS:
 2. Select ONLY the agents that are genuinely needed — fewer is better. Do not add agents for marginal value.
 3. For each selected agent, assign a specific role (Researcher, Writer, Coder, Reviewer, Analyst, Editor, Designer, or a custom role) and explain WHY this agent was chosen over alternatives.
 4. Recommend the execution mode:
-   - SEQUENTIAL: When tasks have clear dependencies (e.g., research → write → review). Each agent's output feeds into the next.
-   - HYBRID: When a coordinator should dynamically decide which agents to call and in what order. Best for complex, multi-faceted tasks where the approach isn't predetermined.
+   - PARALLEL: Free-form DAG. Use for ANY topology — linear pipelines (research → write → review), fan-out (one feeds many), fan-in (many feed one), or branching. This is the default. The user wires the exact connections on a canvas.
+   - HYBRID: When one coordinator agent should dynamically decide which sub-agents to invoke at runtime. Best for open-ended tasks where the delegation strategy depends on intermediate results.
 5. Provide concise reasoning for your team composition and mode choice.
 
 TEAM SIZE GUIDELINES:
 - Simple tasks (single skill needed): 1-2 agents
-- Multi-step tasks (clear pipeline): 2-4 agents in SEQUENTIAL
+- Multi-step tasks (pipeline or parallel): 2-4 agents in PARALLEL
 - Complex tasks (dynamic delegation needed): 3-5 agents in HYBRID
 - Avoid teams larger than 5 unless the task genuinely requires it`,
     experimental_telemetry: {

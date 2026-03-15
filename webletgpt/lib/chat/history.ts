@@ -16,13 +16,22 @@ export async function getOrCreateChatSession(
   }
 
   // Create a new session if one wasn't provided or couldn't be found
-  return await prisma.chatSession.create({
+  const newSession = await prisma.chatSession.create({
     data: {
       userId,
       webletId,
       title: "New Conversation" // Could be updated later based on LLM inference
     }
   })
+
+  // Auto-add weblet to user's sidebar
+  await prisma.userWeblet.upsert({
+    where: { userId_webletId: { userId, webletId } },
+    create: { userId, webletId },
+    update: {},
+  })
+
+  return newSession
 }
 
 /**
@@ -34,7 +43,7 @@ export async function saveMessage(
   content: string,
   tokensUsed?: number
 ) {
-  return await prisma.chatMessage.create({
+  return prisma.chatMessage.create({
     data: {
       chatSessionId: sessionId,
       role,
@@ -53,7 +62,7 @@ export async function loadSessionMessages(sessionId: string) {
     orderBy: { createdAt: "asc" }
   })
   
-  return messages.map((msg: any) => ({
+  return messages.map((msg) => ({
     id: msg.id,
     role: msg.role as 'user' | 'assistant' | 'system' | 'data',
     content: msg.content

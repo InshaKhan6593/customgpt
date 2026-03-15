@@ -13,7 +13,7 @@ import {
   deserializeFlow,
   serializeFlow,
 } from "@/components/flows/canvas/flow-canvas";
-import type { FlowNode, FlowEdge, WebletItem, NodeExecutionState } from "@/components/flows/canvas/types";
+import type { FlowNode, FlowEdge, FlowMode, WebletItem, NodeExecutionState } from "@/components/flows/canvas/types";
 import { useOrchestrationProgress } from "@/hooks/use-orchestration-progress";
 import { OutOfCreditsModal } from "@/components/monetization/out-of-credits-modal";
 import { Loader2, Square, CheckCircle2 } from "lucide-react";
@@ -29,6 +29,8 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   const [saving, setSaving] = useState(false);
   const [initialNodes, setInitialNodes] = useState<FlowNode[]>([]);
   const [initialEdges, setInitialEdges] = useState<FlowEdge[]>([]);
+  const [flowMode, setFlowMode] = useState<FlowMode>("PARALLEL");
+  const [masterWebletId, setMasterWebletId] = useState<string | null>(null);
   const [canvasReady, setCanvasReady] = useState(false);
 
   // Execution state
@@ -110,6 +112,9 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
         if (flowRes.ok) {
           setFlow(flowData);
+          const loadedMode = (flowData.mode as FlowMode) || "PARALLEL";
+          setFlowMode(loadedMode === "SEQUENTIAL" ? "PARALLEL" : loadedMode);
+          setMasterWebletId(flowData.masterWebletId || null);
 
           let webletsList: WebletItem[] = [];
           if (webletsRes.ok) {
@@ -185,10 +190,13 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
   // ── Save flow ──
   const saveFlow = useCallback(
-    async (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+    async (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string; mode?: FlowMode; masterWebletId?: string | null }) => {
       setSaving(true);
       try {
-        const { steps, prompt, canvasState } = serializeFlow(data.nodes, data.edges);
+        const rawMode = data.mode ?? flowMode;
+        const mode: FlowMode = rawMode === "SEQUENTIAL" ? "PARALLEL" : rawMode;
+        const masterId = data.masterWebletId !== undefined ? data.masterWebletId : masterWebletId;
+        const { steps, prompt, canvasState } = serializeFlow(data.nodes, data.edges, mode, masterId);
 
         if (steps.length === 0) {
           toast({ title: "No agents", description: "Add at least one agent to the canvas and connect it.", variant: "destructive" });
@@ -208,7 +216,8 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: flow.name,
-            mode: "SEQUENTIAL",
+            mode,
+            masterWebletId: masterId ?? null,
             defaultPrompt: prompt || flow.defaultPrompt || null,
             steps,
             canvasState,
@@ -231,7 +240,7 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         setSaving(false);
       }
     },
-    [id, flow, toast]
+    [id, flow, toast, flowMode, masterWebletId]
   );
 
   // ── Run flow directly on canvas ──
@@ -300,10 +309,13 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
   // ── Callback from canvas whenever state changes ──
   const onCanvasChange = useCallback(
-    (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string }) => {
+    (data: { nodes: FlowNode[]; edges: FlowEdge[]; prompt: string; mode: FlowMode; masterWebletId: string | null }) => {
+      // Only update the ref — do NOT call setFlowMode/setMasterWebletId here.
+      // Those setters would re-render BuilderPage on every canvas interaction
+      // (node move, edge draw, etc.) and pass new props back down into FlowCanvas,
+      // creating a prop-change loop. The canvas owns its own mode state;
+      // the parent only needs it at save time (latestCanvasData.current).
       latestCanvasData.current = data;
-      // Mark dirty only when not in read-only execution mode — execution state
-      // syncs also trigger this callback and should not count as user edits.
       if (!sessionId) isDirty.current = true;
     },
     [sessionId]
@@ -454,6 +466,8 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
             initialEdges={initialEdges}
             weblets={weblets}
             defaultPrompt={flow.defaultPrompt || ""}
+            mode={flowMode}
+            masterWebletId={masterWebletId}
             onSave={saveAndExecute}
             saving={saving}
             onChange={onCanvasChange}

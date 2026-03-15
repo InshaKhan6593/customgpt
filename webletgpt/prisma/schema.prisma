@@ -29,6 +29,7 @@ model User {
   mcpTokens     UserMCPToken[]
   developerPlan DeveloperPlan?
   userPlan      UserPlan?
+  userWeblets   UserWeblet[]
 }
 
 model Account {
@@ -94,6 +95,7 @@ model Weblet {
   parentCompositions WebletComposition[] @relation("ParentWeblet")
   mcpServers         WebletMCPServer[]
   versions           WebletVersion[]
+  userWeblets        UserWeblet[]
 
   @@index([developerId])
   @@index([category])
@@ -101,16 +103,23 @@ model Weblet {
 }
 
 model WebletVersion {
-  id         String        @id @default(cuid())
-  webletId   String
-  versionNum Int
-  prompt     String
-  status     VersionStatus @default(DRAFT)
-  commitMsg  String?
-  model      String        @default("anthropic/claude-3.5-sonnet")
-  openapiSchema Json?
-  createdAt  DateTime      @default(now())
-  weblet     Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  id                  String        @id @default(cuid())
+  webletId            String
+  versionNum          Int
+  prompt              String
+  status              VersionStatus @default(DRAFT)
+  commitMsg           String?
+  model               String        @default("anthropic/claude-3.5-sonnet")
+  openapiSchema       Json?
+  // RSIL A/B testing
+  isAbTest            Boolean       @default(false)
+  abTestTrafficPct    Int           @default(50)
+  abTestStartedAt     DateTime?
+  abTestEndedAt       DateTime?
+  abTestWinner        Boolean?
+  avgScore            Float?        // Cached avg Langfuse score for this version
+  createdAt           DateTime      @default(now())
+  weblet              Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
 
   @@unique([webletId, versionNum])
 }
@@ -142,7 +151,7 @@ model UserFlow {
   userId         String
   name           String
   description    String?
-  mode           FlowMode @default(SEQUENTIAL)
+  mode           FlowMode @default(PARALLEL)
   steps          Json
   canvasState    Json?
   defaultPrompt  String?
@@ -169,15 +178,16 @@ model WebletComposition {
 }
 
 model ChatSession {
-  id        String        @id @default(cuid())
-  userId    String
-  webletId  String
-  title     String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  messages  ChatMessage[]
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  weblet    Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  id              String        @id @default(cuid())
+  userId          String
+  webletId        String
+  title           String?
+  langfuseTraceId String?       // Langfuse trace ID for linking scores
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  messages        ChatMessage[]
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weblet          Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([webletId])
@@ -280,6 +290,7 @@ enum AccessType {
 
 enum FlowMode {
   SEQUENTIAL
+  PARALLEL
   HYBRID
 }
 
@@ -425,18 +436,52 @@ model WebletMCPServer {
 
 // ── Per-User MCP Authentication Tokens ──
 model UserMCPToken {
-  id        String          @id @default(cuid())
-  userId    String
-  serverId  String
-  tokenEnc  String          // AES-256-GCM encrypted token
-  tokenIv   String          // Initialization vector for decryption
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  userId          String
+  serverId        String
+  tokenEnc        String          // AES-256-GCM encrypted access token
+  tokenIv         String          // Initialization vector for decryption
+  refreshTokenEnc String?         // AES-256-GCM encrypted refresh token (OAuth only)
+  refreshTokenIv  String?         // IV for refresh token
+  expiresAt       DateTime?       // When the access token expires (OAuth only)
+  scope           String?         // OAuth scopes granted
+  tokenType       String?         // "pat" | "oauth" — distinguishes manual PAT from OAuth flow
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   server    WebletMCPServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@unique([userId, serverId])
+  @@index([userId])
+}
+
+// ── OAuth State (CSRF + PKCE verification for MCP OAuth flows) ──
+model OAuthState {
+  id            String   @id @default(cuid())
+  state         String   @unique          // Random state parameter (CSRF protection)
+  codeVerifier  String                    // PKCE code_verifier (stored server-side, never exposed to client)
+  userId        String
+  serverId      String
+  webletId      String
+  redirectUri   String                    // The callback URL used
+  expiresAt     DateTime                  // Short TTL (10 minutes)
+  createdAt     DateTime @default(now())
+
+  @@index([state])
+  @@index([expiresAt])
+}
+
+// ── User's Added Weblets (sidebar) ──
+model UserWeblet {
+  id        String   @id @default(cuid())
+  userId    String
+  webletId  String
+  addedAt   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weblet    Weblet   @relation(fields: [webletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, webletId])
   @@index([userId])
 }
 

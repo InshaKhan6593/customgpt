@@ -1,4 +1,5 @@
 import { generateText, stepCountIs } from "ai"
+import { stopWhenAny, toolLoopDetected, noProgressDetected } from "@/lib/ai/stop-conditions"
 import { getLanguageModel } from "@/lib/ai/openrouter"
 import { getActiveVersion } from "@/lib/chat/engine"
 import { getToolsFromCapabilities } from "@/lib/tools/registry"
@@ -8,6 +9,8 @@ import { resolveCompositions } from "./resolver"
 import { createChildWebletTools } from "./child-tool-factory"
 import { langfuseSpanProcessor } from "@/instrumentation"
 import { autoCompactMessages } from "@/lib/utils/truncate"
+import { prisma } from "@/lib/prisma"
+import { logUsage } from "@/lib/billing/usage-logger"
 
 // Token budget for child agent's context — triggers compaction when exceeded
 const CHILD_CONTEXT_BUDGET = 24_000
@@ -56,7 +59,6 @@ export async function executeChildWeblet(
     }
 
     // Get child's own tools from capabilities, MCP servers, and OpenAPI schema
-    const { prisma } = await import("@/lib/prisma")
     const childWeblet = await prisma.weblet.findUnique({
         where: { id: childWebletId },
         select: {
@@ -80,7 +82,12 @@ export async function executeChildWeblet(
     // MCP server tools — pass userId for user-auth servers
     let mcpClients: Array<{ close: () => Promise<void> }> = []
     if (childWeblet?.mcpServers && childWeblet.mcpServers.length > 0) {
-        const mcpResult = await getMCPTools(childWeblet.mcpServers, userId)
+        const mcpServers = childWeblet.mcpServers.map((s: any) => ({
+            ...s,
+            tools: s.tools as any[] | null,
+            webletId: childWebletId,
+        }))
+        const mcpResult = await getMCPTools(mcpServers, userId)
         tools = { ...tools, ...mcpResult.tools }
         mcpClients = mcpResult.clients
     }
@@ -117,7 +124,7 @@ You are operating as a specialized sub-agent called by a parent agent.
         system: compositionPrompt,
         messages: [{ role: "user", content: message }],
         tools,
-        stopWhen: stepCountIs(10),
+        stopWhen: stopWhenAny(stepCountIs(10), toolLoopDetected(3), noProgressDetected(5)),
         prepareStep: async ({ messages }) => {
             const compacted = await autoCompactMessages(messages, CHILD_CONTEXT_BUDGET, model)
             return { messages: compacted }
@@ -133,6 +140,34 @@ You are operating as a specialized sub-agent called by a parent agent.
     })
 
     await langfuseSpanProcessor.forceFlush()
+
+    // Log child usage for billing — child's developer gets credited for their work
+    if (result.usage?.totalTokens && userId) {
+        const childDev = await prisma.weblet.findUnique({
+            where: { id: childWebletId },
+            select: { developerId: true },
+        })
+        if (childDev) {
+            const toolCounts: Record<string, number> = {}
+            if (result.steps) {
+                for (const step of result.steps) {
+                    for (const tc of (step.toolCalls || [])) {
+                        toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1
+                    }
+                }
+            }
+            logUsage({
+                userId,
+                webletId: childWebletId,
+                developerId: childDev.developerId,
+                tokensIn: (result.usage as any).promptTokens || 0,
+                tokensOut: (result.usage as any).completionTokens || 0,
+                modelId,
+                toolCalls: Object.keys(toolCounts).length > 0 ? toolCounts : null,
+                source: "COMPOSABILITY",
+            }).catch(err => console.error("Failed to log child weblet usage:", err))
+        }
+    }
 
     // Close MCP clients to free resources
     if (mcpClients.length > 0) {

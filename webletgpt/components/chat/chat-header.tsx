@@ -20,21 +20,21 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ weblet }: ChatHeaderProps) {
   return (
-    <header className="flex items-center justify-between p-4 border-b bg-background/95 backdrop-blur z-10 shrink-0">
-      <div className="flex items-center space-x-3">
+    <header className="flex items-center justify-between px-4 py-2.5 border-b bg-background/95 backdrop-blur z-10 shrink-0">
+      <div className="flex items-center space-x-2.5">
         <Avatar className="h-8 w-8">
           <AvatarImage src={weblet.iconUrl || undefined} />
-          <AvatarFallback>{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
+          <AvatarFallback className="text-[11px]">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div>
-          <h2 className="text-sm font-semibold">{weblet.name}</h2>
+          <h2 className="text-[13px] font-semibold">{weblet.name}</h2>
         </div>
       </div>
-      
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon">
-            <MoreVertical className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-7 w-7">
+            <MoreVertical className="h-3.5 w-3.5" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

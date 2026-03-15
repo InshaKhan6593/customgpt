@@ -116,6 +116,14 @@ export function MCPServerCard({ server, webletId, onUpdate }: MCPServerCardProps
                                 · {toolCount} tool{toolCount !== 1 ? "s" : ""}
                             </span>
                         )}
+                        {server.authType === "OAUTH" && (
+                            <>
+                                <span className="text-xs text-muted-foreground shrink-0">·</span>
+                                <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-1.5 rounded uppercase tracking-wider">
+                                    OAuth
+                                </span>
+                            </>
+                        )}
                         {server.requiresUserAuth && (
                             <>
                                 <span className="text-xs text-muted-foreground shrink-0">·</span>

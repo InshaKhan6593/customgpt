@@ -15,7 +15,7 @@ export function StarterChips({ weblet, conversationStarters, onStarterClick }: S
         <AvatarImage src={weblet.iconUrl || undefined} />
         <AvatarFallback className="text-2xl">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>
-      <h1 className="text-2xl font-bold">How can I help you today?</h1>
+      <h1 className="text-lg font-semibold text-foreground/80">How can I help you today?</h1>
       
       {conversationStarters.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mt-8">

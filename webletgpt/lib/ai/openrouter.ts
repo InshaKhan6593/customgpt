@@ -17,8 +17,12 @@ const openai = createOpenAI({
  * from the model ID and fall back to direct Anthropic/OpenAI SDKs.
  */
 export function getLanguageModel(modelId: string) {
+  // Gemini models via OpenRouter have known issues with the response-healing
+  // plugin causing 500 errors during tool calling. Disable it for Google models.
+  const isGemini = modelId.startsWith("google/")
+
   return openrouter(modelId, {
-    plugins: [{ id: 'response-healing' }],
+    ...(isGemini ? {} : { plugins: [{ id: 'response-healing' }] }),
   })
 }
 

@@ -1,16 +1,30 @@
 import { createMCPClient } from "@ai-sdk/mcp"
-import { decryptToken } from "./encryption"
+import { z } from "zod"
+import { getValidAccessToken } from "./oauth-refresh"
 
-type MCPServerInput = {
+export type MCPServerInput = {
     id: string
     serverUrl: string
     label: string
     authToken?: string | null
     requiresUserAuth?: boolean
     isActive: boolean
+    catalogId?: string | null
+    tools?: any[] | null // Cached tool definitions from discovery
+    webletId?: string
 }
 
-type MCPClientResult = {
+type StoredUserToken = {
+    serverId: string
+    tokenEnc: string
+    tokenIv: string
+    refreshTokenEnc: string | null
+    refreshTokenIv: string | null
+    expiresAt: Date | null
+    tokenType: string | null
+}
+
+export type MCPClientResult = {
     tools: Record<string, any>
     clients: Array<{ close: () => Promise<void> }>
 }
@@ -27,13 +41,13 @@ function withTimeout<T>(ms: number, fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Fetch decrypted user tokens for MCP servers that require user auth.
- * Returns a map of serverId -> decrypted token.
+ * Fetch user tokens for MCP servers that require user auth.
+ * Returns a map of serverId -> full token record (with OAuth fields).
  */
 async function getUserTokenMap(
     serverIds: string[],
     userId: string
-): Promise<Record<string, string>> {
+): Promise<Record<string, StoredUserToken>> {
     if (serverIds.length === 0) return {}
 
     const { prisma } = await import("@/lib/prisma")
@@ -42,31 +56,85 @@ async function getUserTokenMap(
             userId,
             serverId: { in: serverIds },
         },
-        select: { serverId: true, tokenEnc: true, tokenIv: true },
+        select: {
+            serverId: true,
+            tokenEnc: true,
+            tokenIv: true,
+            refreshTokenEnc: true,
+            refreshTokenIv: true,
+            expiresAt: true,
+            tokenType: true,
+        },
     })
 
-    const map: Record<string, string> = {}
+    const map: Record<string, StoredUserToken> = {}
     for (const t of userTokens) {
-        try {
-            map[t.serverId] = decryptToken(t.tokenEnc, t.tokenIv)
-        } catch (err) {
-            console.warn(`[MCP] Failed to decrypt user token for server ${t.serverId}`)
-        }
+        map[t.serverId] = t
     }
     return map
+}
+
+/**
+ * Sanitize a server label into a tool name prefix.
+ */
+function sanitizeLabel(label: string): string {
+    return label
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "_")
+        .replace(/_+/g, "_")
+}
+
+/**
+ * Create stub tools for an MCP server that requires user auth but has no token.
+ * Each stub returns an `__mcp_auth_required` sentinel that the frontend detects
+ * and renders as an inline "Connect your account" prompt.
+ */
+function createAuthStubTools(
+    server: MCPServerInput,
+    tools: Record<string, any>
+): void {
+    const sanitized = sanitizeLabel(server.label)
+    const cachedTools = server.tools as Array<{ name: string; description?: string; inputSchema?: any }> | null
+
+    const authPayload = {
+        __mcp_auth_required: true,
+        serverId: server.id,
+        serverLabel: server.label,
+        catalogId: server.catalogId || null,
+        webletId: server.webletId || null,
+        authType: (server as any).authType || "BEARER_TOKEN", // Let frontend pick correct auth UI
+    }
+
+    if (cachedTools && cachedTools.length > 0) {
+        for (const cached of cachedTools) {
+            const toolName = `mcp_${sanitized}_${cached.name}`
+            tools[toolName] = {
+                description: cached.description || `Tool from ${server.label} (requires authentication)`,
+                inputSchema: cached.inputSchema || z.object({}),
+                execute: async () => authPayload,
+            }
+        }
+    } else {
+        tools[`mcp_${sanitized}_connect`] = {
+            description: `Connect to ${server.label} (requires authentication)`,
+            inputSchema: z.object({
+                message: z.string().describe("What you want to do with this service"),
+            }),
+            execute: async () => authPayload,
+        }
+    }
 }
 
 /**
  * Create MCP clients for active servers and fetch their tools at runtime.
  *
  * Called during every chat request to merge MCP tools into the tool set.
- * Each transport attempt gets a 6-second timeout so chat isn't blocked.
- * Servers that fail to connect are silently skipped.
+ * Each transport attempt gets a 10-second timeout so chat isn't blocked.
  *
  * Token resolution:
  * - requiresUserAuth=false → uses developer's authToken
  * - requiresUserAuth=true  → uses user's encrypted token (decrypted at runtime)
- * - If user token is missing for a requiresUserAuth server, that server is skipped
+ * - If user token is missing → creates stub tools that return __mcp_auth_required
  */
 export async function getMCPTools(
     servers: MCPServerInput[],
@@ -92,15 +160,30 @@ export async function getMCPTools(
             const headers: Record<string, string> = {}
 
             if (server.requiresUserAuth) {
-                // Prefer user's token, fall back to developer's token if available
-                const userToken = userTokenMap[server.id]
-                if (userToken) {
-                    headers["Authorization"] = `Bearer ${userToken}`
+                const storedToken = userTokenMap[server.id]
+
+                if (storedToken) {
+                    // Resolve token (handles OAuth refresh if needed)
+                    const accessToken = await getValidAccessToken(
+                        storedToken,
+                        server.id,
+                        userId!,
+                        server.catalogId || null
+                    )
+
+                    if (accessToken) {
+                        headers["Authorization"] = `Bearer ${accessToken}`
+                    } else {
+                        // Token expired and refresh failed — show auth prompt
+                        createAuthStubTools(server, tools)
+                        return
+                    }
                 } else if (server.authToken) {
                     // Developer provided a fallback token
                     headers["Authorization"] = `Bearer ${server.authToken}`
                 } else {
-                    console.warn(`[MCP] Skipping ${server.label}: user auth required but no token provided`)
+                    // No user token and no fallback — create stub tools for on-demand auth
+                    createAuthStubTools(server, tools)
                     return
                 }
             } else if (server.authToken) {
@@ -136,14 +219,9 @@ export async function getMCPTools(
 
                     clients.push(c)
 
-                    // Prefix tool names to avoid collisions
-                    const sanitizedLabel = server.label
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]/g, "_")
-                        .replace(/_+/g, "_")
-
+                    const sanitized = sanitizeLabel(server.label)
                     for (const [name, toolDef] of Object.entries(toolSet)) {
-                        tools[`mcp_${sanitizedLabel}_${name}`] = toolDef
+                        tools[`mcp_${sanitized}_${name}`] = toolDef
                     }
 
                     return // Connected successfully, stop trying transports

@@ -10,7 +10,7 @@ export async function logChatEvent(
       data: {
         webletId,
         eventType,
-        eventData: eventData ? eventData : null
+        eventData: eventData ?? null
       }
     })
   } catch (error) {

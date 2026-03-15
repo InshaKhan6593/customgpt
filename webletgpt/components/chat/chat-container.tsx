@@ -3,14 +3,16 @@
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport, UIMessage } from "ai"
 import { useRouter } from "next/navigation"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ChatHeader } from "./chat-header"
 import { MessageList } from "./message-list"
 import { InputBar } from "./input-bar"
 import { RatingDialog } from "./rating-dialog"
-import { MCPAuthGate, type RequiredMCPServer } from "./mcp-auth-gate"
+import { MAX_MESSAGES_PER_SESSION } from "@/lib/constants"
+import { AlertCircle, MessageSquarePlus } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface ChatContainerProps {
   weblet: {
@@ -23,17 +25,19 @@ interface ChatContainerProps {
   } | null
   conversationStarters?: string[]
   initialMessages?: UIMessage[]
+  onNewChat?: () => void
 }
 
 export function ChatContainer({
   weblet,
   session,
   conversationStarters = [],
-  initialMessages = []
+  initialMessages = [],
+  onNewChat,
 }: ChatContainerProps) {
   const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
-  
+
   // Feedback state
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
@@ -41,26 +45,6 @@ export function ChatContainer({
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
   const [input, setInput] = useState("")
-
-  // MCP auth gate — check if user needs to provide tokens
-  const [mcpMissing, setMcpMissing] = useState<RequiredMCPServer[]>([])
-  const [mcpChecked, setMcpChecked] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch(`/api/weblets/${weblet.id}/mcp/user-token`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled) {
-          setMcpMissing(data.missing || [])
-          setMcpChecked(true)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setMcpChecked(true) // Don't block chat on failure
-      })
-    return () => { cancelled = true }
-  }, [weblet.id])
 
   const { messages, sendMessage, status } =
     useChat({
@@ -95,10 +79,26 @@ export function ChatContainer({
     setInput("")
   }
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change — only if user is near the bottom
+  const isNearBottomRef = useRef(true)
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const el = scrollRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const threshold = 100
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    }
+    el.addEventListener("scroll", handleScroll, { passive: true })
+    return () => el.removeEventListener("scroll", handleScroll)
+  }, [])
+
+  useEffect(() => {
+    if (isNearBottomRef.current && scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth",
+      })
     }
   }, [messages])
 
@@ -109,9 +109,10 @@ export function ChatContainer({
   const handleRating = async (messageId: string, rating: "UP" | "DOWN") => {
     if (rating === "UP") {
       try {
-        await fetch("/api/chat/feedback", {
+        await fetch("/api/chat/sessions/rate", {
           method: "POST",
-          body: JSON.stringify({ webletId: weblet.id, sessionId: session?.id, messageId, rating })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: session?.id, score: 5 }),
         })
         toast.success("Thanks for the feedback!")
       } catch (e) {
@@ -128,15 +129,14 @@ export function ChatContainer({
     if (!selectedMessageId) return
     setIsSubmittingFeedback(true)
     try {
-      await fetch("/api/chat/feedback", {
+      await fetch("/api/chat/sessions/rate", {
         method: "POST",
-        body: JSON.stringify({ 
-          webletId: weblet.id, 
-          sessionId: session?.id, 
-          messageId: selectedMessageId, 
-          rating: "DOWN", 
-          feedbackText 
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session?.id,
+          score: 1,
+          comment: feedbackText,
+        }),
       })
       toast.success("Thanks for the detailed feedback!")
       setFeedbackModalOpen(false)
@@ -147,25 +147,34 @@ export function ChatContainer({
     }
   }
 
-  // Show auth gate if user hasn't provided tokens for requiresUserAuth MCP servers
-  if (mcpChecked && mcpMissing.length > 0) {
-    return (
-      <div className="flex flex-col h-full relative overflow-hidden">
-        <ChatHeader weblet={weblet} />
-        <MCPAuthGate
-          webletId={weblet.id}
-          missingServers={mcpMissing}
-          onAuthenticated={() => {
-            // Re-check — there may be more servers that need auth
-            fetch(`/api/weblets/${weblet.id}/mcp/user-token`)
-              .then((res) => res.json())
-              .then((data) => setMcpMissing(data.missing || []))
-              .catch(() => setMcpMissing([]))
-          }}
-        />
-      </div>
-    )
-  }
+  // On-demand MCP OAuth: after user connects via OAuth popup or PAT input,
+  // re-send the last user message so the LLM retries the tool call with the new token.
+  const handleMCPAuthComplete = useCallback(() => {
+    const lastUserMsg = [...messages].reverse().find(m => m.role === "user")
+    if (lastUserMsg) {
+      const text = lastUserMsg.parts
+        ?.filter((p: any) => p.type === "text")
+        .map((p: any) => p.text)
+        .join("\n")
+      if (text) {
+        sendMessage({ text })
+      }
+    }
+  }, [messages, sendMessage])
+
+  // Listen for OAuth popup completion via postMessage
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === "mcp-oauth-complete" && event.data?.success) {
+        handleMCPAuthComplete()
+      }
+    }
+    window.addEventListener("message", handler)
+    return () => window.removeEventListener("message", handler)
+  }, [handleMCPAuthComplete])
+
+  const isAtMessageLimit = messages.length >= MAX_MESSAGES_PER_SESSION
 
   return (
     <div className="flex flex-col h-full relative overflow-hidden">
@@ -178,17 +187,33 @@ export function ChatContainer({
         isLoading={isLoading}
         onStarterClick={handleStarterClick}
         onRateMessage={handleRating}
+        onMCPAuthComplete={handleMCPAuthComplete}
         scrollRef={scrollRef}
       />
 
-      <InputBar 
-        input={input}
-        handleInputChange={handleInputChange}
-        handleSubmit={handleSubmit}
-        isLoading={isLoading}
-      />
+      {isAtMessageLimit ? (
+        <div className="border-t bg-muted/50 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>This conversation has reached the message limit.</span>
+          </div>
+          {onNewChat && (
+            <Button size="sm" variant="default" onClick={onNewChat} className="shrink-0">
+              <MessageSquarePlus className="h-4 w-4 mr-1.5" />
+              New Chat
+            </Button>
+          )}
+        </div>
+      ) : (
+        <InputBar
+          input={input}
+          handleInputChange={handleInputChange}
+          handleSubmit={handleSubmit}
+          isLoading={isLoading}
+        />
+      )}
 
-      <RatingDialog 
+      <RatingDialog
         isOpen={feedbackModalOpen}
         onOpenChange={setFeedbackModalOpen}
         feedbackText={feedbackText}

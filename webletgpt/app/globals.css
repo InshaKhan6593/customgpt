@@ -155,8 +155,23 @@
   animation: flowWire 0.4s linear infinite !important;
 }
 
+/* Waiting edge: upstream completed, this node is queued but not yet running */
+.waiting-edge .react-flow__edge-path,
+.react-flow__edge.waiting-edge .react-flow__edge-path {
+  stroke: #52525b; /* zinc-600 */
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4 !important;
+  opacity: 0.45;
+  animation: waitingPulse 2s ease-in-out infinite !important;
+}
+
+@keyframes waitingPulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.55; }
+}
+
 /* Ensure default edges are also dotted and flowing (more subtle) */
-.react-flow__edge:not(.glowing-edge):not(.input-glowing-edge) .react-flow__edge-path {
+.react-flow__edge:not(.glowing-edge):not(.input-glowing-edge):not(.waiting-edge) .react-flow__edge-path {
   stroke-dasharray: 3 3 !important;
   animation: flowWire 6s linear infinite;
 }
@@ -223,6 +238,32 @@
 /* Ensure node draggability isn't blocked by children unless intended */
 .react-flow__node {
   pointer-events: auto !important;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.tool-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 2.5s ease-in-out infinite;
 }
 
 @keyframes glowPulse {

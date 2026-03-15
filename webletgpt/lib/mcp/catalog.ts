@@ -14,7 +14,7 @@ export const MCP_CATALOG: MCPCatalogEntry[] = [
         description: "Create issues, manage repos, pull requests, and code search",
         serverUrl: "https://api.githubcopilot.com/mcp",
         iconUrl: "/mcp-icons/github.svg",
-        authType: "BEARER_TOKEN",
+        authType: "OAUTH",
         category: "developer",
     },
     {
@@ -23,7 +23,7 @@ export const MCP_CATALOG: MCPCatalogEntry[] = [
         description: "Send messages, manage channels, search workspace history",
         serverUrl: "https://mcp.slack.com/sse",
         iconUrl: "/mcp-icons/slack.svg",
-        authType: "BEARER_TOKEN",
+        authType: "OAUTH",
         category: "communication",
     },
     {

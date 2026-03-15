@@ -5,12 +5,14 @@ import { cn } from "@/lib/utils"
 import { isToolUIPart, getToolName } from "ai"
 import type { UIMessagePart } from "ai"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
+import { MCPOAuthPrompt } from "./mcp-oauth-prompt"
 
 /** Image tools render their result as a visual image, not as JSON output */
 const IMAGE_TOOL_NAMES = new Set(["imageGeneration"])
 
 interface ToolInvocationToggleProps {
   part: UIMessagePart<any, any>
+  onMCPAuthComplete?: () => void
 }
 
 /** Friendly display names for built-in capability tools */
@@ -96,7 +98,7 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
+export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocationToggleProps) {
   const [open, setOpen] = useState(false)
 
   const p = part as any
@@ -107,6 +109,22 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
 
   const isLoading = state === "input-streaming" || state === "input-available" || state === "call" || state === "partial-call"
   const isDone = state === "output-available" || state === "result" || state === "error"
+
+  // ── Special: MCP auth required — render inline OAuth/PAT prompt ──
+  const isAuthRequired = isDone && output && typeof output === "object" && (output as any).__mcp_auth_required === true
+  if (isAuthRequired) {
+    return (
+      <div className="my-1.5">
+        <MCPOAuthPrompt
+          serverId={(output as any).serverId}
+          serverLabel={(output as any).serverLabel}
+          catalogId={(output as any).catalogId}
+          webletId={(output as any).webletId}
+          onConnected={() => onMCPAuthComplete?.()}
+        />
+      </div>
+    )
+  }
 
   const { label, action } = formatToolName(toolName)
   const actionDesc = getActionDescription(label, action)
@@ -121,6 +139,12 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
     ? (output as any).error
     : null
 
+  // ── Special: Code Interpreter tool renders data objects from E2B ──
+  const isCodeInterpreter = toolName === "codeInterpreter"
+  const cInterpreterData = isCodeInterpreter && output && typeof output === "object" && (output as any).data
+    ? (output as any).data
+    : null
+
   // ── Special: Child weblet tool — rich rendering ──
   const isChildWeblet = toolName.startsWith("weblet_") && output && typeof output === "object" && (output as any)._childExecution
   const childExec = isChildWeblet ? (output as any)._childExecution : null
@@ -131,37 +155,16 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
   if (isImageTool) {
     return (
       <div className="my-1.5">
-        {/* Tool call header — same as other tools */}
-        <div className="flex items-center gap-2 py-1">
-          <svg
-            className="size-3 text-zinc-500 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="text-[13px] text-zinc-400">
-            {actionDesc}
+        {/* Tool call header */}
+        <div className="py-0.5">
+          <span className={`text-sm ${isLoading ? "font-medium tool-shimmer" : "text-muted-foreground/60"}`}>
+            {isLoading ? "Generating image..." : actionDesc}
           </span>
-          {isLoading && (
-            <svg className="size-3 animate-spin text-zinc-500 shrink-0 ml-auto" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-              <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-          )}
         </div>
 
-        {/* Image content below the label */}
+        {/* Image placeholder while loading */}
         {isLoading && (
-          <div className="mt-2 rounded-xl overflow-hidden w-full max-w-[280px] aspect-square bg-zinc-800/60 border border-zinc-700/40 animate-pulse flex items-center justify-center">
-            <div className="flex flex-col items-center gap-2 text-zinc-500">
-              <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" />
-                <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-              <span className="text-[12px]">Generating image...</span>
-            </div>
-          </div>
+          <div className="mt-2 rounded-xl overflow-hidden w-full max-w-[280px] aspect-square bg-muted/40 border border-border/40 animate-pulse" />
         )}
 
         {isDone && imageUrl && (
@@ -190,6 +193,65 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
     )
   }
 
+  // ── Special: Code Interpreter Tool — shows files and inline images ──
+  if (isCodeInterpreter) {
+    return (
+      <div className="my-1.5">
+        <div className="py-0.5">
+          <span className={`text-[13px] ${isLoading ? "font-medium tool-shimmer" : "text-muted-foreground/60"}`}>
+            {isLoading ? "Running Python Code..." : actionDesc}
+          </span>
+        </div>
+
+        {isDone && cInterpreterData && (
+          <div className="mt-2 space-y-3">
+            {/* Inline Generated Images */}
+            {cInterpreterData.images?.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {cInterpreterData.images.map((img: any, idx: number) => (
+                  <img
+                    key={idx}
+                    src={img.url}
+                    alt="Generated Chart"
+                    className="rounded-xl shadow-lg max-w-full md:max-w-[280px] h-auto border border-border/30"
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Generated Files as Clickable Artifacts */}
+            {cInterpreterData.files?.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {cInterpreterData.files.map((f: any, idx: number) => (
+                  <a
+                    key={idx}
+                    href={f.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-3 max-w-[320px] rounded-lg border bg-card text-card-foreground shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer group"
+                  >
+                    <div className="h-8 w-8 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-none truncate">{f.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1 uppercase tracking-wider group-hover:text-foreground/70 transition-colors">Click to View</p>
+                    </div>
+                    <svg className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Special: Child weblet tool — shows agent activity + response ──
   if (isChildWeblet) {
     const toolCallCount = childExec?.toolCalls?.length || 0
@@ -197,6 +259,16 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
     const headerParts = [childSource || action || label]
     if (toolCallCount > 0) headerParts.push(`${toolCallCount} tool call${toolCallCount > 1 ? "s" : ""}`)
     if (duration) headerParts.push(duration)
+
+    if (isLoading) {
+      return (
+        <div className="my-1.5 py-0.5">
+          <span className="text-sm font-medium tool-shimmer">
+            {`Using ${childSource || action || label}...`}
+          </span>
+        </div>
+      )
+    }
 
     return (
       <div className="my-1.5">
@@ -207,7 +279,7 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
         >
           <svg
             className={cn(
-              "size-3 text-zinc-500 transition-transform duration-200 shrink-0",
+              "size-3 text-muted-foreground/50 transition-transform duration-200 shrink-0",
               open && "rotate-90"
             )}
             viewBox="0 0 24 24"
@@ -215,10 +287,10 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
           >
             <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="text-[13px] text-zinc-400">
-            Used <span className="text-zinc-300 font-medium">{childSource || action}</span>
+          <span className="text-[13px] text-muted-foreground/60">
+            Used <span className="text-muted-foreground font-medium">{childSource || action}</span>
             {(toolCallCount > 0 || duration) && (
-              <span className="text-zinc-600 ml-1.5">
+              <span className="text-muted-foreground/40 ml-1.5">
                 ({[
                   toolCallCount > 0 ? `${toolCallCount} tool call${toolCallCount > 1 ? "s" : ""}` : null,
                   duration,
@@ -226,12 +298,6 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
               </span>
             )}
           </span>
-          {isLoading && (
-            <svg className="size-3 animate-spin text-zinc-500 shrink-0 ml-auto" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-              <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-          )}
         </button>
 
         {/* Expanded content */}
@@ -273,83 +339,23 @@ export function ToolInvocationToggle({ part }: ToolInvocationToggleProps) {
     )
   }
 
-  // ── Default: collapsible toggle for all other tools ──
-  return (
-    <div className="my-1.5">
-      {/* Header row — Vercel-style collapsible */}
-      <button
-        onClick={() => hasDetails && setOpen(!open)}
-        className={cn(
-          "flex items-center gap-2 w-full text-left py-1",
-          hasDetails && "cursor-pointer",
-          !hasDetails && "cursor-default"
-        )}
-      >
-        {/* Chevron */}
-        <svg
-          className={cn(
-            "size-3 text-zinc-500 transition-transform duration-200 shrink-0",
-            open && "rotate-90",
-            !hasDetails && "opacity-0"
-          )}
-          viewBox="0 0 24 24"
-          fill="none"
-        >
-          <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-
-        {/* Action description */}
-        <span className="text-[13px] text-zinc-400">
-          {actionDesc}
+  // ── Loading state: Claude-style shimmer + pulsing dot ──
+  if (isLoading) {
+    return (
+      <div className="my-1.5 py-0.5">
+        <span className="text-sm font-medium tool-shimmer">
+          {action ? `${action}...` : `${label}...`}
         </span>
-
-        {/* Spinner or dot indicator */}
-        {isLoading && (
-          <svg className="size-3 animate-spin text-zinc-500 shrink-0 ml-auto" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-            <path className="opacity-75" d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
-
-      {/* Sub-items — file/tool details */}
-      <div className={cn(
-        "ml-2.5 border-l border-zinc-800 pl-4 space-y-0.5",
-        !open && "hidden"
-      )}>
-        {/* Tool name detail */}
-        <div className="flex items-center gap-2 py-1">
-          <svg className="size-3.5 text-zinc-500 shrink-0" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="3" fill="currentColor" />
-          </svg>
-          <span className="text-[13px] text-zinc-300 font-mono truncate">
-            {action || label}
-          </span>
-          <span className="text-[11px] text-zinc-600 truncate ml-auto">
-            {label}
-          </span>
-        </div>
-
-        {/* Input args */}
-        {input && typeof input === "object" && Object.keys(input).length > 0 && (
-          <div className="py-1.5">
-            <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Input</span>
-            <pre className="mt-1 text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all font-mono bg-zinc-900/50 rounded px-2.5 py-2 border border-zinc-800/50">
-              {JSON.stringify(input, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* Output */}
-        {output !== undefined && (
-          <div className="py-1.5">
-            <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Output</span>
-            <pre className="mt-1 text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all font-mono bg-zinc-900/50 rounded px-2.5 py-2 border border-zinc-800/50 max-h-52 overflow-y-auto">
-              {formatResult(output)}
-            </pre>
-          </div>
-        )}
       </div>
+    )
+  }
+
+  // ── Done state: subtle label, no toggle ──
+  return (
+    <div className="my-1 py-0.5">
+      <span className="text-[13px] text-muted-foreground/60">
+        {actionDesc}
+      </span>
     </div>
   )
 }
