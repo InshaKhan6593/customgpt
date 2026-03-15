@@ -1,6 +1,6 @@
 "use client"
 
-import { UIMessage } from "ai"
+import { UIMessage, isToolUIPart } from "ai"
 import { StarterChips } from "./starter-chips"
 import { MessageBubble } from "./message-bubble"
 import { TypingIndicator } from "./typing-indicator"
@@ -51,8 +51,14 @@ export function MessageList({
           {isLoading && (() => {
             const lastMsg = messages[messages.length - 1]
             const lastIsUser = lastMsg?.role === "user"
-            const lastIsEmptyAssistant = lastMsg?.role === "assistant" && 
-              (!lastMsg.parts || lastMsg.parts.filter(p => p.type === "text").every((p: any) => !p.text))
+            // Hide typing indicator as soon as ANY visible content exists in the assistant message —
+            // either non-empty text OR a tool invocation part (even while still streaming its args).
+            // Previously this only checked text parts, so the dots stayed visible during tool calls,
+            // showing two avatars at once and giving the illusion of a delay.
+            const hasVisibleContent = lastMsg?.parts?.some(
+              (p: any) => (p.type === "text" && p.text?.trim()) || isToolUIPart(p)
+            )
+            const lastIsEmptyAssistant = lastMsg?.role === "assistant" && !hasVisibleContent
             return (lastIsUser || lastIsEmptyAssistant) ? <TypingIndicator weblet={weblet} /> : null
           })()}
         </div>

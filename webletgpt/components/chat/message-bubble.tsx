@@ -32,7 +32,9 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
   const textContent = getMessageText(message.parts)
 
   const hasToolParts = message.parts.some(p => isToolUIPart(p))
-  if (message.role === "assistant" && textContent.length === 0 && !hasToolParts) {
+  // Keep the bubble mounted while streaming so there's no flicker between
+  // TypingIndicator → null → bubble. Unmount only when fully done with nothing to show.
+  if (message.role === "assistant" && textContent.length === 0 && !hasToolParts && !isStreaming) {
     return null
   }
 

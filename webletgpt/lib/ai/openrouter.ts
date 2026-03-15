@@ -17,13 +17,13 @@ const openai = createOpenAI({
  * from the model ID and fall back to direct Anthropic/OpenAI SDKs.
  */
 export function getLanguageModel(modelId: string) {
-  // Gemini models via OpenRouter have known issues with the response-healing
-  // plugin causing 500 errors during tool calling. Disable it for Google models.
-  const isGemini = modelId.startsWith("google/")
-
-  return openrouter(modelId, {
-    ...(isGemini ? {} : { plugins: [{ id: 'response-healing' }] }),
-  })
+  // response-healing was enabled to fix malformed tool calls, but it buffers
+  // the stream server-side causing visible 1-3s pauses mid-response while it
+  // detects whether a tool call is being generated. Disabling it eliminates
+  // the buffering — modern models (Claude 3.5+, GPT-4o, Llama 3.3) rarely
+  // produce malformed tool calls. If a specific model breaks, add it to a
+  // per-model allowlist rather than enabling it globally.
+  return openrouter(modelId)
 }
 
 /**
