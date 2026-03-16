@@ -544,6 +544,15 @@ function buildCapabilityPrompt(
       }
     }
   }
+  // requestUserInput is always available — add unconditionally
+  caps.push(
+    '- **Request User Input (requestUserInput)**: When you need the user to make a decision, choose between options, ' +
+    'or provide specific information before you can proceed, call this tool instead of asking in plain text. ' +
+    'It renders a structured card with optional predefined choices. Use it for: confirming destructive actions, ' +
+    'choosing between approaches, selecting from a list, or any situation where a clear structured response is better than free-form text. ' +
+    'Do NOT use it for simple conversational follow-ups — only when you genuinely need specific input to continue.'
+  )
+
   if (caps.length === 0) return ''
   return '\n\n## Your Tools\nYou have the following capabilities — use them proactively when the task calls for it:\n' + caps.join('\n')
 }
