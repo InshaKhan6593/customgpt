@@ -1,46 +1,40 @@
-/**
- * Langfuse REST API client
- * Used for: pushing scores, querying traces for RSIL analyzer, fetching analytics for developer dashboard
- */
+import { LangfuseClient } from "@langfuse/client"
 
 const LANGFUSE_BASE = process.env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com"
 const LANGFUSE_SECRET = process.env.LANGFUSE_SECRET_KEY!
 const LANGFUSE_PUBLIC = process.env.LANGFUSE_PUBLIC_KEY!
 
-function basicAuth() {
-  return "Basic " + Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString("base64")
-}
+export const langfuse = new LangfuseClient({
+  publicKey: LANGFUSE_PUBLIC,
+  secretKey: LANGFUSE_SECRET,
+  baseUrl: LANGFUSE_BASE,
+})
 
-/** Push a user rating score to Langfuse, linked to a trace */
 export async function pushScore({
   traceId,
   name,
   value,
   comment,
+  id,
+  dataType,
 }: {
   traceId: string
   name: string
   value: number
   comment?: string
+  id?: string
+  dataType?: "NUMERIC" | "BOOLEAN" | "CATEGORICAL"
 }) {
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/scores`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: basicAuth(),
-    },
-    body: JSON.stringify({ traceId, name, value, comment }),
+  return langfuse.score.create({
+    traceId,
+    name,
+    value,
+    comment,
+    ...(id ? { id } : {}),
+    ...(dataType ? { dataType } : {}),
   })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Langfuse score push failed: ${res.status} ${text}`)
-  }
-
-  return res.json()
 }
 
-/** Fetch traces for a weblet (used by RSIL analyzer + developer dashboard) */
 export async function fetchTraces({
   webletId,
   fromTimestamp,
@@ -52,22 +46,14 @@ export async function fetchTraces({
   limit?: number
   page?: number
 }) {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    page: String(page),
-    tags: `webletId:${webletId}`,
-    ...(fromTimestamp ? { fromTimestamp } : {}),
+  return langfuse.api.trace.list({
+    limit,
+    page,
+    tags: [`webletId:${webletId}`],
+    ...(fromTimestamp ? { fromTimestamp: new Date(fromTimestamp).toISOString() } : {}),
   })
-
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/traces?${params}`, {
-    headers: { Authorization: basicAuth() },
-  })
-
-  if (!res.ok) throw new Error(`Langfuse traces fetch failed: ${res.status}`)
-  return res.json()
 }
 
-/** Fetch scores for a weblet (used by RSIL analyzer) */
 export async function fetchScores({
   webletId,
   fromTimestamp,
@@ -77,75 +63,25 @@ export async function fetchScores({
   fromTimestamp?: string
   limit?: number
 }) {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    ...(fromTimestamp ? { fromTimestamp } : {}),
-  })
+  const params = new URLSearchParams()
+  params.set("limit", String(limit))
+  params.set("traceTags", `webletId:${webletId}`)
+  if (fromTimestamp) {
+    params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
+  }
 
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/scores?${params}`, {
-    headers: { Authorization: basicAuth() },
-  })
-
-  if (!res.ok) throw new Error(`Langfuse scores fetch failed: ${res.status}`)
-  const data = await res.json()
-
-  // Filter by webletId from metadata (Langfuse doesn't support filtering by metadata directly)
-  return data
-}
-
-/** Create or update a Langfuse trace (used to anchor user scores to a session) */
-export async function upsertTrace({
-  id,
-  name,
-  userId,
-  sessionId,
-  input,
-  output,
-  metadata,
-  tags,
-}: {
-  id: string
-  name: string
-  userId?: string
-  sessionId?: string
-  input?: string
-  output?: string
-  metadata?: Record<string, string>
-  tags?: string[]
-}) {
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/traces`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: basicAuth(),
-    },
-    body: JSON.stringify({ id, name, userId, sessionId, input, output, metadata, tags }),
+  const credentials = Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString("base64")
+  const res = await fetch(`${LANGFUSE_BASE}/api/public/scores?${params.toString()}`, {
+    headers: { Authorization: `Basic ${credentials}` },
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    // Don't throw — tracing failure should not break chat
-    console.error(`Langfuse trace upsert failed: ${res.status} ${text}`)
-    return null
+    throw new Error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
   }
 
-  return res.json()
+  return res.json() as Promise<{ data: Array<{ traceId: string; name: string; value: number; id: string }>; meta: unknown }>
 }
 
-/** Fetch sessions for a weblet */
-export async function fetchSessions({
-  webletId,
-  limit = 20,
-}: {
-  webletId: string
-  limit?: number
-}) {
-  const params = new URLSearchParams({ limit: String(limit) })
-
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/sessions?${params}`, {
-    headers: { Authorization: basicAuth() },
-  })
-
-  if (!res.ok) throw new Error(`Langfuse sessions fetch failed: ${res.status}`)
-  return res.json()
+export async function shutdownLangfuse() {
+  await langfuse.flush()
 }
