@@ -69,6 +69,7 @@ export const rsilDailyOptimizer = inngest.createFunction(
             currentPrompt: activeVersion.prompt,
             webletId: weblet.id,
             lowScoredTraceIds: analysis.lowScoredTraceIds,
+            weakDimensions: analysis.weakDimensions,
             webletName: weblet.name,
             webletDescription: weblet.description,
           })
@@ -80,7 +81,10 @@ export const rsilDailyOptimizer = inngest.createFunction(
             trafficPct: 50,
           })
 
-          return { webletId: weblet.id, action: `ab_test_started: avg_score=${analysis.avgScore.toFixed(2)}` }
+          const scoreBreakdown = analysis.dimensions
+            .map(d => `${d.name}=${(d.avgValue * 100).toFixed(0)}%`)
+            .join(', ')
+          return { webletId: weblet.id, action: `ab_test_started: composite=${(analysis.compositeScore * 100).toFixed(0)}% (${scoreBreakdown})` }
         } catch (err: any) {
           logger.error(`RSIL failed for ${weblet.id}: ${err.message}`)
           return { webletId: weblet.id, action: `error: ${err.message}` }

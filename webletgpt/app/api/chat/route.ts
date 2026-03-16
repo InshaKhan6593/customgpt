@@ -2,7 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs, generateId } from 'ai'
 import { stopWhenAny, toolLoopDetected, noProgressDetected } from '@/lib/ai/stop-conditions'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { autoCompactMessages } from '@/lib/utils/truncate'
+import { truncateMessages } from '@/lib/utils/truncate'
 import { langfuseSpanProcessor } from '@/instrumentation'
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { checkAccess } from '@/lib/chat/access'
@@ -16,7 +16,6 @@ import { logUsage } from '@/lib/billing/usage-logger'
 import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
 import { getMCPTools, closeMCPClients } from '@/lib/mcp/client'
 import { createChildWebletTools } from '@/lib/composition/child-tool-factory'
-import { upsertTrace } from '@/lib/langfuse/client'
 import { z } from 'zod'
 
 // Module-level constant — avoids re-creating the string on every request
@@ -32,7 +31,8 @@ print("hello")
 - Never output raw code without fenced code blocks.
 - Be direct and helpful — answer the user's question first, then provide additional context if needed.
 - If you use any tools to look up information, present the findings naturally without exposing raw tool output.
-- When you are uncertain about something, say so clearly rather than guessing.`
+- When you are uncertain about something, say so clearly rather than guessing.
+- When codeInterpreter creates files or charts, they are **automatically rendered in the UI** as download cards and inline images. Do NOT list, re-link, or enumerate created files/charts in your text. Describe what you built and how to use it instead.`
 
 const chatSchema = z.object({
   messages: z.array(z.object({
@@ -56,17 +56,32 @@ export async function POST(req: NextRequest) {
 
     const { messages: rawMessages, webletId, sessionId } = result.data
 
-    // Use official Vercel utility for performant, native message conversion
-    const messages = deduplicateToolUseIds(await convertToModelMessages(rawMessages as any))
+    // Pre-strip _childExecution from UIMessages BEFORE convertToModelMessages.
+    // This is the primary fix: we operate on the client-side UIMessage format
+    // where the result structure is predictable (tool-invocation parts with result).
+    // convertToModelMessages serializes tool results to JSON strings, making the
+    // post-conversion stripChildExecutionFromHistory unreliable.
+    const cleanedRawMessages = preStripChildExecution(rawMessages as any[])
 
-    // ── Round 1: parallel — access check, session auth, weblet data ──────────
-    const [accessCheck, authSession, weblet] = await Promise.all([
-      checkAccess(webletId),
+    // Use official Vercel utility for performant, native message conversion
+    const messages = deduplicateToolUseIds(await convertToModelMessages(cleanedRawMessages as any, {
+      // Skip tool calls that have no result (e.g., user refreshed mid-tool-call).
+      // Without this, providers reject the incomplete tool_use/tool_result pair.
+      ignoreIncompleteToolCalls: true,
+    }))
+
+    // Belt-and-suspenders: also strip any _childExecution that survived conversion
+    // (handles edge cases where the AI SDK stores results in an object, not a string).
+    stripChildExecutionFromHistory(messages)
+
+    // ── Round 1: parallel — auth + weblet data (single DB round) ────────────
+    const [authSession, weblet] = await Promise.all([
       auth(),
       prisma.weblet.findUnique({
         where: { id: webletId },
         select: {
           capabilities: true, category: true, developerId: true,
+          accessType: true, monthlyPrice: true,
           mcpServers: {
             where: { isActive: true },
             select: {
@@ -77,7 +92,7 @@ export async function POST(req: NextRequest) {
           parentCompositions: {
             include: {
               childWeblet: {
-                select: { id: true, name: true, slug: true, description: true },
+                select: { id: true, name: true, slug: true, description: true, capabilities: true },
               },
             },
           },
@@ -85,9 +100,6 @@ export async function POST(req: NextRequest) {
       }),
     ])
 
-    if (!accessCheck.hasAccess) {
-      return NextResponse.json({ error: accessCheck.reason }, { status: 402 })
-    }
     if (!authSession?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -97,10 +109,21 @@ export async function POST(req: NextRequest) {
 
     const userId = authSession.user.id
 
-    // ── Round 2: parallel — version, quotas, session (all need userId) ────────
+    // Access check uses pre-fetched data — no extra DB queries
+    const accessCheck = await checkAccess(webletId, {
+      userId,
+      developerId: weblet.developerId,
+      accessType: weblet.accessType,
+      monthlyPrice: weblet.monthlyPrice,
+    })
+    if (!accessCheck.hasAccess) {
+      return NextResponse.json({ error: accessCheck.reason }, { status: 402 })
+    }
+
+    // ── Round 2: parallel — version, quotas, session (pass pre-fetched data) ─
     const [activeVersion, quotaCheck, chatSession] = await Promise.all([
       getActiveVersion(webletId, userId),
-      checkQuotas(userId, webletId),
+      checkQuotas(userId, webletId, weblet.developerId),
       getOrCreateChatSession(webletId, userId, sessionId || null),
     ])
 
@@ -113,22 +136,20 @@ export async function POST(req: NextRequest) {
 
     const activeSessionId = chatSession.id
 
-    // Save user message fire-and-forget — order is guaranteed by chatSession creation above
+    // Extract user message text — used for saving + Langfuse trace input
     const latestUserMessage = messages[messages.length - 1]
+    let userMessageText = ""
     if (latestUserMessage?.role === 'user') {
-      let contentString = ""
       if (typeof latestUserMessage.content === "string") {
-        contentString = latestUserMessage.content
+        userMessageText = latestUserMessage.content
       } else if (Array.isArray(latestUserMessage.content)) {
-        contentString = latestUserMessage.content
+        userMessageText = latestUserMessage.content
           .filter((p: any) => p.type === 'text')
           .map((p: any) => p.text)
           .join('\n')
       }
-      // Fire-and-forget — don't block stream start for a write
-      saveMessage(activeSessionId, "user", contentString).catch(err =>
-        console.error("Failed to save user message:", err)
-      )
+      // User message is saved in after() alongside the assistant message —
+      // this prevents orphaned user messages when the model/stream fails.
     }
 
     // ── Round 3: parallel — tools assembly (MCP needs network; others are sync) ─
@@ -144,31 +165,39 @@ export async function POST(req: NextRequest) {
       tools = { ...tools, ...customTools }
     }
 
-    // Composition tools (sync) + MCP tools (async network) in parallel
-    const [mcpResult, compactedMessages] = await Promise.all([
-      weblet.mcpServers?.length
-        ? getMCPTools(weblet.mcpServers.map((s: any) => ({ ...s, webletId })), userId)
-        : Promise.resolve({ tools: {}, clients: [] as Array<{ close: () => Promise<void> }> }),
-      autoCompactMessages(messages, 33_000, getLanguageModel(activeVersion.model || "meta-llama/llama-3.3-70b-instruct")),
-    ])
+    // MCP tools (async network) — compaction is done synchronously below
+    const mcpResult = weblet.mcpServers?.length
+      ? await getMCPTools(weblet.mcpServers.map((s: any) => ({ ...s, webletId })), userId)
+      : { tools: {}, clients: [] as Array<{ close: () => Promise<void> }> }
+
+    // Fast-path: skip the expensive LLM-powered compaction for short conversations.
+    // For long ones, use simple truncation (keeps recent messages) instead of a full
+    // generateText call that blocks streaming for 5-15 seconds.
+    const compactedMessages = truncateMessages(messages, 33_000)
 
     tools = { ...tools, ...mcpResult.tools }
     const mcpClients = mcpResult.clients
+
+    // Build capability prompt AFTER MCP tools are loaded so it can include them
+    systemPrompt += buildCapabilityPrompt(weblet.capabilities, weblet.mcpServers, Object.keys(mcpResult.tools))
 
     if (weblet.parentCompositions?.length) {
       const childTools = createChildWebletTools(weblet.parentCompositions, 0, userId)
       tools = { ...tools, ...childTools }
 
-      const childDescriptions = weblet.parentCompositions.map((comp: any) => {
-        const child = comp.childWeblet
-        return `- **${child.name}** (tool: \`weblet_${child.slug.replace(/[^a-z0-9_]/g, "_")}\`): ${child.description || "A specialized AI assistant"}`
-      }).join("\n")
+      systemPrompt += `\n\n## Sub-Agent Orchestration
 
-      systemPrompt += `\n\n## Specialized Agents\nYou have access to the following specialized agent weblets. Delegate tasks to them when the task falls within their expertise — they have their own tools and capabilities.\n${childDescriptions}\n\nWhen delegating, send a clear, specific task description as the message. The agent will work autonomously and return its result to you. Then synthesize the result into your response to the user.`
+You have specialist sub-agents available as tools (look for weblet_* tools). For each request:
+1. Identify which specialist has the right capability — their tool descriptions list what they can do.
+2. Delegate entirely — do not do the work yourself if a specialist covers it.
+3. Synthesize the specialist's response into your reply. Artifacts are already in the UI — acknowledge but do not re-link.`
     }
 
     const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct"
     const model = getLanguageModel(modelId)
+
+    const toolNames = Object.keys(tools)
+    console.log(`[Chat] model=${modelId} tools=${toolNames.length} (${toolNames.join(', ')}) msgs=${compactedMessages.length}`)
 
     // ── Stream ────────────────────────────────────────────────────────────────
     // Capture onFinish data synchronously so after() can process it post-response.
@@ -182,24 +211,27 @@ export async function POST(req: NextRequest) {
       system: systemPrompt,
       messages: compactedMessages as any[],
       tools,
+      maxRetries: 1,   // 2 total attempts (down from default 3) — faster failure on OpenRouter 500s
       stopWhen: stopWhenAny(stepCountIs(15), toolLoopDetected(3), noProgressDetected(6)),
       experimental_telemetry: {
         isEnabled: true,
         functionId: `weblet-${webletId}`,
         metadata: {
-          webletId,
-          sessionId: activeSessionId,
-          userId,
-          developerId: weblet.developerId,
-          modelId,
-          versionId: activeVersion.id,
-          versionNum: String(activeVersion.versionNum),
-          mode: "DIRECT_CHAT",
+          "langfuse.trace.id": activeSessionId,
+          "langfuse.trace.name": `weblet-${webletId}`,
+          "langfuse.user.id": userId,
+          "langfuse.session.id": activeSessionId,
+          "langfuse.trace.tags": [`webletId:${webletId}`, `versionId:${activeVersion.id}`],
+          ...(userMessageText ? { "langfuse.trace.input": userMessageText } : {}),
+          "langfuse.trace.metadata.webletId": webletId,
+          "langfuse.trace.metadata.modelId": modelId,
+          "langfuse.trace.metadata.versionId": activeVersion.id,
+          "langfuse.trace.metadata.versionNum": String(activeVersion.versionNum),
+          "langfuse.trace.metadata.developerId": weblet.developerId,
+          "langfuse.trace.metadata.mode": "DIRECT_CHAT",
         },
       },
       onFinish(data) {
-        // Synchronous capture only — no awaits here.
-        // All DB writes, billing, and cleanup run in after() below.
         capturedFinish = data
       },
     })
@@ -208,12 +240,17 @@ export async function POST(req: NextRequest) {
     // Runs AFTER the full response has been streamed to the client.
     // This means DB writes never block the user from seeing the AI response.
     after(async () => {
-      // Always flush Langfuse traces
+      // Always flush Langfuse traces + close MCP clients regardless of success/failure
       await langfuseSpanProcessor.forceFlush().catch(() => {})
+      if (mcpClients.length) {
+        await closeMCPClients(mcpClients).catch(err => console.error("Failed to close MCP clients:", err))
+      }
 
       if (!capturedFinish) return
 
-      const { text: rawText, steps, usage, finishReason } = capturedFinish
+      // totalUsage aggregates across ALL steps (important for multi-step tool calls).
+      // `usage` only covers the final step, which undercounts tokens.
+      const { text: rawText, steps, totalUsage: usage, finishReason } = capturedFinish
 
       // Build finalText with same fallback logic as before
       let finalText = rawText ?? ""
@@ -238,25 +275,22 @@ export async function POST(req: NextRequest) {
       if (!finalText?.trim()) finalText = "(No response)"
 
       // All writes run in parallel — they're independent of each other
-      const traceId = activeSessionId
+      // Note: Langfuse trace is created by OTel (experimental_telemetry) with activeSessionId
+      // as the trace ID (via langfuse.trace.id). No manual upsertTrace needed.
+      // Both user + assistant messages saved here so orphans don't occur on stream failure.
       await Promise.all([
+        userMessageText
+          ? saveMessage(activeSessionId, "user", userMessageText)
+              .catch(err => console.error("Failed to save user message:", err))
+          : Promise.resolve(),
         saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens)
           .catch(err => console.error("Failed to save assistant message:", err)),
 
-        upsertTrace({
-          id: traceId,
-          name: `weblet-${webletId}`,
-          userId,
-          sessionId: traceId,
-          output: finalText,
-          metadata: { webletId, modelId, versionId: activeVersion.id, versionNum: String(activeVersion.versionNum) },
-          tags: [`webletId:${webletId}`, `versionId:${activeVersion.id}`],
-        }).catch(err => console.error("Langfuse upsertTrace failed:", err)),
-
+        // Persist the Langfuse trace ID so rate/route.ts can push user rating scores
         prisma.chatSession.update({
-          where: { id: traceId },
-          data: { langfuseTraceId: traceId },
-        }).catch(err => console.error("Failed to save langfuseTraceId:", err)),
+          where: { id: activeSessionId },
+          data: { langfuseTraceId: activeSessionId },
+        }).catch(err => console.error("Failed to set langfuseTraceId:", err)),
 
         (async () => {
           if (!usage?.totalTokens) return
@@ -291,13 +325,28 @@ export async function POST(req: NextRequest) {
           ])
         })(),
 
-        mcpClients.length
-          ? closeMCPClients(mcpClients).catch(err => console.error("Failed to close MCP clients:", err))
-          : Promise.resolve(),
       ])
     })
 
-    return response.toUIMessageStreamResponse()
+    return response.toUIMessageStreamResponse({
+      onError(error: any) {
+        // Log the full error including OpenRouter's responseBody so we can
+        // diagnose provider-specific failures (e.g. gpt-4o-mini schema rejects).
+        const body = error?.responseBody || error?.cause?.responseBody || ""
+        console.error("Stream error:", error?.message || error, body ? `\nOpenRouter body: ${body}` : "")
+
+        // Surface model-specific errors so the client can show a helpful message
+        const statusCode = error?.statusCode || error?.lastError?.statusCode || 0
+        const msg = error?.message || ""
+        if (statusCode === 500 || msg.includes("Internal Server Error") || msg.includes("RetryError")) {
+          return `model_unavailable:${modelId}`
+        }
+        if (statusCode === 429 || msg.includes("rate limit")) {
+          return `model_rate_limited:${modelId}`
+        }
+        return "Something went wrong generating a response. Please try again."
+      },
+    })
 
   } catch (error: any) {
     console.error("Chat API error:", error)
@@ -338,4 +387,181 @@ function deduplicateToolUseIds(messages: any[]): any[] {
 
     return { ...msg, content: newContent }
   })
+}
+
+/**
+ * Pre-strip _childExecution from UIMessages (client format) BEFORE convertToModelMessages.
+ *
+ * This is the primary defense. The rawMessages from the client are in UIMessage format:
+ *   { role: "assistant", parts: [{ type: "tool-invocation", state: "result", result: {...} }] }
+ * At this stage the result is a plain JS object — easy to inspect and clean.
+ * After convertToModelMessages the result is serialized to a JSON string, making
+ * detection unreliable (see stripChildExecutionFromHistory for the belt-and-suspenders pass).
+ */
+function preStripChildExecution(rawMessages: any[]): any[] {
+  return rawMessages.map((msg) => {
+    if (msg.role !== "assistant") return msg
+    const parts = msg.parts
+    if (!Array.isArray(parts)) return msg
+
+    let changed = false
+    const newParts = parts.map((part: any) => {
+      if (part.type !== "tool-invocation") return part
+      // AI SDK v5 uses "result", v6 uses "output-available"
+      if (part.state !== "result" && part.state !== "output-available") return part
+      // AI SDK v5 uses .result, v6 uses .output
+      const toolOutput = part.output ?? part.result
+      if (!toolOutput || typeof toolOutput !== "object" || !toolOutput._childExecution) return part
+
+      changed = true
+      const { _childExecution, ...rest } = toolOutput
+      let responseText = rest.response || ""
+
+      // Re-build artifact summary (mirrors toModelOutput)
+      const artifacts: string[] = []
+      for (const tc of _childExecution?.toolCalls || []) {
+        const r = tc?.result
+        if (!r || typeof r !== "object") continue
+        if (r.url) artifacts.push(`Generated image (already shown in UI)`)
+        for (const img of r.data?.images || []) {
+          if (img.url) artifacts.push(`Generated chart (already shown in UI)`)
+        }
+        for (const f of r.data?.files || []) {
+          if (f.url && f.name) artifacts.push(`Generated file: "${f.name}" (already shown as download card in UI)`)
+        }
+      }
+      if (artifacts.length > 0) {
+        responseText += "\n\n[Artifacts from sub-agent — already rendered in the UI]\n" + artifacts.join("\n")
+      }
+
+      // Write back to whichever property the SDK version uses
+      const cleanResult = { response: responseText, source: rest.source }
+      return { ...part, output: cleanResult, result: cleanResult }
+    })
+
+    return changed ? { ...msg, parts: newParts } : msg
+  })
+}
+
+/**
+ * Belt-and-suspenders pass: strip _childExecution from CoreMessages after conversion.
+ *
+ * convertToModelMessages serializes tool results in two ways depending on the AI SDK version:
+ * - As an object in c.text (object case)
+ * - As a JSON string in c.text (string case — the more common path)
+ * Both are handled here to catch any that slipped through preStripChildExecution.
+ *
+ * Mutates in place — messages are already a fresh array from convertToModelMessages.
+ */
+function stripChildExecutionFromHistory(messages: any[]): void {
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue
+    for (const part of msg.content) {
+      if (part.type !== "tool-result") continue
+      const content = part.content
+      if (!Array.isArray(content)) continue
+      for (let i = 0; i < content.length; i++) {
+        const c = content[i]
+        if (c.type !== "text") continue
+
+        // Case 1: result stored as a JS object — serialize to string.
+        // OpenAI/gpt-4o-mini requires tool result content to be a string, not an object.
+        // This covers both _childExecution blobs and any other object result that
+        // survived convertToModelMessages without being stringified.
+        if (typeof c.text === "object" && c.text !== null) {
+          const obj = c.text as any
+          content[i] = { type: "text", text: obj._childExecution ? buildChildSummary(obj) : JSON.stringify(obj) }
+          continue
+        }
+
+        // Case 2: result serialized as a JSON string containing _childExecution
+        if (typeof c.text === "string" && c.text.includes("_childExecution")) {
+          try {
+            const parsed = JSON.parse(c.text)
+            if (parsed?._childExecution) {
+              content[i] = { type: "text", text: buildChildSummary(parsed) }
+            }
+          } catch {
+            // Not valid JSON, leave as-is
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Build a system prompt section that tells the LLM what capabilities it has.
+ * Without this, the LLM has tool schemas but no guidance connecting user intents
+ * (e.g. "create an artifact", "make a chart") to the right tool.
+ */
+function buildCapabilityPrompt(
+  capabilities: any,
+  mcpServers?: Array<{ label: string; description?: string | null }>,
+  mcpToolNames?: string[]
+): string {
+  const caps: string[] = []
+  if (capabilities?.codeInterpreter) {
+    caps.push(
+      '- **Code Interpreter (codeInterpreter)**: Execute Python code and produce real outputs. ' +
+      'ALWAYS use this tool when the user asks to create files, build apps, analyze data, make charts, or compute anything. ' +
+      'DO NOT paste code in your reply — run it with this tool. Files written to /home/user/ appear as download cards. ' +
+      'Charts via matplotlib plt.show() render inline. If code fails, fix and retry.'
+    )
+  }
+  if (capabilities?.webSearch) {
+    caps.push(
+      '- **Web Search (webSearch)**: You can search the web for live, up-to-date information. ' +
+      'Use for current events, fact-checking, finding URLs, or any query that needs fresh data.'
+    )
+  }
+  if (capabilities?.imageGen) {
+    caps.push(
+      '- **Image Generation (imageGeneration)**: You can generate images from text descriptions. ' +
+      'Use when the user asks to create, draw, design, or visualize something as an image.'
+    )
+  }
+  if (capabilities?.fileSearch) {
+    caps.push(
+      '- **File Search (fileSearch)**: You can search through uploaded knowledge base documents. ' +
+      'Use when answering questions that may be covered by the knowledge base.'
+    )
+  }
+  // MCP server tools
+  if (mcpServers?.length && mcpToolNames?.length) {
+    for (const server of mcpServers) {
+      const prefix = `mcp_${server.label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_')}_`
+      const serverTools = mcpToolNames.filter(t => t.startsWith(prefix))
+      if (serverTools.length > 0) {
+        const toolList = serverTools.map(t => `\`${t}\``).join(', ')
+        caps.push(
+          `- **${server.label}** (MCP): ${server.description || 'External service integration'}. ` +
+          `Tools: ${toolList}. Use these when the task involves ${server.label} functionality.`
+        )
+      }
+    }
+  }
+  if (caps.length === 0) return ''
+  return '\n\n## Your Tools\nYou have the following capabilities — use them proactively when the task calls for it:\n' + caps.join('\n')
+}
+
+/** Shared helper: build clean text from a raw child weblet result object. */
+function buildChildSummary(raw: any): string {
+  let text = raw.response || ""
+  const artifacts: string[] = []
+  for (const tc of raw._childExecution?.toolCalls || []) {
+    const r = tc?.result
+    if (!r || typeof r !== "object") continue
+    if (r.url) artifacts.push(`Generated image (already shown in UI)`)
+    for (const img of r.data?.images || []) {
+      if (img.url) artifacts.push(`Generated chart (already shown in UI)`)
+    }
+    for (const f of r.data?.files || []) {
+      if (f.url && f.name) artifacts.push(`Generated file: "${f.name}" (shown as download card in UI)`)
+    }
+  }
+  if (artifacts.length > 0) {
+    text += "\n\n[Artifacts from sub-agent — already rendered in the UI]\n" + artifacts.join("\n")
+  }
+  return text
 }

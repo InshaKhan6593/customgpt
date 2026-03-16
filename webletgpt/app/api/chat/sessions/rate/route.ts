@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
       name: "user-rating",
       value: score,
       comment,
+      id: `${chatSession.langfuseTraceId}-user-rating`,
+      dataType: "NUMERIC",
     }).catch(err => console.error("Langfuse score push failed:", err))
   }
 
