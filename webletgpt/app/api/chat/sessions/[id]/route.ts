@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+
+export const dynamic = "force-dynamic"
 
 export async function GET(
   req: NextRequest,
@@ -66,6 +69,9 @@ export async function DELETE(
     await prisma.chatSession.delete({
       where: { id }
     })
+
+    // Invalidate the layout's server-side session list so the sidebar updates
+    revalidatePath(`/chat/${chatSession.webletId}`, "layout")
 
     return new NextResponse("OK", { status: 200 })
   } catch (error) {

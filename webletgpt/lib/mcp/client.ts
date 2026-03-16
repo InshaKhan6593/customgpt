@@ -1,4 +1,5 @@
 import { createMCPClient } from "@ai-sdk/mcp"
+import { jsonSchema } from "ai"
 import { z } from "zod"
 import { getValidAccessToken } from "./oauth-refresh"
 
@@ -110,7 +111,16 @@ function createAuthStubTools(
             const toolName = `mcp_${sanitized}_${cached.name}`
             tools[toolName] = {
                 description: cached.description || `Tool from ${server.label} (requires authentication)`,
-                inputSchema: cached.inputSchema || z.object({}),
+                // cached.inputSchema is a raw JSON Schema object from MCP discovery —
+                // must be wrapped with jsonSchema() so the AI SDK serializes it correctly.
+                // Without the wrapper, providers like gpt-4o-mini reject the raw object.
+                // If no schema was cached, use a sentinel literal — z.object({}) produces
+                // "properties: {}, required: []" which strict providers also reject.
+                inputSchema: cached.inputSchema
+                    ? jsonSchema(cached.inputSchema)
+                    : z.object({
+                          _: z.literal("none").describe("This tool requires authentication. Once connected, no parameters are needed."),
+                      }),
                 execute: async () => authPayload,
             }
         }

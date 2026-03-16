@@ -1,7 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/utils/auth-guard";
 import { errorResponse, paginatedResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
+import { getOrCreateChatSession } from "@/lib/chat/history";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,6 +51,26 @@ export async function GET(req: NextRequest) {
     return paginatedResponse(formatted, total, page, limit);
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
+    return errorResponse("Internal server error", 500);
+  }
+}
+
+/** Pre-create a chat session before the first message (ChatGPT-style flow). */
+export async function POST(req: NextRequest) {
+  try {
+    const user = await requireRole("USER");
+    const { webletId } = await req.json();
+    if (!webletId) return errorResponse("webletId is required", 400);
+
+    const session = await getOrCreateChatSession(webletId, user.id, null);
+
+    // Invalidate the layout's server-side session list so the sidebar shows the new chat
+    revalidatePath(`/chat/${webletId}`, "layout");
+
+    return NextResponse.json({ id: session.id });
+  } catch (err: any) {
+    if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
+    console.error("[chat/sessions POST]", err);
     return errorResponse("Internal server error", 500);
   }
 }

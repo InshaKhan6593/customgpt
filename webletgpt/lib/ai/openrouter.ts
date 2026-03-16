@@ -10,20 +10,21 @@ const openai = createOpenAI({
 })
 
 /**
- * Returns an AI SDK LanguageModel using OpenRouter as the primary gateway.
- * 
- * Per Segment 05 spec (Step 5 — LLM Fallback Strategy):
- * OpenRouter is the primary gateway. If unavailable, extract the provider
- * from the model ID and fall back to direct Anthropic/OpenAI SDKs.
+ * Returns an AI SDK LanguageModel using OpenRouter as the gateway.
+ *
+ * Uses OpenRouter's native `models` fallback: if the primary model returns
+ * a server error, OpenRouter tries the next model server-side (no extra
+ * round trip). Combined with maxRetries: 1 in the streamText call,
+ * total worst-case is 2 attempts × 3 models = fast recovery.
  */
 export function getLanguageModel(modelId: string) {
-  // response-healing was enabled to fix malformed tool calls, but it buffers
-  // the stream server-side causing visible 1-3s pauses mid-response while it
-  // detects whether a tool call is being generated. Disabling it eliminates
-  // the buffering — modern models (Claude 3.5+, GPT-4o, Llama 3.3) rarely
-  // produce malformed tool calls. If a specific model breaks, add it to a
-  // per-model allowlist rather than enabling it globally.
-  return openrouter(modelId)
+  return openrouter(modelId, {
+    models: [
+      modelId,
+      "google/gemini-2.5-flash",
+      "anthropic/claude-3.5-sonnet",
+    ].filter((m, i, arr) => arr.indexOf(m) === i),  // deduplicate if modelId matches a fallback
+  })
 }
 
 /**

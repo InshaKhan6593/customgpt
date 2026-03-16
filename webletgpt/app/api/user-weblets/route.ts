@@ -1,7 +1,9 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/utils/auth-guard";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -100,7 +102,9 @@ export async function GET() {
       })),
     }));
 
-    return successResponse(data);
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
     console.error("[user-weblets GET]", err);
