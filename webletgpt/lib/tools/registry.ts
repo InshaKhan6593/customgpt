@@ -1,34 +1,48 @@
 import { webSearchTool } from "./web-search"
-import { codeInterpreterTool } from "./code-interpreter"
+import { createCodeInterpreterTool, codeInterpreterTool } from "./code-interpreter"
 import { imageGenerationTool } from "./image-generation"
 import { fileSearchTool } from "./file-search"
 
 /**
- * Maps the capability keys from Weblet configuration into actual Vercel AI SDK tools.
- * @param capabilities - The Weblet's capability flags (webSearch, imageGen, fileSearch, etc.)
- * @param webletId - The Weblet ID, required for scoping file search to the correct knowledge base
+ * Maps capability flags from a Weblet config into AI SDK tool definitions.
+ *
+ * @param capabilities  - The Weblet's capability flags (webSearch, codeInterpreter, etc.)
+ * @param webletId      - Required for scoping fileSearch to the correct knowledge base
+ * @param persistentSandbox - Optional E2B Sandbox instance for child-weblet execution.
+ *                            When provided, codeInterpreter reuses this sandbox across
+ *                            all calls (state, packages, and files persist between calls).
+ *                            When omitted, a fresh sandbox is created per call.
  */
-export function getToolsFromCapabilities(capabilities: any, webletId?: string) {
-  const tools: Record<string, any> = {}
+export function getToolsFromCapabilities(
+    capabilities: any,
+    webletId?: string,
+    persistentSandbox?: any
+) {
+    const tools: Record<string, any> = {}
 
-  if (!capabilities) return tools
+    if (!capabilities) return tools
 
-  // Check each capability flag and attach the corresponding tool
-  if (capabilities.webSearch) {
-    tools.webSearch = webSearchTool
-  }
+    if (capabilities.webSearch) {
+        tools.webSearch = webSearchTool
+    }
 
-  if (capabilities.codeInterpreter) {
-    tools.codeInterpreter = codeInterpreterTool
-  }
+    if (capabilities.codeInterpreter) {
+        // Use a persistent sandbox (shared state) when executing inside a child weblet,
+        // or the default stateless tool for direct parent-weblet chat.
+        tools.codeInterpreter = persistentSandbox
+            ? createCodeInterpreterTool(persistentSandbox)
+            : codeInterpreterTool
+    }
 
-  if (capabilities.imageGen) {
-    tools.imageGeneration = imageGenerationTool(capabilities.imageGenModel || "google/gemini-3.1-flash-image-preview")
-  }
+    if (capabilities.imageGen) {
+        tools.imageGeneration = imageGenerationTool(
+            capabilities.imageGenModel || "google/gemini-3.1-flash-image-preview"
+        )
+    }
 
-  if (capabilities.fileSearch && webletId) {
-    tools.fileSearch = fileSearchTool(webletId)
-  }
+    if (capabilities.fileSearch && webletId) {
+        tools.fileSearch = fileSearchTool(webletId)
+    }
 
-  return tools
+    return tools
 }
