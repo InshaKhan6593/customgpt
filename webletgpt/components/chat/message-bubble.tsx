@@ -13,7 +13,7 @@ import { ToolInvocationToggle } from "./tool-invocation-toggle"
 // ── Main Component ──
 interface MessageBubbleProps {
   message: UIMessage
-  weblet: { name: string; iconUrl: string | null }
+  weblet: { id: string; name: string; iconUrl: string | null }
   onRateMessage: (messageId: string, rating: "UP" | "DOWN") => void
   onMCPAuthComplete?: () => void
   isStreaming?: boolean
@@ -41,7 +41,7 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
   // ── User message ──
   if (message.role === "user") {
     return (
-      <div className="flex gap-2.5 group justify-end w-full">
+      <div className="flex gap-2.5 group justify-end w-full" style={{ contain: "content" }}>
         <div className="max-w-[80%] min-w-0">
           {textContent.length > 0 && (
             <div className="rounded-lg px-3.5 py-2 bg-primary text-primary-foreground text-[14px] shadow-sm break-words whitespace-pre-wrap">
@@ -58,7 +58,7 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
 
   // ── Assistant message ──
   return (
-    <div className="flex gap-2.5 group justify-start w-full">
+    <div className="flex gap-2.5 group justify-start w-full" style={{ contain: "content" }}>
       <Avatar className="h-7 w-7 shrink-0 mt-0.5 shadow-sm border border-border/50">
         <AvatarImage src={weblet.iconUrl || undefined} />
         <AvatarFallback className="text-[10px] bg-muted font-semibold">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
@@ -94,3 +94,10 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
     </div>
   )
 }
+
+export default React.memo(MessageBubble, (prev, next) =>
+  prev.message.id === next.message.id &&
+  prev.message.parts.length === next.message.parts.length &&
+  prev.isStreaming === next.isStreaming &&
+  prev.weblet.id === next.weblet.id
+)

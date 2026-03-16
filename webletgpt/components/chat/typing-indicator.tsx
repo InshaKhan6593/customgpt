@@ -1,6 +1,7 @@
 "use client"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import React from "react"
 
 interface TypingIndicatorProps {
   weblet: { name: string; iconUrl: string | null }
@@ -21,4 +22,6 @@ export function TypingIndicator({ weblet }: TypingIndicatorProps) {
     </div>
   )
 }
+
+export default React.memo(TypingIndicator)
 

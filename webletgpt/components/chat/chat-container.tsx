@@ -85,6 +85,7 @@ export function ChatContainer({
       id: chatId,
       transport,
       messages: initialMessages,
+      experimental_throttle: 50,
       onError: (error) => {
         const raw = error.message || ""
         if (raw.includes("developer_credits_exhausted")) {

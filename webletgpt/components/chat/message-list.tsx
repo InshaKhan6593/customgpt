@@ -4,11 +4,11 @@ import { UIMessage, isToolUIPart } from "ai"
 import { StarterChips } from "./starter-chips"
 import { MessageBubble } from "./message-bubble"
 import { TypingIndicator } from "./typing-indicator"
-import { RefObject } from "react"
+import React, { RefObject } from "react"
 
 interface MessageListProps {
   messages: UIMessage[]
-  weblet: { name: string; iconUrl: string | null }
+  weblet: { id: string; name: string; iconUrl: string | null }
   conversationStarters: string[]
   isLoading: boolean
   onStarterClick: (starter: string) => void
@@ -39,16 +39,28 @@ export function MessageList({
         </div>
       ) : (
         <div className="max-w-[44rem] w-full mx-auto space-y-5 pb-20 px-4 md:px-6 pt-4 md:pt-6 overflow-x-hidden">
-          {messages.map((m, idx) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              weblet={weblet}
-              onRateMessage={onRateMessage}
-              onMCPAuthComplete={onMCPAuthComplete}
-              isStreaming={isLoading && idx === messages.length - 1 && m.role === "assistant"}
-            />
-          ))}
+          {messages.map((m, idx) => {
+            const bubble = (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                weblet={weblet}
+                onRateMessage={onRateMessage}
+                onMCPAuthComplete={onMCPAuthComplete}
+                isStreaming={isLoading && idx === messages.length - 1 && m.role === "assistant"}
+              />
+            )
+
+            if (idx < messages.length - 1) {
+              return (
+                <div key={m.id} style={{ contentVisibility: "auto", containIntrinsicSize: "0 80px" }}>
+                  {bubble}
+                </div>
+              )
+            }
+
+            return bubble
+          })}
           
           {isLoading && (() => {
             const lastMsg = messages[messages.length - 1]
@@ -68,3 +80,10 @@ export function MessageList({
     </div>
   )
 }
+
+export default React.memo(MessageList, (prev, next) =>
+  prev.messages.length === next.messages.length &&
+  prev.messages[prev.messages.length - 1]?.id === next.messages[next.messages.length - 1]?.id &&
+  prev.isLoading === next.isLoading &&
+  prev.conversationStarters === next.conversationStarters
+)
