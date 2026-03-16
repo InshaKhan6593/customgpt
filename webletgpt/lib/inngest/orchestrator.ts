@@ -2,14 +2,16 @@ import { inngest } from "./client";
 import { prisma } from "@/lib/prisma";
 import { publishProgress, type OrchestratorPublish } from "../orchestrator/realtime";
 import { buildRolePrompt } from "../orchestrator/roles";
-import { AgentOutputSchema, buildAgentMessage } from "../orchestrator/step-output-schema";
+import { buildAgentMessage } from "../orchestrator/step-output-schema";
+import { Sandbox } from "@e2b/code-interpreter";
+import { extractArtifacts, generateHandoff, type NodeHandoff, type ArtifactRef } from "@/lib/orchestrator/artifact-extractor";
 import { getActiveVersion } from "@/lib/chat/engine";
 import { getLanguageModel } from "@/lib/ai/openrouter";
 import { getToolsFromCapabilities } from "@/lib/tools/registry";
 import { getToolsFromOpenAPI } from "@/lib/tools/openapi";
 import { getMCPTools, closeMCPClients } from "@/lib/mcp/client";
 import { createChildWebletTools } from "@/lib/composition/child-tool-factory";
-import { generateText, streamText, stepCountIs, Output } from "ai";
+import { generateText, streamText, stepCountIs } from "ai";
 import { stopWhenAny, toolLoopDetected, noProgressDetected } from "@/lib/ai/stop-conditions";
 import { langfuseSpanProcessor } from "@/instrumentation";
 import { checkQuotas } from "@/lib/billing/quota-check";
@@ -105,6 +107,8 @@ interface StepExecutionResult {
   modelId: string;
   toolCalls: Record<string, number>;
   toolCallDetails: ToolCallDetail[];
+  handoff?: NodeHandoff;
+  artifacts?: ArtifactRef[];
   developerId: string;
 }
 
@@ -351,26 +355,41 @@ Your job:
     const completedNodeIds = new Set<string>();
     let finalOutput = "";
 
-    let currentFrontier = webletNodes.filter(n => {
-      const incomingEdges = edges.filter(e => e.target === n.id);
-      return incomingEdges.every(e => {
-        const sourceNode = nodes.find(sn => sn.id === e.source);
-        return sourceNode?.type === "prompt";
-      });
+    const anyNodeHasCodeInterpreter = webletNodes.some(n => {
+      const caps = webletInfoMap[n.data.webletId]?.capabilities as any;
+      return caps?.codeInterpreter;
     });
+    let flowSandbox: any = null;
+    try {
+      if (anyNodeHasCodeInterpreter && process.env.E2B_API_KEY) {
+        flowSandbox = await Sandbox.create({ timeoutMs: 10 * 60 * 1000 });
+        await flowSandbox.commands.run("mkdir -p /home/user/shared /home/user/nodes");
+      }
+    } catch (err) {
+      console.warn("[Orchestrator] Failed to create shared sandbox:", err);
+    }
 
-    let iteration = 0;
+    try {
+      let currentFrontier = webletNodes.filter(n => {
+        const incomingEdges = edges.filter(e => e.target === n.id);
+        return incomingEdges.every(e => {
+          const sourceNode = nodes.find(sn => sn.id === e.source);
+          return sourceNode?.type === "prompt";
+        });
+      });
 
-    while (currentFrontier.length > 0) {
-      iteration++;
+      let iteration = 0;
+
+      while (currentFrontier.length > 0) {
+        iteration++;
 
       if (iteration > FLOW_ITERATION_LIMIT) {
         await publishProgress(pub, sessionId, "failed", { message: `Flow exceeded ${FLOW_ITERATION_LIMIT} iteration limit — possible infinite loop.` });
         return { status: "failed", reason: "Iteration limit exceeded" };
       }
 
-      const frontierResults = await Promise.all(
-        currentFrontier.map(async (node) => {
+        const frontierResults = await Promise.all(
+          currentFrontier.map(async (node) => {
           const nodeId = node.id;
           const webletId = node.data.webletId;
           const webletInfo = webletInfoMap[webletId];
@@ -429,18 +448,26 @@ Your job:
                 .map(e => {
                   const sourceNode = nodes.find(sn => sn.id === e.source);
                   if (sourceNode && sourceNode.type === "weblet" && nodeOutputs[e.source]) {
-                    let output = nodeOutputs[e.source].text;
+                    const prev = nodeOutputs[e.source];
+                    if (prev.handoff) {
+                      return prev.handoff;
+                    }
+                    let output = prev.text;
                     if (output.length > MAX_PREV_OUTPUT_CHARS) {
                       output = output.substring(0, MAX_PREV_OUTPUT_CHARS) + "\n\n...[Output truncated]...";
                     }
                     return {
                       agentName: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
-                      output,
-                    };
+                      role: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
+                      outcomeSummary: output,
+                      reasoningSummary: "",
+                      artifacts: prev.artifacts || [],
+                      workspaceHint: "",
+                    } as NodeHandoff;
                   }
                   return null;
                 })
-                .filter(Boolean) as { agentName: string; output: string }[];
+                .filter(Boolean) as NodeHandoff[];
 
               let systemPrompt = activeVersion.prompt;
               if (node.data.role) {
@@ -451,7 +478,16 @@ Your job:
                 );
               }
 
-              let tools = getToolsFromCapabilities(webletInfo.capabilities, webletInfo.id);
+              if (flowSandbox) {
+                try {
+                  await flowSandbox.commands.run(`mkdir -p /home/user/nodes/${nodeId}`);
+                  await flowSandbox.setTimeout(5 * 60 * 1000);
+                } catch (err) {
+                  console.warn(`[Orchestrator] Failed to setup node workspace:`, err);
+                }
+              }
+
+              let tools = getToolsFromCapabilities(webletInfo.capabilities, webletInfo.id, flowSandbox ?? undefined);
               if (activeVersion.openapiSchema) {
                 const customTools = getToolsFromOpenAPI(
                   typeof activeVersion.openapiSchema === "string"
@@ -479,7 +515,7 @@ Your job:
               const agentMessage = buildAgentMessage({
                 userTask: initialInput,
                 stepInstructions: node.data.stepPrompt?.trim() || undefined,
-                previousOutputs,
+                previousHandoffs: previousOutputs,
                 reviewerFeedback,
               });
 
@@ -599,26 +635,21 @@ Your job:
                 // from a tool result (e.g. `["some result"]` at start of response).
                 outputText = stripLeadingJsonArtifact(outputText) || "[No output generated]";
                 let outputStatus: "complete" | "needs_review" | "blocked" = "complete";
+                let handoff: NodeHandoff | undefined;
 
-                // For intermediate nodes, extract clean structured content for the next agent
                 const hasDownstreamNodes = edges.some(e => e.source === nodeId);
-                if (hasDownstreamNodes && outputText.length > 200) {
-                  try {
-                    const extractionModel = getLanguageModel("openai/gpt-4o-mini");
-                    const extraction = await generateText({
-                      model: extractionModel,
-                      output: Output.object({ schema: AgentOutputSchema }),
-                      system: "Extract the agent's actual work product from the raw output below. Strip any preamble, reasoning, or meta-commentary. Return only the substantive content the next agent needs.",
-                      messages: [{ role: "user", content: outputText }],
-                    });
-                    const structured = (extraction as any).output;
-                    if (structured?.content) {
-                      outputText = structured.content;
-                      outputStatus = structured.status || "complete";
-                    }
-                  } catch (extractErr: any) {
-                    console.warn(`[Orchestrator] Structured extraction skipped:`, extractErr?.message?.substring(0, 100));
-                  }
+                handoff = await generateHandoff({
+                  agentName: node.data.role || webletInfo.name,
+                  role: node.data.role || webletInfo.name,
+                  nodeId,
+                  rawOutput: outputText,
+                  toolCallDetails,
+                  hasDownstream: hasDownstreamNodes,
+                });
+
+                if (hasDownstreamNodes && handoff.outcomeSummary) {
+                  outputText = handoff.outcomeSummary;
+                  outputStatus = "complete";
                 }
 
                 stepResult = {
@@ -629,6 +660,8 @@ Your job:
                   modelId,
                   toolCalls: toolCallsMap,
                   toolCallDetails,
+                  handoff,
+                  artifacts: handoff?.artifacts ?? extractArtifacts(toolCallDetails),
                   developerId: webletInfo.developerId,
                 };
               } catch (llmError: any) {
@@ -658,11 +691,13 @@ Your job:
 
               await publishProgress(pub, sessionId, "node_completed", {
                 nodeId, output: stepResult.text, status: stepResult.status,
+                artifacts: stepResult.handoff?.artifacts,
               });
               await publishProgress(pub, sessionId, "step_completed", {
                 stepNumber: iteration, revision, nodeId,
                 webletName: webletInfo.name, output: stepResult.text,
                 status: stepResult.status,
+                artifacts: stepResult.handoff?.artifacts,
                 toolCallDetails: stepResult.toolCallDetails.length > 0 ? stepResult.toolCallDetails : undefined,
               });
 
@@ -718,36 +753,41 @@ Your job:
           }
 
           return { nodeId, status: "success", result: stepExecutionResult };
-        })
-      );
+          })
+        );
 
-      const failed = frontierResults.find(r => r.status === "failed" || r.status === "terminated");
-      if (failed) {
-        return { status: "failed", reason: failed.reason };
-      }
-
-      for (const res of frontierResults) {
-        if (res.result) {
-          nodeOutputs[res.nodeId] = res.result;
-          finalOutput = res.result.text;
+        const failed = frontierResults.find(r => r.status === "failed" || r.status === "terminated");
+        if (failed) {
+          return { status: "failed", reason: failed.reason };
         }
-        completedNodeIds.add(res.nodeId);
+
+        for (const res of frontierResults) {
+          if (res.result) {
+            nodeOutputs[res.nodeId] = res.result;
+            finalOutput = res.result.text;
+          }
+          completedNodeIds.add(res.nodeId);
+        }
+
+        currentFrontier = webletNodes.filter(n => {
+          if (completedNodeIds.has(n.id)) return false;
+          const incomingEdges = edges.filter(e => e.target === n.id);
+          return incomingEdges.every(e => {
+            const sourceNode = nodes.find(sn => sn.id === e.source);
+            return sourceNode?.type === "prompt" || completedNodeIds.has(e.source);
+          });
+        });
       }
 
-      currentFrontier = webletNodes.filter(n => {
-        if (completedNodeIds.has(n.id)) return false;
-        const incomingEdges = edges.filter(e => e.target === n.id);
-        return incomingEdges.every(e => {
-          const sourceNode = nodes.find(sn => sn.id === e.source);
-          return sourceNode?.type === "prompt" || completedNodeIds.has(e.source);
-        });
+      await step.run("publish-completed", async () => {
+        await publishProgress(pub, sessionId, "completed", { finalOutput });
       });
+
+      return { status: "success", finalOutput };
+    } finally {
+      if (flowSandbox) {
+        flowSandbox.kill().catch(() => {});
+      }
     }
-
-    await step.run("publish-completed", async () => {
-      await publishProgress(pub, sessionId, "completed", { finalOutput });
-    });
-
-    return { status: "success", finalOutput };
   }
 );

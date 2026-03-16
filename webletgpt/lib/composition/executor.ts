@@ -50,7 +50,8 @@ export async function executeChildWeblet(
     childWebletId: string,
     message: string,
     depth: number,
-    userId?: string
+    userId?: string,
+    flowSandbox?: unknown
 ): Promise<ChildExecutionResult> {
     const startTime = Date.now()
 
@@ -74,9 +75,10 @@ export async function executeChildWeblet(
     // share it — state (variables, imports, installed packages, /home/user files)
     // persists across calls. Killed in the finally block.
     const caps = childWeblet?.capabilities as any
-    const persistentSandbox = caps?.codeInterpreter
-        ? await createPersistentSandbox()
-        : null
+    const persistentSandbox = flowSandbox
+        ? flowSandbox
+        : (caps?.codeInterpreter ? await createPersistentSandbox() : null)
+    const ownsTheSandbox = !flowSandbox && !!persistentSandbox
 
     // ── AbortController for hard timeout ───────────────────────────────────
     const controller = new AbortController()
@@ -266,7 +268,7 @@ Use judgment — generate charts and files when they genuinely add value, not fo
         clearTimeout(timeoutHandle)
 
         // Always clean up — order matters: sandbox before MCP clients
-        if (persistentSandbox) {
+        if (ownsTheSandbox && persistentSandbox) {
             persistentSandbox.kill().catch((err: any) =>
                 console.error("[E2B] Failed to kill persistent sandbox:", err)
             )

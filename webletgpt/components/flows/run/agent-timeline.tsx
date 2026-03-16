@@ -21,6 +21,8 @@ import {
   Lock,
   MessageSquare,
   ChevronRight,
+  Download,
+  FileIcon,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
@@ -72,6 +74,7 @@ interface StepGroup {
   hitlPending?: boolean;
   hitlHistory: HitlRecord[];
   agentStatus?: "complete" | "needs_review" | "blocked";
+  artifacts?: { kind: string; displayName: string; url: string | null }[];
 }
 
 export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimelineProps) {
@@ -143,6 +146,7 @@ export function AgentTimeline({ events, totalSteps, onHitlRespond }: AgentTimeli
             if (ev.data.webletName) existing.webletName = ev.data.webletName;
             if (ev.data.role) existing.role = ev.data.role;
             if (ev.data.status) existing.agentStatus = ev.data.status;
+            if (ev.data.artifacts) existing.artifacts = ev.data.artifacts;
           }
           break;
         }
@@ -370,6 +374,44 @@ function StepTimelineItem({
           </div>
         )}
 
+        {/* Artifacts section */}
+        {group.artifacts && group.artifacts.length > 0 && (
+          <div className="mt-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2">Artifacts</div>
+            <div className="flex flex-wrap gap-2">
+              {group.artifacts.map((art, i) => {
+                if ((art.kind === 'image' || art.kind === 'chart') && art.url) {
+                  return (
+                    <a key={i} href={art.url} target="_blank" rel="noopener noreferrer" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={art.url}
+                        alt={art.displayName}
+                        className="rounded-lg border border-border/40 max-w-[200px] max-h-[150px] object-contain bg-muted/20 hover:border-primary/40 transition-colors cursor-pointer"
+                      />
+                    </a>
+                  );
+                }
+                if (art.kind === 'file' && art.url) {
+                  return (
+                    <a
+                      key={i}
+                      href={art.url}
+                      download={art.displayName}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border/60 bg-muted/30 text-xs font-medium text-foreground hover:bg-muted/60 hover:border-border transition-colors"
+                    >
+                      <FileIcon className="size-3.5 text-muted-foreground" />
+                      <span className="truncate max-w-[150px]">{art.displayName}</span>
+                      <Download className="size-3 text-muted-foreground" />
+                    </a>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          </div>
+        )}
+
         {/* HITL History */}
         {group.hitlHistory.map((record, idx) => (
           <div key={idx} className="mt-3">
@@ -585,6 +627,106 @@ function GroupedToolCallToggle({ group }: { group: ToolCallGroup }) {
   );
 }
 
+function ToolResultRenderer({ toolName, result }: { toolName: string; result: any }) {
+  // codeInterpreter results with images and files
+  if (toolName === "codeInterpreter" && result?.data) {
+    const images: { format: string; url: string }[] = result.data.images || [];
+    const files: { name: string; url: string }[] = result.data.files || [];
+    const stdout = result.data.fullStdout || result.stdout || "";
+    const error = result.error || "";
+
+    return (
+      <div className="space-y-2">
+        {/* Inline images */}
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {images.map((img, i) => (
+              <a key={i} href={img.url} target="_blank" rel="noopener noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt={`Chart ${i + 1}`}
+                  className="rounded-lg border border-border/40 max-w-[280px] max-h-[200px] object-contain bg-muted/20 hover:border-primary/40 transition-colors cursor-pointer"
+                />
+              </a>
+            ))}
+          </div>
+        )}
+
+        {/* File download cards */}
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {files.map((file, i) => (
+              <a
+                key={i}
+                href={file.url}
+                download={file.name}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border/60 bg-muted/30 text-xs font-medium text-foreground hover:bg-muted/60 hover:border-border transition-colors"
+              >
+                <FileIcon className="size-3.5 text-muted-foreground" />
+                <span className="truncate max-w-[150px]">{file.name}</span>
+                <Download className="size-3 text-muted-foreground" />
+              </a>
+            ))}
+          </div>
+        )}
+
+        {/* Code output text */}
+        {stdout && (
+          <pre className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap break-all font-mono bg-muted/30 rounded-lg px-3 py-2 border border-border/40 max-h-52 overflow-y-auto">
+            {stdout.length > 600 ? stdout.slice(0, 600) + "..." : stdout}
+          </pre>
+        )}
+
+        {/* Error output */}
+        {error && (
+          <pre className="text-xs leading-relaxed text-red-400 whitespace-pre-wrap break-all font-mono bg-red-500/5 rounded-lg px-3 py-2 border border-red-500/20 max-h-32 overflow-y-auto">
+            {error.length > 400 ? error.slice(0, 400) + "..." : error}
+          </pre>
+        )}
+      </div>
+    );
+  }
+
+  // imageGeneration results
+  if (toolName === "imageGeneration" && result?.url) {
+    return (
+      <div>
+        <a href={result.url} target="_blank" rel="noopener noreferrer" className="block">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={result.url}
+            alt="Generated image"
+            className="rounded-lg border border-border/40 max-w-[320px] max-h-[240px] object-contain bg-muted/20 hover:border-primary/40 transition-colors cursor-pointer"
+          />
+        </a>
+      </div>
+    );
+  }
+
+  // weblet_* (composition) results — show text response, not raw JSON
+  if (toolName.startsWith("weblet_") && result) {
+    const response = result.response || result.text || "";
+    if (response) {
+      return (
+        <div className="text-sm text-muted-foreground border-l-2 border-primary/20 pl-3">
+          <ChatMarkdown content={response.length > 800 ? response.slice(0, 800) + "..." : response} />
+        </div>
+      );
+    }
+  }
+
+  // Default fallback — existing JSON rendering
+  const formatted = formatFlowResult(result);
+  if (!formatted) return null;
+
+  return (
+    <pre className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap break-all font-mono bg-muted/30 rounded-lg px-3 py-2 border border-border/40 max-h-52 overflow-y-auto">
+      {formatted}
+    </pre>
+  );
+}
+
 function IndividualToolCall({ toolCall, hideHeader }: { toolCall: LiveToolCall, hideHeader?: boolean }) {
   const { label, action } = formatFlowToolName(toolCall.toolName);
   const hasArgs = toolCall.args && Object.keys(toolCall.args).length > 0;
@@ -617,9 +759,7 @@ function IndividualToolCall({ toolCall, hideHeader }: { toolCall: LiveToolCall, 
       {hasResult && (
         <div className={cn(!hideHeader && "pl-3.5")}>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1 pt-0.5">Output</div>
-          <pre className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap break-all font-mono bg-muted/30 rounded-lg px-3 py-2 border border-border/40 max-h-52 overflow-y-auto">
-            {formatFlowResult(toolCall.result)}
-          </pre>
+          <ToolResultRenderer toolName={toolCall.toolName} result={toolCall.result} />
         </div>
       )}
     </div>

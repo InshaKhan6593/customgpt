@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { NodeHandoff } from "./artifact-extractor";
 
 /**
  * Simplified agent output schema — industry-aligned (CrewAI / LangGraph / AutoGen).
@@ -42,6 +43,7 @@ export function buildAgentMessage(opts: {
   userTask: string;
   stepInstructions?: string;
   previousOutputs?: { agentName: string; output: string }[];
+  previousHandoffs?: NodeHandoff[];
   reviewerFeedback?: string;
 }): string {
   const parts: string[] = [];
@@ -54,6 +56,32 @@ export function buildAgentMessage(opts: {
     parts.push(`## Findings from Previous Agents\nThe following are the results and findings provided by previous agents in this workflow. Use this context to inform your work:\n`);
     for (const prev of opts.previousOutputs) {
       parts.push(`### Agent: ${prev.agentName}\n${prev.output}`);
+    }
+  }
+
+  if (opts.previousHandoffs && opts.previousHandoffs.length > 0) {
+    parts.push(`## Context from Previous Agents\n`);
+    for (const handoff of opts.previousHandoffs) {
+      const section: string[] = [];
+      section.push(`### ${handoff.agentName}${handoff.role && handoff.role !== handoff.agentName ? ` (${handoff.role})` : ""}`);
+      section.push(`**What was done:** ${handoff.outcomeSummary}`);
+      if (handoff.reasoningSummary) {
+        section.push(`**Key decisions:** ${handoff.reasoningSummary}`);
+      }
+      if (handoff.artifacts.length > 0) {
+        section.push(`**Artifacts created:**`);
+        for (const art of handoff.artifacts) {
+          if (art.sandboxPath) {
+            section.push(`- ${art.displayName} (${art.kind}) — sandbox path: \`${art.sandboxPath}\``);
+          } else if (art.url) {
+            section.push(`- ${art.displayName} (${art.kind})`);
+          }
+        }
+      }
+      if (handoff.workspaceHint) {
+        section.push(`**Workspace:** ${handoff.workspaceHint}`);
+      }
+      parts.push(section.join("\n"));
     }
   }
 
