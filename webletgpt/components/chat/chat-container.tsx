@@ -3,7 +3,6 @@
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport, UIMessage } from "ai"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { ChatHeader } from "./chat-header"
@@ -41,7 +40,6 @@ export function ChatContainer({
   onSessionCreated,
   hideHeader = false,
 }: ChatContainerProps) {
-  const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Track the real session ID — starts from prop, updated after pre-creation
@@ -62,12 +60,26 @@ export function ChatContainer({
 
   const [input, setInput] = useState("")
 
-  // Ref for pending message — queued while session is being created
-  const pendingMessageRef = useRef<string | null>(null)
-
   const transport = useMemo(
     () => new DefaultChatTransport({
       api: "/api/chat",
+      fetch: async (input, init) => {
+        const response = await fetch(input, init)
+        if (!sessionIdRef.current) {
+          const newSessionId = response.headers.get("x-chat-session-id")
+          if (newSessionId) {
+            sessionIdRef.current = newSessionId
+            setSessionId(newSessionId)
+            onSessionCreated?.(newSessionId)
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `/chat/${weblet.id}/${newSessionId}`
+            )
+          }
+        }
+        return response
+      },
       prepareSendMessagesRequest: ({ id, messages }) => ({
         body: {
           id,
@@ -77,7 +89,7 @@ export function ChatContainer({
         },
       }),
     }),
-    [weblet.id]
+    [onSessionCreated, weblet.id]
   )
 
   const { messages, sendMessage, status, stop, regenerate, clearError } =
@@ -112,45 +124,12 @@ export function ChatContainer({
     setInput(e.target.value)
   }
 
-  // Send pending message after session is created.
-  useEffect(() => {
-    if (pendingMessageRef.current && sessionId) {
-      const text = pendingMessageRef.current
-      pendingMessageRef.current = null
-      sendMessage({ text })
-    }
-  }, [sessionId, sendMessage])
-
   const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e) e.preventDefault()
     if (!input.trim() || isLoading) return
 
     const text = input
     setInput("")
-
-    // Pre-create session for new chats (ChatGPT-style)
-    if (!sessionId) {
-      pendingMessageRef.current = text
-      try {
-        const res = await fetch("/api/chat/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ webletId: weblet.id }),
-        })
-        if (!res.ok) throw new Error("Failed to create session")
-        const { id: newId } = await res.json()
-        setSessionId(newId)
-        onSessionCreated?.(newId)
-        router.replace(`/chat/${weblet.id}/${newId}`)
-        router.refresh()
-      } catch {
-        toast.error("Failed to start chat. Please try again.")
-        pendingMessageRef.current = null
-        setInput(text)
-      }
-      return
-    }
-
     sendMessage({ text })
   }
 
@@ -181,31 +160,8 @@ export function ChatContainer({
   }, [messages, isLoading])
 
   const handleStarterClick = (starter: string) => {
-    // Use same flow as handleSubmit — pre-create session if needed
+    if (isLoading) return
     setInput("")
-    if (!sessionId) {
-      pendingMessageRef.current = starter
-      fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId: weblet.id }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error()
-          return res.json()
-        })
-        .then(({ id: newId }) => {
-          setSessionId(newId)
-          onSessionCreated?.(newId)
-          router.replace(`/chat/${weblet.id}/${newId}`)
-          router.refresh()
-        })
-        .catch(() => {
-          toast.error("Failed to start chat")
-          pendingMessageRef.current = null
-        })
-      return
-    }
     sendMessage({ text: starter })
   }
 

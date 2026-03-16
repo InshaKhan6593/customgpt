@@ -556,7 +556,7 @@ Your job:
                         const tc = toolCalls[t] as any;
                         toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
                         const tr = (toolResults as any[])?.find(r => r.toolCallId === tc.toolCallId);
-                        const result = tr ? tr.result : null;
+                        const result = tr?.result ?? null;
                         toolCallDetails.push({ toolName: tc.toolName, args: tc.args || tc.input || {}, result });
                         await publishProgress(pub, sessionId, "tool_call", {
                           stepNumber: iteration, toolName: tc.toolName,
@@ -616,9 +616,10 @@ Your job:
                       system: "You are a helpful assistant. Summarize the following tool call results into a clear, concise, and useful response for the user.",
                       messages: [{
                         role: "user",
-                        content: toolCallDetails.map(tc =>
-                          `Tool: ${tc.toolName}\nResult: ${typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2)}`
-                        ).join("\n\n"),
+                        content: toolCallDetails.map(tc => {
+                          const res = tc.result ?? "[No result returned]";
+                          return `Tool: ${tc.toolName}\nResult: ${typeof res === "string" ? res : JSON.stringify(res, null, 2)}`;
+                        }).join("\n\n"),
                       }],
                     });
                     outputText = synthesis.text || "[Tool executed successfully — no summary generated]";

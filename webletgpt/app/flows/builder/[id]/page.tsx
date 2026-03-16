@@ -16,7 +16,8 @@ import {
 import type { FlowNode, FlowEdge, FlowMode, WebletItem, NodeExecutionState } from "@/components/flows/canvas/types";
 import { useOrchestrationProgress } from "@/hooks/use-orchestration-progress";
 import { OutOfCreditsModal } from "@/components/monetization/out-of-credits-modal";
-import { Loader2, Square, CheckCircle2 } from "lucide-react";
+import { Loader2, Square, CheckCircle2, X, Activity } from "lucide-react";
+import { AgentTimeline } from "@/components/flows/run/agent-timeline";
 
 export default function BuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -38,8 +39,34 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const { events, isConnected } = useOrchestrationProgress(sessionId);
   const [isRunning, setIsRunning] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(true);
+
+  // Auto-show timeline when execution starts
+  useEffect(() => {
+    if (sessionId) setShowTimeline(true);
+  }, [sessionId]);
 
   const isFinished = events.some(e => e.type === "completed" || e.type === "failed");
+
+  // Compute total steps for the timeline
+  const totalSteps = useMemo(() => {
+    const data = latestCanvasData.current || { nodes: initialNodes };
+    return data.nodes.filter((n) => n.type === "weblet" || n.type === "orchestrator").length;
+  }, [initialNodes]);
+
+  // Handle HITL response
+  const handleHitlRespond = useCallback(async (action: "approve" | "reject", feedback?: string) => {
+    try {
+      await fetch(`/api/flows/${id}/hitl-respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, action, feedback }),
+      });
+    } catch (err) {
+      console.error("HITL respond error:", err);
+      toast({ title: "Error", description: "Failed to send response", variant: "destructive" });
+    }
+  }, [id, sessionId, toast]);
 
   // Ref to hold latest canvas data for save-from-toolbar
   const latestCanvasData = useRef<{ nodes: FlowNode[]; edges: FlowEdge[]; prompt: string } | null>(null);
@@ -59,8 +86,12 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
       switch (e.type) {
         case "node_started":
+        case "step_started":
+        case "step_revision":
           states[id].status = "running";
-          states[id].toolCalls = [];
+          if (e.type === "node_started") {
+            states[id].toolCalls = [];
+          }
           break;
         case "tool_call":
           states[id].status = "running";
@@ -420,7 +451,8 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
         </div>
         <div className="flex items-center gap-2">
           {isRunning || sessionId ? (
-            <div className="flex items-center gap-3 mr-2 px-3 py-1 bg-muted/40 rounded-sm border">
+            <>
+              <div className="flex items-center gap-3 mr-2 px-3 py-1 bg-muted/40 rounded-sm border">
               <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground mr-1">
                 {isConnected ? (
                   <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-500" /> Connected</span>
@@ -443,6 +475,13 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
                 <Square className="size-3 fill-current" />
               </Button>
             </div>
+            {!showTimeline && (sessionId || isRunning) && (
+              <Button variant="outline" size="sm" onClick={() => setShowTimeline(true)}>
+                <Activity className="w-3.5 h-3.5 mr-1.5" />
+                Show Activity
+              </Button>
+            )}
+          </>
           ) : (
             <>
               <Button variant="outline" size="sm" onClick={autoSuggestTeam}>
@@ -459,25 +498,60 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
       </div>
 
       {/* Canvas area — fills remaining space */}
-      <div className="flex-1 min-h-0">
-        {canvasReady ? (
-          <FlowCanvas
-            initialNodes={initialNodes}
-            initialEdges={initialEdges}
-            weblets={weblets}
-            defaultPrompt={flow.defaultPrompt || ""}
-            mode={flowMode}
-            masterWebletId={masterWebletId}
-            onSave={saveAndExecute}
-            saving={saving}
-            onChange={onCanvasChange}
-            readOnly={!!sessionId || isRunning}
-            executionStates={executionStates}
-            isFinished={isFinished}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            Loading canvas...
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-h-0 relative">
+          {canvasReady ? (
+            <FlowCanvas
+              initialNodes={initialNodes}
+              initialEdges={initialEdges}
+              weblets={weblets}
+              defaultPrompt={flow.defaultPrompt || ""}
+              mode={flowMode}
+              masterWebletId={masterWebletId}
+              onSave={saveAndExecute}
+              saving={saving}
+              onChange={onCanvasChange}
+              readOnly={!!sessionId || isRunning}
+              executionStates={executionStates}
+              isFinished={isFinished}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              Loading canvas...
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT SIDEBAR TIMELINE */}
+        {(sessionId || isRunning) && showTimeline && (
+          <div className="w-96 border-l border-border shrink-0 flex flex-col overflow-hidden bg-background transition-all duration-300">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0 bg-muted/20">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold tracking-tight">Live Activity</h3>
+                <div className="flex items-center gap-1.5 ml-2 px-2 py-0.5 rounded-full border bg-background text-[10px] font-medium uppercase tracking-wider">
+                  <div className={`size-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  {isConnected ? 'Connected' : 'Offline'}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowTimeline(false)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 relative">
+              <AgentTimeline
+                events={events}
+                totalSteps={totalSteps}
+                onHitlRespond={handleHitlRespond}
+              />
+            </div>
           </div>
         )}
       </div>

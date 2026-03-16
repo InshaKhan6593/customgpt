@@ -329,6 +329,9 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
     })
 
     return response.toUIMessageStreamResponse({
+      headers: {
+        "x-chat-session-id": activeSessionId,
+      },
       onError(error: any) {
         // Log the full error including OpenRouter's responseBody so we can
         // diagnose provider-specific failures (e.g. gpt-4o-mini schema rejects).
