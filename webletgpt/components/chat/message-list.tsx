@@ -2,8 +2,8 @@
 
 import { UIMessage, isToolUIPart } from "ai"
 import { StarterChips } from "./starter-chips"
-import { MessageBubble } from "./message-bubble"
-import { TypingIndicator } from "./typing-indicator"
+import MessageBubble from "./message-bubble"
+import TypingIndicator from "./typing-indicator"
 import React, { RefObject } from "react"
 
 interface MessageListProps {

@@ -1,10 +1,9 @@
 "use client"
 
-import { useState, useCallback } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Check, Copy, ThumbsDown, ThumbsUp } from "lucide-react"
+import { Copy, ThumbsDown, ThumbsUp } from "lucide-react"
 import { UIMessage, isToolUIPart } from "ai"
 import { toast } from "sonner"
 import React from "react"

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { ChatHeader } from "./chat-header"
-import { MessageList } from "./message-list"
+import MessageList from "./message-list"
 import { InputBar } from "./input-bar"
 import { RatingDialog } from "./rating-dialog"
 import { MAX_MESSAGES_PER_SESSION } from "@/lib/constants"
@@ -80,7 +80,7 @@ export function ChatContainer({
     [weblet.id]
   )
 
-  const { messages, sendMessage, status, stop, regenerate, error: chatError, clearError } =
+  const { messages, sendMessage, status, stop, regenerate, clearError } =
     useChat({
       id: chatId,
       transport,

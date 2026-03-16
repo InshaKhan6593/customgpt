@@ -20,11 +20,11 @@ export function StarterChips({ weblet, conversationStarters, onStarterClick }: S
       
       {conversationStarters.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
-          {conversationStarters.map((starter, i) => (
-            <Button
-              key={i}
-              variant="outline"
-              onClick={() => onStarterClick(starter)}
+           {conversationStarters.map((starter) => (
+             <Button
+               key={starter}
+               variant="outline"
+               onClick={() => onStarterClick(starter)}
               className="h-auto py-3 px-3 text-left text-sm justify-start whitespace-normal transition-colors"
             >
               {starter}
