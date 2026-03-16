@@ -48,6 +48,9 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
 
   const isFinished = events.some(e => e.type === "completed" || e.type === "failed");
 
+  // Ref to hold latest canvas data for save-from-toolbar
+  const latestCanvasData = useRef<{ nodes: FlowNode[]; edges: FlowEdge[]; prompt: string } | null>(null);
+
   // Compute total steps for the timeline
   const totalSteps = useMemo(() => {
     const data = latestCanvasData.current || { nodes: initialNodes };
@@ -67,9 +70,6 @@ export default function BuilderPage({ params }: { params: Promise<{ id: string }
       toast({ title: "Error", description: "Failed to send response", variant: "destructive" });
     }
   }, [id, sessionId, toast]);
-
-  // Ref to hold latest canvas data for save-from-toolbar
-  const latestCanvasData = useRef<{ nodes: FlowNode[]; edges: FlowEdge[]; prompt: string } | null>(null);
   // Track whether canvas has unsaved changes — avoids redundant saves on Execute
   const isDirty = useRef(false);
 

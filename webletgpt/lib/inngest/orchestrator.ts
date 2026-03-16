@@ -22,6 +22,84 @@ import { autoCompactMessages } from "@/lib/utils/truncate";
 const MAX_HITL_REVISIONS = 3;
 const FLOW_ITERATION_LIMIT = 50; // Safety cap — prevents infinite loops on malformed DAGs
 
+function buildOrchestratorToolGuidance(
+  capabilities: any,
+  toolNames: string[],
+  mcpServers?: Array<{ label: string; description?: string | null }>,
+  compositions?: Array<{ childWebletName: string; childWebletId: string; capabilities?: any }>
+): string {
+  if (!toolNames || toolNames.length === 0) return "";
+
+  const sections: string[] = [];
+
+  if (capabilities?.codeInterpreter) {
+    sections.push(
+      "- **Code Interpreter (codeInterpreter)**: Execute Python code and produce real outputs. ALWAYS use this when asked to create files, build apps, analyze data, make charts. DO NOT paste code in text — run it. Files at /home/user/ appear as artifacts."
+    );
+  }
+  if (capabilities?.webSearch) {
+    sections.push(
+      "- **Web Search (webSearch)**: Search the web for live information. Use for current events, fact-checking, finding URLs."
+    );
+  }
+  if (capabilities?.imageGen) {
+    sections.push(
+      "- **Image Generation (imageGeneration)**: Generate images from text descriptions."
+    );
+  }
+  if (capabilities?.fileSearch) {
+    sections.push(
+      "- **File Search (fileSearch)**: Search uploaded knowledge base documents."
+    );
+  }
+
+  const childWebletTools = toolNames.filter((name) => name.startsWith("weblet_"));
+  if (childWebletTools.length > 0) {
+    const composedNames = (compositions || [])
+      .map((c) => c.childWebletName)
+      .filter((name): name is string => !!name && name.trim().length > 0);
+    const specialistHint = composedNames.length > 0
+      ? ` Specialists: ${composedNames.join(", ")}.`
+      : "";
+    sections.push(
+      `- **Specialist Sub-Agents**: You have child weblets available as tools. DELEGATE tasks to them — they have their own capabilities and expertise.${specialistHint} Tools: ${childWebletTools.map((name) => `\`${name}\``).join(", ")}.`
+    );
+  }
+
+  const mcpTools = toolNames.filter((name) => name.startsWith("mcp_"));
+  const usedMcpTools = new Set<string>();
+  if (mcpTools.length > 0 && mcpServers && mcpServers.length > 0) {
+    for (const server of mcpServers) {
+      const normalized = server.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+      if (!normalized) continue;
+      const serverTools = mcpTools.filter((name) => name.startsWith(`mcp_${normalized}_`));
+      if (serverTools.length === 0) continue;
+      serverTools.forEach((name) => usedMcpTools.add(name));
+      sections.push(
+        `- **${server.label}** (External Service): ${server.description || "No description provided."} Tools: ${serverTools.map((name) => `\`${name}\``).join(", ")}.`
+      );
+    }
+  }
+  const uncategorizedMcpTools = mcpTools.filter((name) => !usedMcpTools.has(name));
+  if (uncategorizedMcpTools.length > 0) {
+    sections.push(
+      `- **External Service Tools (MCP)**: ${uncategorizedMcpTools.map((name) => `\`${name}\``).join(", ")}.`
+    );
+  }
+
+  const knownCapabilityTools = new Set(["codeInterpreter", "webSearch", "imageGeneration", "fileSearch"]);
+  const customApiTools = toolNames.filter(
+    (name) => !name.startsWith("weblet_") && !name.startsWith("mcp_") && !knownCapabilityTools.has(name)
+  );
+  if (customApiTools.length > 0) {
+    sections.push(
+      `- **Custom API Tools**: ${customApiTools.map((name) => `\`${name}\``).join(", ")}. Use these when the task requires external API interaction.`
+    );
+  }
+
+  return `\n\n## Your Tools\n${sections.join("\n")}\n\nCRITICAL: You MUST use your tools to accomplish tasks. Do NOT respond with plain text when a tool can handle the work. If you have a code interpreter, USE IT to run code. If you have sub-agent tools, DELEGATE to them. Plain-text-only responses are a failure mode.\n\nAfter receiving tool results, synthesize them into clear, natural language. Never echo raw JSON or code output. Do not call any single tool more than 3 times for the same task.`;
+}
+
 /**
  * Validate DAG before execution.
  * Returns the first error found, or null if valid.
@@ -273,13 +351,20 @@ Your job:
 3. Synthesize all results into a final, cohesive response
 4. NEVER echo raw tool output — always integrate and present information naturally`;
 
+        const masterToolGuidance = buildOrchestratorToolGuidance(
+          masterInfo.capabilities,
+          Object.keys(masterTools),
+          masterInfo.mcpServers,
+          masterInfo.parentCompositions
+        );
+
         let tokensIn = 0, tokensOut = 0;
         const toolCallsMap: Record<string, number> = {};
         const toolCallDetails: ToolCallDetail[] = [];
 
         const stream = streamText({
           model: masterModel,
-          system: masterSystem,
+          system: masterSystem + masterToolGuidance,
           messages: [{ role: "user", content: initialInput }],
           tools: masterTools,
           stopWhen: stopWhenAny(stepCountIs(10), toolLoopDetected(3), noProgressDetected(5)),
@@ -521,8 +606,14 @@ Your job:
 
               const toolNames = Object.keys(tools);
               const hasTools = toolNames.length > 0;
-              if (hasTools) {
-                systemPrompt += `\n\nYou have access to the following tools: ${toolNames.join(", ")}. Use these tools if necessary to gather information. Do not call any single tool more than 3 times for the same task.\n\nIMPORTANT: After receiving tool results, synthesize the information into a clear, natural language response. NEVER echo raw tool output (JSON arrays, objects, code) directly into your answer. Always present the information in a readable, human-friendly format.`;
+              const toolGuidance = buildOrchestratorToolGuidance(
+                webletInfo.capabilities,
+                toolNames,
+                webletInfo.mcpServers,
+                webletInfo.parentCompositions
+              );
+              if (toolGuidance) {
+                systemPrompt += toolGuidance;
               }
 
               const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct";
