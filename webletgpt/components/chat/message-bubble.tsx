@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Check, Copy, ThumbsDown, ThumbsUp } from "lucide-react"
 import { UIMessage, isToolUIPart } from "ai"
 import { toast } from "sonner"
@@ -80,15 +81,30 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
 
         {/* Message actions — hidden while streaming */}
         <div className={`flex items-center gap-0.5 transition-opacity ${isStreaming ? "hidden" : "opacity-0 group-hover:opacity-100"}`}>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => handleCopy(textContent)}>
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => onRateMessage(message.id, "UP")}>
-            <ThumbsUp className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => onRateMessage(message.id, "DOWN")}>
-            <ThumbsDown className="h-3.5 w-3.5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => handleCopy(textContent)}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => onRateMessage(message.id, "UP")}>
+                <ThumbsUp className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Good response</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => onRateMessage(message.id, "DOWN")}>
+                <ThumbsDown className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Bad response</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

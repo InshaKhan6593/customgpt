@@ -1,6 +1,7 @@
 "use client"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 
 interface StarterChipsProps {
   weblet: { name: string; iconUrl: string | null }
@@ -15,18 +16,19 @@ export function StarterChips({ weblet, conversationStarters, onStarterClick }: S
         <AvatarImage src={weblet.iconUrl || undefined} />
         <AvatarFallback className="text-2xl">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>
-      <h1 className="text-lg font-semibold text-foreground/80">How can I help you today?</h1>
+      <h1 className="text-lg font-semibold text-foreground">How can I help you today?</h1>
       
       {conversationStarters.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
           {conversationStarters.map((starter, i) => (
-            <button
+            <Button
               key={i}
+              variant="outline"
               onClick={() => onStarterClick(starter)}
-              className="p-3 rounded-lg border bg-card text-card-foreground hover:bg-accent hover:text-accent-foreground text-left text-sm transition-colors"
+              className="h-auto py-3 px-3 text-left text-sm justify-start whitespace-normal transition-colors"
             >
               {starter}
-            </button>
+            </Button>
           ))}
         </div>
       )}
