@@ -22,3 +22,12 @@ Thumbs.db
 # Starter Kit (Keeping original PDFs, but ignoring extracted versions if any)
 **/tmp_pdfs/
 **/extract.py
+
+# Generated runtime data
+**/public/artifacts/
+**/data/generated-images/
+
+# Local tool config
+.claude/
+agent-skills/
+nul
