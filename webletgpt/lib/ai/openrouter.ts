@@ -14,8 +14,9 @@ const openai = createOpenAI({
  *
  * Uses OpenRouter's native `models` fallback: if the primary model returns
  * a server error, OpenRouter tries the next model server-side (no extra
- * round trip). Combined with maxRetries: 1 in the streamText call,
- * total worst-case is 2 attempts × 3 models = fast recovery.
+ * round trip). `provider.allow_fallbacks` lets OpenRouter also try different
+ * infrastructure providers for each model. Combined with maxRetries: 2 in
+ * the streamText call, total worst-case is 3 attempts × 3 models = robust recovery.
  */
 export function getLanguageModel(modelId: string) {
   return openrouter(modelId, {
@@ -24,6 +25,7 @@ export function getLanguageModel(modelId: string) {
       "google/gemini-2.5-flash",
       "anthropic/claude-3.5-sonnet",
     ].filter((m, i, arr) => arr.indexOf(m) === i),  // deduplicate if modelId matches a fallback
+    provider: { allow_fallbacks: true },
   })
 }
 

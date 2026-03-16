@@ -211,7 +211,7 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
       system: systemPrompt,
       messages: compactedMessages as any[],
       tools,
-      maxRetries: 1,   // 2 total attempts (down from default 3) — faster failure on OpenRouter 500s
+      maxRetries: 2,   // 3 total attempts (AI SDK default) — allows recovery from transient OpenRouter 500s
       stopWhen: stopWhenAny(stepCountIs(15), toolLoopDetected(3), noProgressDetected(6)),
       experimental_telemetry: {
         isEnabled: true,
