@@ -50,6 +50,7 @@ export function ChatSidebar({ webletId }: ChatSidebarProps) {
         }))
       )
     } catch {
+      // fetchSessions silently fails — sessions stay empty, UI shows "No recent chats"
     } finally {
       setIsLoading(false)
     }

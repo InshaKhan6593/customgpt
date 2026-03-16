@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/utils/auth-guard"
 import { prisma } from "@/lib/prisma"
-import { notFound, redirect } from "next/navigation"
+import { notFound } from "next/navigation"
 import { cookies } from "next/headers"
 import { ChatLayoutShell } from "@/components/chat/chat-layout-shell"
 
@@ -13,7 +13,7 @@ export default async function ChatLayout({
   children,
   params,
 }: ChatLayoutProps) {
-  const user = await requireUser()
+  await requireUser()
   const { webletId } = await params
 
   if (!webletId) {

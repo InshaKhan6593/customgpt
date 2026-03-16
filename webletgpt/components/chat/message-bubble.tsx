@@ -111,9 +111,15 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
   )
 }
 
+const getLastTextContent = (parts: UIMessage["parts"] = []) => {
+  const textParts = parts.filter(p => p.type === "text")
+  return textParts.length > 0 ? (textParts[textParts.length - 1] as any).text : ""
+}
+
 export default React.memo(MessageBubble, (prev, next) =>
   prev.message.id === next.message.id &&
   prev.message.parts.length === next.message.parts.length &&
+  getLastTextContent(prev.message.parts) === getLastTextContent(next.message.parts) &&
   prev.isStreaming === next.isStreaming &&
   prev.weblet.id === next.weblet.id
 )
