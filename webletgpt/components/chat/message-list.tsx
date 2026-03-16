@@ -15,6 +15,7 @@ interface MessageListProps {
   onRateMessage: (messageId: string, rating: "UP" | "DOWN") => void
   onMCPAuthComplete?: () => void
   scrollRef: RefObject<HTMLDivElement | null>
+  addToolOutput: (args: { tool: string; toolCallId: string; output: string }) => void
 }
 
 export function MessageList({
@@ -25,7 +26,8 @@ export function MessageList({
   onStarterClick,
   onRateMessage,
   onMCPAuthComplete,
-  scrollRef
+  scrollRef,
+  addToolOutput,
 }: MessageListProps) {
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={scrollRef}>
@@ -40,14 +42,19 @@ export function MessageList({
       ) : (
         <div className="max-w-[44rem] w-full mx-auto space-y-5 pb-20 px-4 md:px-6 pt-4 md:pt-6 overflow-x-hidden">
           {messages.map((m, idx) => {
+            const bubbleProps = {
+              message: m,
+              weblet,
+              onRateMessage,
+              onMCPAuthComplete,
+              isStreaming: isLoading && idx === messages.length - 1 && m.role === "assistant",
+              addToolOutput,
+            }
+
             const bubble = (
               <MessageBubble
                 key={m.id}
-                message={m}
-                weblet={weblet}
-                onRateMessage={onRateMessage}
-                onMCPAuthComplete={onMCPAuthComplete}
-                isStreaming={isLoading && idx === messages.length - 1 && m.role === "assistant"}
+                {...bubbleProps}
               />
             )
 

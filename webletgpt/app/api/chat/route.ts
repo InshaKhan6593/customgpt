@@ -10,7 +10,7 @@ import { getActiveVersion } from '@/lib/chat/engine'
 import { logChatEvent } from '@/lib/chat/analytics'
 import { getOrCreateChatSession, saveMessage } from '@/lib/chat/history'
 import { auth } from '@/lib/auth'
-import { getToolsFromCapabilities } from '@/lib/tools/registry'
+import { getAlwaysAvailableTools, getToolsFromCapabilities } from '@/lib/tools/registry'
 import { checkQuotas } from '@/lib/billing/quota-check'
 import { logUsage } from '@/lib/billing/usage-logger'
 import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
 
     // ── Round 3: parallel — tools assembly (MCP needs network; others are sync) ─
     let systemPrompt = activeVersion.prompt + FORMATTING_INSTRUCTIONS
-    let tools = getToolsFromCapabilities(weblet.capabilities, webletId)
+    let tools: Record<string, any> = { ...getAlwaysAvailableTools(), ...getToolsFromCapabilities(weblet.capabilities, webletId) }
 
     if (activeVersion.openapiSchema) {
       const customTools = getToolsFromOpenAPI(

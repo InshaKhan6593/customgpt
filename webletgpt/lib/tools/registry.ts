@@ -2,6 +2,7 @@ import { webSearchTool } from "./web-search"
 import { createCodeInterpreterTool, codeInterpreterTool } from "./code-interpreter"
 import { imageGenerationTool } from "./image-generation"
 import { fileSearchTool } from "./file-search"
+import { requestUserInputTool } from "./request-user-input"
 
 /**
  * Maps capability flags from a Weblet config into AI SDK tool definitions.
@@ -45,4 +46,14 @@ export function getToolsFromCapabilities(
     }
 
     return tools
+}
+
+/**
+ * Returns tools that are always available regardless of capability flags.
+ * These are UI/interaction tools that every weblet should have.
+ */
+export function getAlwaysAvailableTools() {
+    return {
+        requestUserInput: requestUserInputTool,
+    }
 }

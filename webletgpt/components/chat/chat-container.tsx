@@ -1,7 +1,7 @@
 "use client"
 
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport, UIMessage } from "ai"
+import { DefaultChatTransport, UIMessage, lastAssistantMessageIsCompleteWithToolCalls } from "ai"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -92,12 +92,13 @@ export function ChatContainer({
     [onSessionCreated, weblet.id]
   )
 
-  const { messages, sendMessage, status, stop, regenerate, clearError } =
+  const { messages, sendMessage, status, stop, regenerate, clearError, addToolOutput } =
     useChat({
       id: chatId,
       transport,
       messages: initialMessages,
       experimental_throttle: 50,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
       onError: (error) => {
         const raw = error.message || ""
         if (raw.includes("developer_credits_exhausted")) {
@@ -240,6 +241,7 @@ export function ChatContainer({
         onRateMessage={handleRating}
         onMCPAuthComplete={handleMCPAuthComplete}
         scrollRef={scrollRef}
+        addToolOutput={addToolOutput}
       />
 
       {status === "error" && (
