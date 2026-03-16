@@ -28,15 +28,17 @@ export function MessageList({
   scrollRef
 }: MessageListProps) {
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6" ref={scrollRef}>
+    <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={scrollRef}>
       {messages.length === 0 ? (
-        <StarterChips
-          weblet={weblet}
-          conversationStarters={conversationStarters}
-          onStarterClick={onStarterClick}
-        />
+        <div className="h-full flex items-center justify-center px-4">
+          <StarterChips
+            weblet={weblet}
+            conversationStarters={conversationStarters}
+            onStarterClick={onStarterClick}
+          />
+        </div>
       ) : (
-        <div className="max-w-2xl w-full mx-auto space-y-5 pb-20 overflow-x-hidden">
+        <div className="max-w-[44rem] w-full mx-auto space-y-5 pb-20 px-4 md:px-6 pt-4 md:pt-6 overflow-x-hidden">
           {messages.map((m, idx) => (
             <MessageBubble
               key={m.id}

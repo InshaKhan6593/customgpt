@@ -32,9 +32,9 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
   const textContent = getMessageText(message.parts)
 
   const hasToolParts = message.parts.some(p => isToolUIPart(p))
-  // Keep the bubble mounted while streaming so there's no flicker between
-  // TypingIndicator → null → bubble. Unmount only when fully done with nothing to show.
-  if (message.role === "assistant" && textContent.length === 0 && !hasToolParts && !isStreaming) {
+  // Hide the bubble when it has nothing visible to show. When streaming with no content yet,
+  // return null so TypingIndicator handles the loading state (avoids double avatar).
+  if (message.role === "assistant" && textContent.length === 0 && !hasToolParts) {
     return null
   }
 
@@ -66,6 +66,9 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
 
       <div className="flex-1 min-w-0 space-y-1.5 max-w-[calc(100%-2.5rem)]">
         {message.parts.map((part, i) => {
+          if (part.type === "step-start" && i > 0) {
+            return <div key={i} className="border-t border-border/40 my-2" />
+          }
           if (part.type === "text" && part.text.trim()) {
             return <ChatMarkdown key={i} content={part.text} />
           }

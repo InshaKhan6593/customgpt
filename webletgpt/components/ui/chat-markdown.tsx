@@ -18,6 +18,21 @@ export function ChatMarkdown({ content }: { content: string }) {
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeHighlight, rehypeKatex]}
         components={{
+          a(props) {
+            const { node, href, children, ...rest } = props
+            const isArtifact = href?.startsWith('/artifacts/')
+            return (
+              <a
+                {...rest}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                download={isArtifact || undefined}
+              >
+                {children}
+              </a>
+            )
+          },
           pre(props) {
             const { node, children, ...rest } = props
             let language: string | undefined

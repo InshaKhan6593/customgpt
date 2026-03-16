@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import { isToolUIPart, getToolName } from "ai"
 import type { UIMessagePart } from "ai"
@@ -110,6 +110,17 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   const isLoading = state === "input-streaming" || state === "input-available" || state === "call" || state === "partial-call"
   const isDone = state === "output-available" || state === "result" || state === "error"
 
+  // Elapsed time counter so long-running tools (sandbox, MCP) don't look frozen
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(Date.now())
+  useEffect(() => {
+    if (!isLoading) return
+    startRef.current = Date.now()
+    setElapsed(0)
+    const id = setInterval(() => setElapsed(Date.now() - startRef.current), 1000)
+    return () => clearInterval(id)
+  }, [isLoading])
+
   // ── Special: MCP auth required — render inline OAuth/PAT prompt ──
   const isAuthRequired = isDone && output && typeof output === "object" && (output as any).__mcp_auth_required === true
   if (isAuthRequired) {
@@ -151,6 +162,8 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   const childResponse = isChildWeblet ? (output as any).response : null
   const childSource = isChildWeblet ? (output as any).source : null
 
+  const elapsedStr = elapsed >= 3000 ? ` (${Math.floor(elapsed / 1000)}s)` : ""
+
   // ── Special: Image tool shows label + image below ──
   if (isImageTool) {
     return (
@@ -158,7 +171,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
         {/* Tool call header */}
         <div className="py-0.5">
           <span className={`text-sm ${isLoading ? "font-medium tool-shimmer" : "text-muted-foreground/60"}`}>
-            {isLoading ? "Generating image..." : actionDesc}
+            {isLoading ? `Generating image...${elapsedStr}` : actionDesc}
           </span>
         </div>
 
@@ -199,7 +212,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
       <div className="my-1.5">
         <div className="py-0.5">
           <span className={`text-[13px] ${isLoading ? "font-medium tool-shimmer" : "text-muted-foreground/60"}`}>
-            {isLoading ? "Running Python Code..." : actionDesc}
+            {isLoading ? `Running Python Code...${elapsedStr}` : actionDesc}
           </span>
         </div>
 
@@ -226,6 +239,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
                   <a
                     key={idx}
                     href={f.url}
+                    download={f.name}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-3 p-3 max-w-[320px] rounded-lg border bg-card text-card-foreground shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer group"
@@ -256,15 +270,44 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   if (isChildWeblet) {
     const toolCallCount = childExec?.toolCalls?.length || 0
     const duration = childExec?.durationMs ? formatDuration(childExec.durationMs) : null
-    const headerParts = [childSource || action || label]
-    if (toolCallCount > 0) headerParts.push(`${toolCallCount} tool call${toolCallCount > 1 ? "s" : ""}`)
-    if (duration) headerParts.push(duration)
+
+    // Hoist images and files from child tool calls to the top level so users
+    // see them without needing to expand individual tool call rows.
+    const childGeneratedImages: { url: string; alt?: string }[] = []
+    const childGeneratedFiles: { name: string; url: string }[] = []
+    if (childExec?.toolCalls) {
+      for (const tc of childExec.toolCalls) {
+        const r = tc.result && typeof tc.result === "object" ? tc.result : null
+        if (!r) continue
+        // imageGeneration: { url: "..." }
+        if (r.url && typeof r.url === "string") {
+          childGeneratedImages.push({ url: r.url, alt: tc.args?.prompt || "Generated image" })
+        }
+        // codeInterpreter: { data: { images: [...], files: [...] } }
+        if (r.data?.images?.length) {
+          for (const img of r.data.images) {
+            if (img.url) childGeneratedImages.push({ url: img.url, alt: "Generated chart" })
+          }
+        }
+        if (r.data?.files?.length) {
+          for (const f of r.data.files) {
+            if (f.name && f.url) childGeneratedFiles.push(f)
+          }
+        }
+      }
+    }
+    const hasRichOutput = childGeneratedImages.length > 0 || childGeneratedFiles.length > 0
+
+    // Check if any child tool call returned __mcp_auth_required — surface inline auth prompt
+    const mcpAuthRequired = childExec?.toolCalls?.find(
+      (tc: any) => tc.result && typeof tc.result === "object" && tc.result.__mcp_auth_required
+    )?.result as { __mcp_auth_required: boolean; serverId: string; serverLabel: string; catalogId?: string; webletId?: string } | undefined
 
     if (isLoading) {
       return (
         <div className="my-1.5 py-0.5">
           <span className="text-sm font-medium tool-shimmer">
-            {`Using ${childSource || action || label}...`}
+            {`Using ${childSource || action || label}...${elapsedStr}`}
           </span>
         </div>
       )
@@ -272,7 +315,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
 
     return (
       <div className="my-1.5">
-        {/* Header */}
+        {/* Header toggle */}
         <button
           onClick={() => setOpen(!open)}
           className="flex items-center gap-2 w-full text-left py-1 cursor-pointer"
@@ -300,17 +343,70 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
           </span>
         </button>
 
-        {/* Expanded content */}
+        {/* MCP auth required — surface inline auth prompt from child weblet */}
+        {mcpAuthRequired && (
+          <div className="ml-5 mt-2">
+            <MCPOAuthPrompt
+              serverId={mcpAuthRequired.serverId}
+              serverLabel={mcpAuthRequired.serverLabel}
+              catalogId={mcpAuthRequired.catalogId ?? null}
+              webletId={mcpAuthRequired.webletId ?? null}
+              onConnected={() => onMCPAuthComplete?.()}
+            />
+          </div>
+        )}
+
+        {/* Images/files hoisted to top — visible without expanding tool calls */}
+        {hasRichOutput && (
+          <div className="ml-5 mt-2 space-y-2">
+            {childGeneratedImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {childGeneratedImages.map((img, idx) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={idx}
+                    src={img.url}
+                    alt={img.alt || "Generated image"}
+                    loading="lazy"
+                    className="rounded-xl shadow-lg max-w-full md:max-w-[260px] h-auto border border-border/30"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                  />
+                ))}
+              </div>
+            )}
+            {childGeneratedFiles.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {childGeneratedFiles.map((f, idx) => (
+                  <a
+                    key={idx}
+                    href={f.url}
+                    download={f.name}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 p-2 rounded border bg-card text-card-foreground text-[12px] hover:bg-accent transition-colors max-w-[280px]"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="truncate">{f.name}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Expanded detail: tool calls + response + task */}
         <div className={cn(
-          "ml-2.5 border-l border-zinc-800 pl-4 space-y-3",
+          "ml-2.5 border-l border-zinc-800 pl-4 space-y-3 mt-1",
           !open && "hidden"
         )}>
-          {/* Child's tool calls */}
+          {/* Child's tool calls (collapsed details — images already shown above) */}
           {childExec?.toolCalls && childExec.toolCalls.length > 0 && (
             <div className="space-y-1.5">
               <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Agent Tool Calls</span>
               {childExec.toolCalls.map((tc: any, idx: number) => (
-                <ChildToolCallItem key={idx} toolCall={tc} />
+                <ChildToolCallItem key={idx} toolCall={tc} hideRichContent />
               ))}
             </div>
           )}
@@ -344,7 +440,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
     return (
       <div className="my-1.5 py-0.5">
         <span className="text-sm font-medium tool-shimmer">
-          {action ? `${action}...` : `${label}...`}
+          {action ? `${action}...${elapsedStr}` : `${label}...${elapsedStr}`}
         </span>
       </div>
     )
@@ -360,20 +456,35 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   )
 }
 
-/** Individual tool call made by the child weblet — collapsible */
-function ChildToolCallItem({ toolCall }: { toolCall: { toolName: string; args: Record<string, any>; result: any } }) {
+/** Individual tool call made by the child weblet — collapsible, supports recursive nesting */
+function ChildToolCallItem({ toolCall, hideRichContent = false, depth = 0 }: {
+  toolCall: { toolName: string; args: Record<string, any>; result: any }
+  hideRichContent?: boolean
+  depth?: number
+}) {
   const [expanded, setExpanded] = useState(false)
   const { label, action } = formatToolName(toolCall.toolName)
   const displayName = action || label
   const hasDetails = (toolCall.args && Object.keys(toolCall.args).length > 0) || toolCall.result != null
 
+  // Extract images/files from child's code interpreter or image gen results
+  const resultData = toolCall.result && typeof toolCall.result === "object" ? toolCall.result : null
+  const childImages = resultData?.data?.images as { url: string; format?: string }[] | undefined
+  const childFiles = resultData?.data?.files as { name: string; url: string }[] | undefined
+  const childImageUrl = resultData?.url as string | undefined // imageGeneration tool
+  const hasRichContent = (childImages && childImages.length > 0) || (childFiles && childFiles.length > 0) || childImageUrl
+
+  // Grandchild weblet — this tool call IS itself a child weblet invocation
+  const isNestedWeblet = toolCall.toolName.startsWith("weblet_") &&
+    resultData?._childExecution && depth < 3 // cap render depth at 3
+
   return (
     <div>
       <button
-        onClick={() => hasDetails && setExpanded(!expanded)}
+        onClick={() => (hasDetails || hasRichContent) && setExpanded(!expanded)}
         className={cn(
           "flex items-center gap-2 py-0.5 text-left w-full",
-          hasDetails ? "cursor-pointer" : "cursor-default"
+          (hasDetails || hasRichContent) ? "cursor-pointer" : "cursor-default"
         )}
       >
         <svg className="size-3.5 text-zinc-500 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -383,7 +494,7 @@ function ChildToolCallItem({ toolCall }: { toolCall: { toolName: string; args: R
           {displayName}
           {label !== displayName && <span className="text-zinc-600 ml-1">({label})</span>}
         </span>
-        {hasDetails && (
+        {(hasDetails || hasRichContent) && (
           <svg
             className={cn(
               "size-2.5 text-zinc-600 transition-transform duration-150 shrink-0 ml-auto",
@@ -398,21 +509,104 @@ function ChildToolCallItem({ toolCall }: { toolCall: { toolName: string; args: R
       </button>
       {expanded && (
         <div className="ml-5 mt-1 space-y-1.5 pb-1">
-          {toolCall.args && Object.keys(toolCall.args).length > 0 && (
-            <div>
-              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Input</span>
-              <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40">
-                {JSON.stringify(toolCall.args, null, 2)}
-              </pre>
+          {/* Render images/files only when not already shown at parent level */}
+          {!hideRichContent && childImageUrl && (
+            <img src={childImageUrl} alt="Generated image" className="rounded-lg max-w-[240px] h-auto border border-border/30" />
+          )}
+          {!hideRichContent && childImages && childImages.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {childImages.map((img, idx) => (
+                <img key={idx} src={img.url} alt="Generated chart" className="rounded-lg max-w-[240px] h-auto border border-border/30" />
+              ))}
             </div>
           )}
-          {toolCall.result != null && (
-            <div>
-              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Output</span>
-              <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40 max-h-40 overflow-y-auto">
-                {formatResult(toolCall.result)}
-              </pre>
+          {!hideRichContent && childFiles && childFiles.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {childFiles.map((f, idx) => (
+                <a key={idx} href={f.url} download={f.name} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-2 rounded border bg-card text-card-foreground text-[12px] hover:bg-accent transition-colors max-w-[240px]">
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="truncate">{f.name}</span>
+                </a>
+              ))}
             </div>
+          )}
+          {/* Nested child weblet: render recursively */}
+          {isNestedWeblet ? (
+            <div className="border-l border-zinc-700 pl-3 space-y-2">
+              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">
+                Sub-agent: {resultData.source || displayName}
+              </span>
+              {/* Hoist nested images/files */}
+              {(() => {
+                const nestedImages: { url: string }[] = []
+                const nestedFiles: { name: string; url: string }[] = []
+                for (const ntc of resultData._childExecution?.toolCalls || []) {
+                  const nr = ntc.result && typeof ntc.result === "object" ? ntc.result : null
+                  if (!nr) continue
+                  if (nr.url) nestedImages.push({ url: nr.url })
+                  if (nr.data?.images?.length) nestedImages.push(...nr.data.images)
+                  if (nr.data?.files?.length) nestedFiles.push(...nr.data.files)
+                }
+                return (
+                  <>
+                    {nestedImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {nestedImages.map((img, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img key={i} src={img.url} alt="Generated" className="rounded-lg max-w-[200px] h-auto border border-border/30"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                        ))}
+                      </div>
+                    )}
+                    {nestedFiles.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        {nestedFiles.map((f, i) => (
+                          <a key={i} href={f.url} download={f.name} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-2 p-1.5 rounded border bg-card text-[11px] hover:bg-accent transition-colors max-w-[220px]">
+                            <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="truncate">{f.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+              {/* Nested tool calls */}
+              {resultData._childExecution?.toolCalls?.map((ntc: any, idx: number) => (
+                <ChildToolCallItem key={idx} toolCall={ntc} hideRichContent depth={depth + 1} />
+              ))}
+              {/* Nested response */}
+              {resultData.response && (
+                <div className="text-[12px] text-zinc-400 bg-zinc-900/40 rounded px-2.5 py-2 border border-zinc-800/40">
+                  {resultData.response.slice(0, 400)}{resultData.response.length > 400 ? "..." : ""}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {toolCall.args && Object.keys(toolCall.args).length > 0 && (!hasRichContent || hideRichContent) && (
+                <div>
+                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Input</span>
+                  <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40">
+                    {JSON.stringify(toolCall.args, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {toolCall.result != null && (!hasRichContent || hideRichContent) && (
+                <div>
+                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Output</span>
+                  <pre className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 whitespace-pre-wrap break-all font-mono bg-zinc-900/40 rounded px-2 py-1.5 border border-zinc-800/40 max-h-40 overflow-y-auto">
+                    {formatResult(toolCall.result)}
+                  </pre>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

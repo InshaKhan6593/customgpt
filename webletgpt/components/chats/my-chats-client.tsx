@@ -3,33 +3,57 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInput,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar"
+import {
   Bot,
-  Search,
-  ArrowLeft,
   Plus,
-  MoreVertical,
+  MoreHorizontal,
   MessageSquarePlus,
   Trash2,
   ChevronRight,
 } from "lucide-react"
 import { toast } from "sonner"
 import { ChatContainer } from "@/components/chat/chat-container"
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "@/components/ui/collapsible"
 import { UIMessage } from "ai"
 
 type SessionItem = {
@@ -91,15 +115,28 @@ function formatTime(dateStr: string) {
   }
 }
 
-function truncateMessage(content: string, maxLen = 35): string {
+function truncateMessage(content: string, maxLen = 30): string {
   if (!content) return ""
-  const clean = content.replace(/\n/g, " ").trim()
+  const clean = content
+    .replace(/\n/g, " ")
+    .replace(/^#{1,6}\s+/gm, "")      // strip markdown headings (## Hello → Hello)
+    .replace(/\*\*(.+?)\*\*/g, "$1")   // strip bold **text** → text
+    .replace(/\*(.+?)\*/g, "$1")       // strip italic *text* → text
+    .replace(/__(.+?)__/g, "$1")       // strip bold __text__ → text
+    .replace(/_(.+?)_/g, "$1")         // strip italic _text_ → text
+    .replace(/`(.+?)`/g, "$1")         // strip inline code
+    .replace(/^\s*[-*+]\s+/gm, "")     // strip list markers
+    .replace(/^\s*>\s+/gm, "")         // strip blockquotes
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // strip links [text](url) → text
+    .replace(/\s+/g, " ")
+    .trim()
   return clean.length > maxLen ? clean.slice(0, maxLen) + "..." : clean
 }
 
 export function MyChatsClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { setOpenMobile } = useSidebar()
   const activeWebletId = searchParams.get("w")
   const activeSessionId = searchParams.get("s")
   const addWebletId = searchParams.get("add")
@@ -114,44 +151,56 @@ export function MyChatsClient() {
   } | null>(null)
   const [newChatMode, setNewChatMode] = useState(false)
   const [loadingSession, setLoadingSession] = useState(false)
-  const [mobileShowChat, setMobileShowChat] = useState(false)
 
-  // Client-side session cache — avoids re-fetching already-viewed sessions
+  // Delete confirmation dialog state
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean
+    webletId: string
+    sessionId: string
+    label: string
+  }>({ open: false, webletId: "", sessionId: "", label: "" })
+
   const sessionCache = useRef<Map<string, ActiveSession>>(new Map())
 
-  const fetchWeblets = useCallback(async () => {
-    try {
-      // Fetch weblets and active session in parallel to avoid waterfall
-      const promises: Promise<any>[] = [fetch("/api/user-weblets")]
-      if (activeSessionId) {
-        promises.push(fetch(`/api/chat/sessions/${activeSessionId}`))
-      }
+  // Track programmatic navigation so the URL-watching effect doesn't override it
+  const skipNextUrlEffect = useRef(false)
 
-      const results = await Promise.all(promises)
-      const webletsRes = results[0]
-
-      if (!webletsRes.ok) throw new Error("Failed to load weblets")
-      const data: UserWebletItem[] = await webletsRes.json()
-      setWeblets(data)
-
-      // If we also fetched the session, load it immediately
-      if (results[1]?.ok) {
-        const sessionData: ActiveSession = await results[1].json()
-        sessionCache.current.set(sessionData.id, sessionData)
-        setActiveSession(sessionData)
-        setActiveWeblet(sessionData.weblet)
-        setMobileShowChat(true)
-      }
-    } catch {
-      toast.error("Failed to load weblets")
-    } finally {
-      setLoading(false)
-    }
-  }, [activeSessionId])
-
+  // Fetch weblets only once on mount — session is loaded separately via URL effect
   useEffect(() => {
-    fetchWeblets()
-  }, [fetchWeblets])
+    let cancelled = false
+    const initialSessionId = activeSessionId
+
+    ;(async () => {
+      try {
+        const promises: Promise<Response>[] = [fetch("/api/user-weblets", { cache: "no-store" })]
+        if (initialSessionId) {
+          promises.push(fetch(`/api/chat/sessions/${initialSessionId}`))
+        }
+
+        const results = await Promise.all(promises)
+        if (cancelled) return
+
+        const webletsRes = results[0]
+        if (!webletsRes.ok) throw new Error("Failed to load weblets")
+        const data: UserWebletItem[] = await webletsRes.json()
+        setWeblets(data)
+
+        if (results[1]?.ok) {
+          const sessionData: ActiveSession = await results[1].json()
+          sessionCache.current.set(sessionData.id, sessionData)
+          setActiveSession(sessionData)
+          setActiveWeblet(sessionData.weblet)
+        }
+      } catch {
+        if (!cancelled) toast.error("Failed to load weblets")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Handle ?add= param (from marketplace direct link)
   useEffect(() => {
@@ -171,30 +220,55 @@ export function MyChatsClient() {
           })
         }
       } catch { /* ignore */ }
-      // Clean up URL
       router.replace(`/chats?w=${addWebletId}`, { scroll: false })
     })()
   }, [addWebletId, loading, router])
 
-  // Load session from URL params on mount (skip if already loaded in parallel fetch)
+  // Load session from URL params — only reacts to external navigation,
+  // skips when we programmatically pushed the URL (new chat, delete, etc.)
   useEffect(() => {
-    if (activeSessionId && !activeSession && !loading && !loadingSession) {
+    if (loading) return
+
+    // If we flagged a skip (programmatic nav), consume it and do nothing
+    if (skipNextUrlEffect.current) {
+      skipNextUrlEffect.current = false
+      return
+    }
+
+    if (activeSessionId && !activeSession && !loadingSession) {
       loadSession(activeSessionId)
-    } else if (activeWebletId && !activeSessionId && !loading) {
-      // Weblet selected but no session — find the weblet and open most recent or new chat
+    } else if (activeWebletId && !activeSessionId) {
+      if (newChatMode) return
+
       const uw = weblets.find((w) => w.weblet.id === activeWebletId)
       if (uw) {
         setExpandedWebletId(uw.weblet.id)
-        if (uw.sessions.length > 0) {
-          loadSession(uw.sessions[0].id)
-          router.replace(`/chats?w=${uw.weblet.id}&s=${uw.sessions[0].id}`, { scroll: false })
-        } else {
-          // New chat mode
-          setActiveWeblet(uw.weblet)
-          setActiveSession(null)
-          setNewChatMode(true)
-          setMobileShowChat(true)
-        }
+        setActiveWeblet(uw.weblet)
+        setActiveSession(null)
+        setNewChatMode(true)
+      } else {
+        // Weblet not in sidebar yet (e.g. just added from marketplace).
+        // Add it via API and open new chat.
+        ;(async () => {
+          try {
+            const res = await fetch("/api/user-weblets", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ webletId: activeWebletId }),
+            })
+            if (res.ok) {
+              const added: UserWebletItem = await res.json()
+              setWeblets((prev) => {
+                if (prev.some((w) => w.weblet.id === added.weblet.id)) return prev
+                return [added, ...prev]
+              })
+              setExpandedWebletId(added.weblet.id)
+              setActiveWeblet(added.weblet)
+              setActiveSession(null)
+              setNewChatMode(true)
+            }
+          } catch { /* ignore */ }
+        })()
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -203,12 +277,11 @@ export function MyChatsClient() {
   const loadSession = useCallback(async (sessionId: string) => {
     setNewChatMode(false)
 
-    // Return cached session instantly if available
     const cached = sessionCache.current.get(sessionId)
     if (cached) {
       setActiveSession(cached)
       setActiveWeblet(cached.weblet)
-      setMobileShowChat(true)
+      setOpenMobile(false)
       return
     }
 
@@ -220,29 +293,24 @@ export function MyChatsClient() {
       sessionCache.current.set(sessionId, data)
       setActiveSession(data)
       setActiveWeblet(data.weblet)
-      setMobileShowChat(true)
+      setOpenMobile(false)
     } catch {
       toast.error("Failed to load chat messages")
     } finally {
       setLoadingSession(false)
     }
-  }, [])
+  }, [setOpenMobile])
 
   const handleSelectWeblet = (uw: UserWebletItem) => {
-    setExpandedWebletId((prev) => (prev === uw.weblet.id ? null : uw.weblet.id))
+    const willExpand = expandedWebletId !== uw.weblet.id
+    setExpandedWebletId(willExpand ? uw.weblet.id : null)
 
-    // Open most recent session, or new chat if no sessions
-    if (uw.sessions.length > 0) {
-      const mostRecent = uw.sessions[0]
-      router.push(`/chats?w=${uw.weblet.id}&s=${mostRecent.id}`, { scroll: false })
-      loadSession(mostRecent.id)
-    } else {
-      router.push(`/chats?w=${uw.weblet.id}`, { scroll: false })
-      setActiveWeblet(uw.weblet)
-      setActiveSession(null)
-      setNewChatMode(true)
-      setMobileShowChat(true)
-    }
+    skipNextUrlEffect.current = true
+    router.push(`/chats?w=${uw.weblet.id}`, { scroll: false })
+    setActiveWeblet(uw.weblet)
+    setActiveSession(null)
+    setNewChatMode(true)
+    setOpenMobile(false)
   }
 
   const handleSelectSession = (webletId: string, session: SessionItem) => {
@@ -251,15 +319,15 @@ export function MyChatsClient() {
   }
 
   const handleNewChat = (weblet: { id: string; name: string; slug: string; iconUrl: string | null }) => {
+    skipNextUrlEffect.current = true
     router.push(`/chats?w=${weblet.id}`, { scroll: false })
     setActiveWeblet(weblet)
     setActiveSession(null)
     setNewChatMode(true)
-    setMobileShowChat(true)
+    setOpenMobile(false)
   }
 
-  const handleRemoveWeblet = async (e: React.MouseEvent, webletId: string) => {
-    e.stopPropagation()
+  const handleRemoveWeblet = async (webletId: string) => {
     try {
       const res = await fetch(`/api/user-weblets/${webletId}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to remove")
@@ -276,13 +344,38 @@ export function MyChatsClient() {
     }
   }
 
-  const handleDeleteSession = async (e: React.MouseEvent, webletId: string, sessionId: string) => {
-    e.stopPropagation()
+  // Called by ChatContainer when a new session is pre-created (ChatGPT-style)
+  const handleSessionCreated = useCallback((webletId: string, sessionId: string) => {
+    skipNextUrlEffect.current = true
+    router.replace(`/chats?w=${webletId}&s=${sessionId}`, { scroll: false })
+
+    // Add new session to sidebar immediately
+    setWeblets((prev) => prev.map((w) => {
+      if (w.weblet.id !== webletId) return w
+      if (w.sessions.some((s) => s.id === sessionId)) return w
+      const newSession: SessionItem = {
+        id: sessionId,
+        title: "New Conversation",
+        updatedAt: new Date().toISOString(),
+        messageCount: 0,
+        lastMessage: null,
+      }
+      return { ...w, sessions: [newSession, ...w.sessions] }
+    }))
+
+    // Expand this weblet in the sidebar
+    setExpandedWebletId(webletId)
+  }, [router])
+
+  const confirmDeleteSession = async () => {
+    const { webletId, sessionId } = deleteDialog
+    if (!sessionId) return
+
     try {
       const res = await fetch(`/api/chat/sessions/${sessionId}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       toast.success("Chat deleted")
-      // Remove session from local state
+      sessionCache.current.delete(sessionId)
       setWeblets((prev) =>
         prev.map((w) =>
           w.weblet.id === webletId
@@ -290,23 +383,20 @@ export function MyChatsClient() {
             : w
         )
       )
-      // If deleted session was active, clear it
       if (activeSession?.id === sessionId) {
         setActiveSession(null)
-        setNewChatMode(false)
+        setNewChatMode(true)
+        setActiveWeblet(
+          weblets.find((w) => w.weblet.id === webletId)?.weblet ?? activeWeblet
+        )
+        skipNextUrlEffect.current = true
         router.push(`/chats?w=${webletId}`, { scroll: false })
       }
     } catch {
       toast.error("Could not delete chat")
+    } finally {
+      setDeleteDialog({ open: false, webletId: "", sessionId: "", label: "" })
     }
-  }
-
-  const handleBackToList = () => {
-    setMobileShowChat(false)
-    setActiveSession(null)
-    setActiveWeblet(null)
-    setNewChatMode(false)
-    router.push("/chats", { scroll: false })
   }
 
   // Filter weblets by search
@@ -337,17 +427,11 @@ export function MyChatsClient() {
   const showChat = activeSession || (newChatMode && activeWeblet)
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] bg-background overflow-hidden">
-      {/* Left sidebar — weblet list */}
-      <div
-        className={`w-full md:w-[280px] md:min-w-[260px] md:max-w-[320px] border-r flex flex-col bg-background ${
-          mobileShowChat ? "hidden md:flex" : "flex"
-        }`}
-      >
-        {/* Header */}
-        <div className="px-3 py-2.5 border-b space-y-2">
+    <>
+      <Sidebar collapsible="offcanvas" className="border-r top-14! h-[calc(100svh-3.5rem)]!">
+        <SidebarHeader className="gap-3.5 border-b px-4 pt-6 pb-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-[13px] font-semibold">My Weblets</h1>
+            <span className="text-sm font-semibold text-foreground">My Weblets</span>
             <Button
               variant="ghost"
               size="icon"
@@ -358,209 +442,190 @@ export function MyChatsClient() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search weblets..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-8 text-[13px]"
-            />
-          </div>
-        </div>
+          <SidebarInput
+            placeholder="Search weblets..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </SidebarHeader>
 
-        {/* Weblet list */}
-        <ScrollArea className="flex-1">
-          {loading ? (
-            <div className="p-3 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 p-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-3 w-40" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <Bot className="h-12 w-12 text-muted-foreground/30 mb-4" />
-              {weblets.length === 0 ? (
-                <>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">
-                    No weblets yet
-                  </p>
-                  <p className="text-xs text-muted-foreground/70 mb-4">
-                    Browse the marketplace to add weblets
-                  </p>
-                  <Button size="sm" onClick={() => router.push("/marketplace")}>
-                    Browse Marketplace
-                  </Button>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No weblets match &quot;{search}&quot;
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="py-1">
-              {filtered.map((uw) => {
-                const isExpanded = expandedWebletId === uw.weblet.id
-                const isActive = activeWeblet?.id === uw.weblet.id
-                const latestTime = uw.sessions[0]?.lastMessage?.createdAt
-                  || uw.sessions[0]?.updatedAt
-                  || uw.addedAt
-
-                return (
-                  <Collapsible
-                    key={uw.weblet.id}
-                    open={isExpanded}
-                    onOpenChange={() => setExpandedWebletId(isExpanded ? null : uw.weblet.id)}
-                  >
-                    {/* Weblet row */}
-                    <div
-                      className={`flex items-center gap-2 px-3 py-2 hover:bg-accent/50 transition-colors cursor-pointer group ${
-                        isActive ? "bg-accent" : ""
-                      }`}
-                      onClick={() => handleSelectWeblet(uw)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleSelectWeblet(uw) }}
-                    >
-                      <Avatar className="h-9 w-9 shrink-0">
-                        <AvatarImage src={uw.weblet.iconUrl || undefined} />
-                        <AvatarFallback className="text-xs font-medium bg-primary/10">
-                          {uw.weblet.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[13px] font-medium truncate">
-                            {uw.weblet.name}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground shrink-0 mr-2">
-                            {formatTime(latestTime)}
-                          </span>
-                        </div>
-                        {uw.sessions.length > 0 && uw.sessions[0].lastMessage && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {truncateMessage(uw.sessions[0].lastMessage.content, 35)}
-                          </p>
-                        )}
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              {loading ? (
+                <SidebarMenu>
+                  {[65, 50, 80, 55, 70].map((w, i) => (
+                    <SidebarMenuItem key={i}>
+                      <div className="flex h-8 items-center gap-2 rounded-md px-2">
+                        <Skeleton className="size-4 rounded-md" />
+                        <Skeleton className="h-4 flex-1" style={{ maxWidth: `${w}%` }} />
                       </div>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <Bot className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                  {weblets.length === 0 ? (
+                    <>
+                      <p className="text-sm font-medium text-muted-foreground mb-1">
+                        No weblets yet
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 mb-3">
+                        Browse the marketplace to add weblets
+                      </p>
+                      <Button size="sm" onClick={() => router.push("/marketplace")}>
+                        Browse Marketplace
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No weblets match &quot;{search}&quot;
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <SidebarMenu>
+                  {filtered.map((uw) => {
+                    const isExpanded = expandedWebletId === uw.weblet.id
+                    const isActive = activeWeblet?.id === uw.weblet.id
+                    const hasSessions = uw.sessions.length > 0
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem onClick={() => handleNewChat(uw.weblet)}>
-                              <MessageSquarePlus className="h-4 w-4 mr-2" />
-                              New Chat
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => handleRemoveWeblet(e, uw.weblet.id)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Remove
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        {uw.sessions.length > 0 && (
-                          <CollapsibleTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                    return (
+                      <Collapsible
+                        key={uw.weblet.id}
+                        open={isExpanded}
+                        asChild
+                      >
+                        <SidebarMenuItem>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            onClick={() => handleSelectWeblet(uw)}
+                            tooltip={uw.weblet.name}
+                            className="h-auto py-2"
+                          >
+                            <Avatar className="h-6 w-6 shrink-0">
+                              <AvatarImage src={uw.weblet.iconUrl || undefined} />
+                              <AvatarFallback className="text-[10px] font-medium bg-primary/10">
+                                {uw.weblet.name.charAt(0).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col gap-0.5 leading-none min-w-0 flex-1">
+                              <span className="font-medium truncate text-sm">{uw.weblet.name}</span>
+                              {hasSessions && uw.sessions[0].lastMessage && (
+                                <span className="text-xs text-muted-foreground truncate">
+                                  {truncateMessage(uw.sessions[0].lastMessage.content)}
+                                </span>
+                              )}
+                            </div>
+                            {hasSessions && (
                               <ChevronRight
-                                className={`h-4 w-4 transition-transform ${
+                                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${
                                   isExpanded ? "rotate-90" : ""
                                 }`}
                               />
-                            </Button>
-                          </CollapsibleTrigger>
-                        )}
-                      </div>
-                    </div>
+                            )}
+                          </SidebarMenuButton>
 
-                    {/* Expanded session list + New Chat button */}
-                    <CollapsibleContent>
-                      <div className="pl-1 py-0.5">
-                        {uw.sessions.map((session) => (
-                          <div
-                            key={session.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => handleSelectSession(uw.weblet.id, session)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSelectSession(uw.weblet.id, session)
-                            }}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-accent/50 transition-colors cursor-pointer text-[13px] group/session ${
-                              activeSession?.id === session.id ? "bg-accent" : ""
-                            }`}
-                          >
-                            <span className="truncate flex-1 min-w-0 text-muted-foreground">
-                              {session.lastMessage
-                                ? truncateMessage(session.lastMessage.content, 30)
-                                : session.title && session.title !== "New Conversation"
-                                  ? session.title
-                                  : "Empty conversation"}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteSession(e, uw.weblet.id, session.id) }}
-                              title="Delete chat"
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <SidebarMenuAction showOnHover>
+                                <MoreHorizontal />
+                                <span className="sr-only">More</span>
+                              </SidebarMenuAction>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              side="right"
+                              align="start"
+                              className="w-48"
                             >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )
-              })}
-            </div>
-          )}
-        </ScrollArea>
-      </div>
+                              <DropdownMenuItem onClick={() => handleNewChat(uw.weblet)}>
+                                <MessageSquarePlus className="mr-2 h-4 w-4" />
+                                New Chat
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => handleRemoveWeblet(uw.weblet.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Remove
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
 
-      {/* Right panel — active chat or empty state */}
-      <div
-        className={`flex-1 flex flex-col min-w-0 ${
-          !mobileShowChat ? "hidden md:flex" : "flex"
-        }`}
-      >
+                          <CollapsibleContent>
+                            <SidebarMenuSub>
+                              {uw.sessions.map((session) => {
+                                const label = session.lastMessage
+                                  ? truncateMessage(session.lastMessage.content, 22)
+                                  : session.title && session.title !== "New Conversation"
+                                    ? session.title
+                                    : "Empty conversation"
+
+                                return (
+                                  <SidebarMenuSubItem key={session.id} className="group/sub-item">
+                                    <button
+                                      onClick={() => handleSelectSession(uw.weblet.id, session)}
+                                      data-active={activeSession?.id === session.id}
+                                      className="text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground flex h-7 w-full min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sm outline-hidden focus-visible:ring-2 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
+                                    >
+                                      <span className="truncate flex-1 text-left">
+                                        {label}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground shrink-0 group-hover/sub-item:hidden">
+                                        {formatTime(session.lastMessage?.createdAt || session.updatedAt)}
+                                      </span>
+                                      <span
+                                        role="button"
+                                        tabIndex={-1}
+                                        className="hidden group-hover/sub-item:flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setDeleteDialog({
+                                            open: true,
+                                            webletId: uw.weblet.id,
+                                            sessionId: session.id,
+                                            label: label || "this chat",
+                                          })
+                                        }}
+                                        title="Delete chat"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </span>
+                                    </button>
+                                  </SidebarMenuSubItem>
+                                )
+                              })}
+                            </SidebarMenuSub>
+                          </CollapsibleContent>
+                        </SidebarMenuItem>
+                      </Collapsible>
+                    )
+                  })}
+                </SidebarMenu>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
+
+      <SidebarInset>
         {showChat && activeWeblet ? (
           <>
-            {/* Mobile back button */}
-            <div className="md:hidden absolute top-[3.5rem] left-0 z-20 p-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleBackToList}
-                className="h-8 w-8"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </div>
+            <header className="flex h-12 items-center gap-2 border-b px-4">
+              <SidebarTrigger className="-ml-1" />
+              <SidebarSeparator orientation="vertical" className="mr-2 h-4" />
+              <div className="flex items-center gap-2 min-w-0">
+                <Avatar className="h-6 w-6 shrink-0">
+                  <AvatarImage src={activeWeblet.iconUrl || undefined} />
+                  <AvatarFallback className="text-[10px] bg-primary/10">
+                    {activeWeblet.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium truncate">{activeWeblet.name}</span>
+              </div>
+            </header>
 
             {loadingSession ? (
               <div className="flex-1 flex items-center justify-center">
@@ -581,35 +646,68 @@ export function MyChatsClient() {
                 conversationStarters={conversationStarters}
                 initialMessages={initialMessages}
                 onNewChat={() => handleNewChat(activeWeblet)}
+                onSessionCreated={(sessionId) => handleSessionCreated(activeWeblet.id, sessionId)}
+                hideHeader
               />
             )}
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center space-y-3 px-4">
-              <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Bot className="h-6 w-6 text-primary/50" />
+          <>
+            <header className="flex h-12 items-center gap-2 border-b px-4">
+              <SidebarTrigger className="-ml-1" />
+            </header>
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center space-y-3 px-4">
+                <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-6 w-6 text-primary/50" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-medium text-foreground mb-0.5">
+                    Select a weblet
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Pick a weblet from the sidebar or add one from the marketplace
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push("/marketplace")}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Browse Marketplace
+                </Button>
               </div>
-              <div>
-                <h2 className="text-sm font-medium text-foreground mb-0.5">
-                  Select a weblet
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Pick a weblet from the sidebar or add one from the marketplace
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/marketplace")}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                Browse Marketplace
-              </Button>
             </div>
-          </div>
+          </>
         )}
-      </div>
-    </div>
+      </SidebarInset>
+
+      {/* Delete chat confirmation dialog */}
+      <AlertDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setDeleteDialog({ open: false, webletId: "", sessionId: "", label: "" })
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete chat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;{deleteDialog.label}&quot; and all its messages. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteSession}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

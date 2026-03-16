@@ -4,45 +4,77 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, MessageSquare, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { Plus, MessageSquare, Trash2, Loader2 } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 interface ChatSession {
   id: string
   title: string | null
-  updatedAt: Date
+  updatedAt: string
 }
 
 interface ChatSidebarProps {
   webletId: string
-  sessions: ChatSession[]
 }
 
-export function ChatSidebar({ webletId, sessions }: ChatSidebarProps) {
+export function ChatSidebar({ webletId }: ChatSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/chat/sessions?webletId=${webletId}`, {
+        cache: "no-store",
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setSessions(
+        (data.data ?? []).map((s: any) => ({
+          id: s.id,
+          title: s.title,
+          updatedAt: s.updatedAt,
+        }))
+      )
+    } catch {
+    } finally {
+      setIsLoading(false)
+    }
+  }, [webletId])
+
+  useEffect(() => {
+    fetchSessions()
+  }, [fetchSessions])
+
+  useEffect(() => {
+    fetchSessions()
+  }, [pathname, fetchSessions])
 
   const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
     e.preventDefault()
     setIsDeleting(sessionId)
-    
+
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId))
+
     try {
       const res = await fetch(`/api/chat/sessions/${sessionId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       })
-      
-      if (!res.ok) throw new Error("Failed to delete")
-      
+
+      if (!res.ok) {
+        fetchSessions()
+        throw new Error("Failed to delete")
+      }
+
       toast.success("Chat deleted")
-      router.refresh()
-      
-      // If we are currently viewing the deleted chat, redirect to new chat
+
       if (pathname === `/chat/${webletId}/${sessionId}`) {
         router.push(`/chat/${webletId}`)
       }
-    } catch (error) {
+    } catch {
       toast.error("Could not delete chat")
     } finally {
       setIsDeleting(null)
@@ -59,16 +91,19 @@ export function ChatSidebar({ webletId, sessions }: ChatSidebarProps) {
           </Link>
         </Button>
       </div>
-      
+
       <ScrollArea className="flex-1 px-3">
         <div className="space-y-1 pb-4">
-          {sessions.length === 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
               No recent chats
             </p>
           ) : (
             Object.entries(
-              // Group by date logic can be added here, keeping simple for now
               sessions.reduce((acc, session) => {
                 const date = new Date(session.updatedAt).toLocaleDateString()
                 if (!acc[date]) acc[date] = []
@@ -92,9 +127,11 @@ export function ChatSidebar({ webletId, sessions }: ChatSidebarProps) {
                   >
                     <div className="flex items-center truncate mr-2">
                       <MessageSquare className="mr-2 h-4 w-4 shrink-0 opacity-70" />
-                      <span className="truncate">{session.title || "New Chat"}</span>
+                      <span className="truncate">
+                        {session.title || "New Chat"}
+                      </span>
                     </div>
-                    
+
                     <Button
                       variant="ghost"
                       size="icon"

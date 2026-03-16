@@ -5,15 +5,35 @@ import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport, UIMessage, isToolUIPart } from "ai"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, RotateCcw, Bot, User, Loader2 } from "lucide-react"
+import { Send, RotateCcw, Bot, User, Loader2, CreditCard, AlertTriangle } from "lucide-react"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
 import { ToolInvocationToggle } from "@/components/chat/tool-invocation-toggle"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { toast } from "sonner"
 import type { BuilderState } from "./builder-layout"
+
+function parseApiError(error: Error): { message: string; isCreditsExhausted: boolean } {
+  const raw = error.message || ""
+  if (raw.includes("developer_credits_exhausted")) {
+    return { message: "developer_credits_exhausted", isCreditsExhausted: true }
+  }
+  if (raw.includes("user_credits_exceeded")) {
+    return { message: "You've used all your credits for this period.", isCreditsExhausted: false }
+  }
+  if (raw.includes("PAYMENT_REQUIRED")) {
+    return { message: "A subscription is required to use this weblet.", isCreditsExhausted: false }
+  }
+  if (raw.includes("Quota exceeded") || raw.includes("quota")) {
+    return { message: "Usage quota exceeded.", isCreditsExhausted: false }
+  }
+  return { message: "Something went wrong. Please try again.", isCreditsExhausted: false }
+}
 
 export function PreviewChat({ state, webletId }: { state: BuilderState, webletId: string }) {
   const isNew = webletId === "new"
   const [input, setInput] = useState("")
+  const [creditsExhausted, setCreditsExhausted] = useState(false)
 
   // Ref to the scrollable messages container — used for auto-scroll to bottom
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -28,6 +48,14 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
         webletId: isNew ? undefined : webletId,
       },
     }),
+    onError: (error) => {
+      const { message, isCreditsExhausted } = parseApiError(error)
+      if (isCreditsExhausted) {
+        setCreditsExhausted(true)
+      } else {
+        toast.error(message)
+      }
+    },
   })
 
   // Clear messages if weblet id changes just to be safe
@@ -179,6 +207,25 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
         )}
       </div>
 
+      {/* Developer credits exhausted banner */}
+      {creditsExhausted && (
+        <div className="px-4 pb-2 shrink-0">
+          <Alert variant="destructive">
+            <AlertTriangle className="size-4" />
+            <AlertTitle>Developer credits exhausted</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-2 flex-wrap">
+              <span>Your account has no credits left. Top up to continue testing.</span>
+              <Button size="sm" variant="outline" className="shrink-0 gap-1.5" asChild>
+                <a href="/dashboard/billing">
+                  <CreditCard className="size-3.5" />
+                  Go to Billing
+                </a>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
       {/* Input */}
       <div className="border-t p-4 shrink-0">
         <form
@@ -189,13 +236,13 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
           className="flex gap-2"
         >
           <Input
-            placeholder={isNew ? "Save Weblet first..." : "Type a message..."}
+            placeholder={isNew ? "Save Weblet first..." : creditsExhausted ? "Credits exhausted — top up to continue" : "Type a message..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             className="flex-1"
-            disabled={isNew || isLoading}
+            disabled={isNew || isLoading || creditsExhausted}
           />
-          <Button type="submit" size="icon" disabled={isNew || isLoading || !input.trim()}>
+          <Button type="submit" size="icon" disabled={isNew || isLoading || !input.trim() || creditsExhausted}>
             {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Button>
         </form>
