@@ -2,11 +2,21 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Plus, MessageSquare, Trash2, Loader2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
+
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuAction,
+} from "@/components/ui/sidebar"
 
 interface ChatSession {
   id: string
@@ -81,73 +91,70 @@ export function ChatSidebar({ webletId }: ChatSidebarProps) {
     }
   }
 
+  const groupedSessions = sessions.reduce((acc, session) => {
+    const date = new Date(session.updatedAt).toLocaleDateString()
+    if (!acc[date]) acc[date] = []
+    acc[date].push(session)
+    return acc
+  }, {} as Record<string, ChatSession[]>)
+
   return (
-    <div className="w-64 border-r bg-muted/20 flex flex-col h-full hidden md:flex">
-      <div className="p-4">
-        <Button asChild className="w-full justify-start" variant="default">
-          <Link href={`/chat/${webletId}`}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Chat
-          </Link>
-        </Button>
-      </div>
+    <Sidebar variant="sidebar" className="border-r">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="New Chat">
+              <Link href={`/chat/${webletId}`}>
+                <Plus className="h-4 w-4" />
+                <span>New Chat</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
 
-      <ScrollArea className="flex-1 px-3">
-        <div className="space-y-1 pb-4">
-          {isLoading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No recent chats
-            </p>
-          ) : (
-            Object.entries(
-              sessions.reduce((acc, session) => {
-                const date = new Date(session.updatedAt).toLocaleDateString()
-                if (!acc[date]) acc[date] = []
-                acc[date].push(session)
-                return acc
-              }, {} as Record<string, ChatSession[]>)
-            ).map(([date, dateSessions]) => (
-              <div key={date} className="mb-4">
-                <h4 className="text-xs font-semibold text-muted-foreground mb-2 px-2 uppercase tracking-wider">
-                  {date}
-                </h4>
+      <SidebarContent>
+        {isLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No recent chats
+          </p>
+        ) : (
+          Object.entries(groupedSessions).map(([date, dateSessions]) => (
+            <SidebarGroup key={date}>
+              <SidebarGroupLabel>{date}</SidebarGroupLabel>
+              <SidebarMenu>
                 {dateSessions.map((session) => (
-                  <Link
-                    key={session.id}
-                    href={`/chat/${webletId}/${session.id}`}
-                    className={`group flex items-center justify-between px-2 py-2 rounded-md text-sm transition-colors ${
-                      pathname === `/chat/${webletId}/${session.id}`
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-center truncate mr-2">
-                      <MessageSquare className="mr-2 h-4 w-4 shrink-0 opacity-70" />
-                      <span className="truncate">
-                        {session.title || "New Chat"}
-                      </span>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  <SidebarMenuItem key={session.id}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === `/chat/${webletId}/${session.id}`}
+                      tooltip={session.title || "New Chat"}
+                    >
+                      <Link href={`/chat/${webletId}/${session.id}`}>
+                        <MessageSquare className="h-4 w-4" />
+                        <span>{session.title || "New Chat"}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                    <SidebarMenuAction
+                      showOnHover
                       onClick={(e) => handleDelete(e, session.id)}
                       disabled={isDeleting === session.id}
+                      title="Delete chat"
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </Link>
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </SidebarMenuAction>
+                  </SidebarMenuItem>
                 ))}
-              </div>
-            ))
-          )}
-        </div>
-      </ScrollArea>
-    </div>
+              </SidebarMenu>
+            </SidebarGroup>
+          ))
+        )}
+      </SidebarContent>
+    </Sidebar>
   )
 }

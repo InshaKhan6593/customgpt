@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/utils/auth-guard"
 import { prisma } from "@/lib/prisma"
 import { notFound, redirect } from "next/navigation"
-import { ChatSidebar } from "@/components/chat/chat-sidebar"
+import { cookies } from "next/headers"
+import { ChatLayoutShell } from "@/components/chat/chat-layout-shell"
 
 interface ChatLayoutProps {
   children: React.ReactNode
@@ -30,12 +31,12 @@ export default async function ChatLayout({
     notFound()
   }
 
+  const cookieStore = await cookies()
+  const sidebarOpen = cookieStore.get("sidebar_state")?.value !== "false"
+
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <ChatSidebar webletId={weblet.id} />
-      <main className="flex-1 flex flex-col min-w-0">
-        {children}
-      </main>
-    </div>
+    <ChatLayoutShell webletId={weblet.id} defaultSidebarOpen={sidebarOpen}>
+      {children}
+    </ChatLayoutShell>
   )
 }

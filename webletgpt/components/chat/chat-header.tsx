@@ -9,6 +9,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SidebarTrigger } from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
 
 interface ChatHeaderProps {
   weblet: {
@@ -20,9 +22,11 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ weblet }: ChatHeaderProps) {
   return (
-    <header className="flex items-center justify-between px-4 py-2.5 border-b bg-background/95 backdrop-blur z-10 shrink-0">
+    <header className="flex items-center justify-between px-4 py-2.5 border-b bg-background/80 backdrop-blur-md z-10 shrink-0">
       <div className="flex items-center space-x-2.5">
-        <Avatar className="h-8 w-8">
+        <SidebarTrigger className="-ml-1" />
+        <Separator orientation="vertical" className="h-4" />
+        <Avatar className="h-8 w-8 ml-2">
           <AvatarImage src={weblet.iconUrl || undefined} />
           <AvatarFallback className="text-[11px]">{weblet.name.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
