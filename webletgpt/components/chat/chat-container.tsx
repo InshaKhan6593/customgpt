@@ -92,7 +92,7 @@ export function ChatContainer({
     [onSessionCreated, weblet.id]
   )
 
-  const { messages, sendMessage, status, stop, regenerate, clearError, addToolOutput } =
+  const { messages, sendMessage, status, stop, regenerate, clearError } =
     useChat({
       id: chatId,
       transport,
@@ -241,7 +241,6 @@ export function ChatContainer({
         onRateMessage={handleRating}
         onMCPAuthComplete={handleMCPAuthComplete}
         scrollRef={scrollRef}
-        addToolOutput={addToolOutput}
       />
 
       {status === "error" && (

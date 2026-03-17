@@ -9,7 +9,6 @@ import { toast } from "sonner"
 import React from "react"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
 import { ToolInvocationToggle } from "./tool-invocation-toggle"
-import { UserInputCard } from "./user-input-card"
 
 // ── Main Component ──
 interface MessageBubbleProps {
@@ -18,10 +17,9 @@ interface MessageBubbleProps {
   onRateMessage: (messageId: string, rating: "UP" | "DOWN") => void
   onMCPAuthComplete?: () => void
   isStreaming?: boolean
-  addToolOutput?: (args: { tool: string; toolCallId: string; output: string }) => void
 }
 
-export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplete, isStreaming = false, addToolOutput }: MessageBubbleProps) {
+export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplete, isStreaming = false }: MessageBubbleProps) {
   const getMessageText = (parts: UIMessage["parts"] = []) => {
     return parts.filter(p => p.type === "text").map((p: any) => p.text).join("\n")
   }
@@ -75,25 +73,6 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
             return <ChatMarkdown key={i} content={part.text} />
           }
           if (isToolUIPart(part) || (part as any).type?.startsWith('tool-')) {
-            const partAny = part as any
-            const toolName = partAny.toolName || (partAny.type?.startsWith('tool-') ? partAny.type.replace('tool-', '') : '')
-            
-            if (toolName === 'requestUserInput' && addToolOutput) {
-              return (
-                <UserInputCard
-                  key={i}
-                  toolCallId={partAny.toolCallId}
-                  question={partAny.input?.question || ''}
-                  options={partAny.input?.options}
-                  placeholder={partAny.input?.placeholder}
-                  allowFreeText={partAny.input?.allowFreeText !== false}
-                  state={partAny.state}
-                  output={partAny.output}
-                  addToolOutput={addToolOutput}
-                />
-              )
-            }
-            
             return <ToolInvocationToggle key={i} part={part} onMCPAuthComplete={onMCPAuthComplete} />
           }
           return null
@@ -141,6 +120,5 @@ export default React.memo(MessageBubble, (prev, next) =>
   prev.message.parts.length === next.message.parts.length &&
   getLastTextContent(prev.message.parts) === getLastTextContent(next.message.parts) &&
   prev.isStreaming === next.isStreaming &&
-  prev.weblet.id === next.weblet.id &&
-  prev.addToolOutput === next.addToolOutput
+  prev.weblet.id === next.weblet.id
 )
