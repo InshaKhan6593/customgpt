@@ -7,8 +7,8 @@ import Link from "next/link"
 export function RsilEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center gap-5 py-24 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
-        <Sparkles className="size-8 text-primary" />
+      <div className="flex size-16 items-center justify-center rounded-full bg-muted">
+        <Sparkles className="size-8 text-muted-foreground" />
       </div>
       <div>
         <h2 className="text-lg font-semibold">

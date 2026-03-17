@@ -20,7 +20,7 @@ export function OptimizeToggle({ rsilEnabled, onToggle, onRunNow, isActionLoadin
           <Sparkles className="size-4 text-primary" />
         </div>
         <div className="space-y-0.5">
-          <Label htmlFor="rsil-toggle" className="text-base font-semibold">
+          <Label htmlFor="rsil-toggle" className="text-sm font-semibold">
             Auto-Optimization
           </Label>
           <p className="text-sm text-muted-foreground">
@@ -46,6 +46,7 @@ export function OptimizeToggle({ rsilEnabled, onToggle, onRunNow, isActionLoadin
         
         <Button 
           variant="secondary" 
+          size="sm"
           onClick={onRunNow} 
           disabled={isActionLoading}
           className="w-full sm:w-auto"

@@ -101,7 +101,11 @@ export function RSILOverview({
       icon: BarChart3,
       value: interactionCount.toLocaleString(),
       suffix: sampleSize > 0 ? `(${sampleSize} rated)` : "",
-      detail: interactionCount === 0 ? "No chats yet" : sampleSize === 0 ? "No ratings yet — users can rate with 👍/👎" : "Chat sessions with this weblet",
+      detail: interactionCount === 0 
+        ? "No chats yet" 
+        : sampleSize === 0 
+          ? "Users can rate with 👍/👎 in chat" 
+          : "Chat sessions with this weblet",
       accent: "text-foreground",
     },
     {
@@ -111,7 +115,7 @@ export function RSILOverview({
       suffix: "",
       detail: analysis?.reason || "Awaiting analysis",
       accent: "text-foreground",
-      badge: decisionInfo,
+      badge: { text: decision, variant: decisionInfo.variant },
     },
     {
       title: "Versions",
@@ -161,16 +165,23 @@ export function RSILOverview({
                     className="mt-2 h-1.5"
                   />
                 )}
+                  {card.title === "Decision" && card.badge && (
+                  <Badge variant={card.badge.variant as "default" | "secondary" | "outline"} className="mt-2 font-normal text-xs uppercase">
+                    {card.badge.text}
+                  </Badge>
+                )}
               </CardContent>
             </Card>
           </motion.div>
         ))}
       </div>
 
+      <div className="h-px w-full bg-border my-6" />
+
       {latestVersion?.prompt && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Active Prompt (V{latestVersion.versionNum})</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Prompt (V{latestVersion.versionNum})</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="text-sm font-mono whitespace-pre-wrap bg-muted rounded-lg p-4 max-h-48 overflow-y-auto">

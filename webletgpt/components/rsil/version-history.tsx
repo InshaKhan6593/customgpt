@@ -33,11 +33,11 @@ export function VersionHistory({ versions, currentVersionId, onRollback, isActio
   }
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-md border border-border overflow-hidden">
       <Table>
-        <TableHeader>
+        <TableHeader className="bg-muted/50">
           <TableRow>
-            <TableHead className="w-[320px]">Version</TableHead>
+            <TableHead>Version</TableHead>
             <TableHead>Model</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Score</TableHead>
@@ -59,7 +59,10 @@ export function VersionHistory({ versions, currentVersionId, onRollback, isActio
 
               return (
                 <Fragment key={v.id}>
-                  <TableRow>
+                  <TableRow
+                    className="hover:bg-muted/30 transition-colors cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                  >
                     <TableCell>
                       <div className="flex items-start gap-2">
                         <Button
@@ -67,7 +70,10 @@ export function VersionHistory({ versions, currentVersionId, onRollback, isActio
                           variant="ghost"
                           size="icon"
                           className="size-7 mt-0.5"
-                          onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExpandedId(isExpanded ? null : v.id)
+                          }}
                           aria-label={isExpanded ? `Collapse V${v.versionNum} prompt` : `Expand V${v.versionNum} prompt`}
                         >
                           {isExpanded ? (
@@ -137,10 +143,13 @@ export function VersionHistory({ versions, currentVersionId, onRollback, isActio
 
                   {isExpanded && (
                     <TableRow>
-                      <TableCell colSpan={7} className="bg-muted/20">
-                        <pre className="bg-muted rounded-lg p-4 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
-                          {v.prompt}
-                        </pre>
+                      <TableCell colSpan={7} className="bg-muted/20 px-6 py-4">
+                        <div className="space-y-2">
+                          <span className="text-xs font-medium text-muted-foreground">System Instructions</span>
+                          <pre className="bg-muted rounded-lg p-4 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
+                            {v.prompt}
+                          </pre>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}

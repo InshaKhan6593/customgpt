@@ -151,6 +151,22 @@ export default function WebletAnalyticsPage() {
             </Card>
           </div>
 
+          {weblet.systemInstruction && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">System Instructions</CardTitle>
+                <TextSearch className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="bg-muted rounded-lg p-4 max-h-48 overflow-y-auto">
+                  <pre className="text-sm font-mono whitespace-pre-wrap text-foreground/90 leading-relaxed">
+                    {weblet.systemInstruction}
+                  </pre>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Usage & Revenue</CardTitle>

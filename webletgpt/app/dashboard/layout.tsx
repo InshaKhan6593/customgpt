@@ -25,9 +25,7 @@ import {
   LayoutDashboard,
   Hammer,
   Bot,
-  BarChart3,
   Sparkles,
-  Key,
   Wallet,
   Settings,
   CreditCard,
@@ -36,9 +34,7 @@ const developerToolsItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Builder", href: "/dashboard/builder", icon: Hammer },
   { label: "My Weblets", href: "/dashboard/weblets", icon: Bot },
-  { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "RSIL", href: "/dashboard/rsil", icon: Sparkles },
-  { label: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { label: "Billing", href: "/dashboard/billing", icon: CreditCard },
 ]
 

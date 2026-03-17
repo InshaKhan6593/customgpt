@@ -492,25 +492,25 @@ export default function RSILDashboardPage() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.25 }}
                       >
-                        <div className={`rounded-xl border p-4 space-y-3 ${isWeak ? "border-amber-500/30 bg-amber-500/5" : "bg-card"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold capitalize">{dim.name}</span>
+                        <Card className={cn(isWeak && "border-amber-500/30 bg-amber-500/5")}>
+                          <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground capitalize">{dim.name}</CardTitle>
                             {isWeak && (
                               <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-xs">
                                 Needs Improvement
                               </Badge>
                             )}
-                          </div>
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-3xl font-bold">
-                              {dim.avgValue.toFixed(1)}
-                            </span>
-                            <span className="text-sm text-muted-foreground">/ 10</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {dim.sampleSize} samples · weight {dim.weight}
-                          </div>
-                        </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-bold text-foreground">{dim.avgValue.toFixed(1)}</span>
+                              <span className="text-sm text-muted-foreground">/ 10</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {dim.sampleSize} samples · weight {dim.weight}
+                            </p>
+                          </CardContent>
+                        </Card>
                       </motion.div>
                     )
                   })}
@@ -528,7 +528,7 @@ export default function RSILDashboardPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Recent Ratings</CardTitle>
+                  <CardTitle className="text-base font-semibold">Recent Ratings</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {recentRatings.length === 0 ? (

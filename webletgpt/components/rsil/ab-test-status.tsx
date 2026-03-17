@@ -32,14 +32,16 @@ export function AbTestStatus({
     return (
       <Card className="border-dashed bg-muted/30">
         <CardHeader className="text-center pb-2">
-          <Activity className="size-10 mx-auto text-muted-foreground mb-2" />
+          <div className="flex size-16 items-center justify-center rounded-full bg-muted mx-auto mb-3">
+            <Activity className="size-8 text-muted-foreground" />
+          </div>
           <CardTitle>No Active Test</CardTitle>
           <CardDescription>
             RSIL is currently monitoring performance but not actively running an A/B test.
           </CardDescription>
         </CardHeader>
         <CardFooter className="flex justify-center pt-4">
-          <Button onClick={onRunOptimization} disabled={isActionLoading}>
+          <Button variant="secondary" onClick={onRunOptimization} disabled={isActionLoading}>
             <Play className="size-4 mr-2" />
             Run Optimization Now
           </Button>
@@ -64,7 +66,7 @@ export function AbTestStatus({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Activity className="size-5 text-primary animate-pulse" />
+            <Activity className="size-5 text-muted-foreground animate-pulse" />
             <CardTitle>Active A/B Test</CardTitle>
           </div>
           <Badge variant="secondary" className="animate-in fade-in">Running</Badge>
@@ -142,7 +144,7 @@ export function AbTestStatus({
         <Button variant="outline" onClick={onEnd} disabled={isActionLoading}>
           End Test & Keep V{currentVersionNum}
         </Button>
-        <Button onClick={onPromote} disabled={isActionLoading || (!variantWins && !isSignificant)}>
+        <Button variant="secondary" onClick={onPromote} disabled={isActionLoading || (!variantWins && !isSignificant)}>
           Promote V{testingVersion.versionNum}
           <ArrowRight className="size-4 ml-2" />
         </Button>

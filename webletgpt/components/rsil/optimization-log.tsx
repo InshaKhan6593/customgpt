@@ -138,7 +138,7 @@ export function OptimizationLog({ versions, loading }: OptimizationLogProps) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <GitBranch className="size-5" />
+            <GitBranch className="size-5 text-muted-foreground" />
             Activity Log
           </CardTitle>
           <CardDescription>
@@ -147,7 +147,9 @@ export function OptimizationLog({ versions, loading }: OptimizationLogProps) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-            <Clock className="size-8 mb-3 opacity-50" />
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted mb-3">
+              <Clock className="size-5 text-muted-foreground" />
+            </div>
             <p className="text-sm">No activity yet</p>
           </div>
         </CardContent>
@@ -159,7 +161,7 @@ export function OptimizationLog({ versions, loading }: OptimizationLogProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <GitBranch className="size-5" />
+          <GitBranch className="size-5 text-muted-foreground" />
           Activity Log
         </CardTitle>
         <CardDescription>
