@@ -26,9 +26,19 @@ export interface ChildToolCallDetail {
     result: any
 }
 
+export interface PresentedArtifact {
+    type: string
+    url: string
+    title: string | null
+    caption: string | null
+    mimeType: string | null
+    fileName: string | null
+}
+
 export interface ChildExecutionResult {
     text: string
     toolCalls: ChildToolCallDetail[]
+    presentedArtifacts: PresentedArtifact[]
     stepsUsed: number
     durationMs: number
 }
@@ -88,12 +98,14 @@ export async function executeChildWeblet(
     let mcpClients: Array<{ close: () => Promise<void> }> = []
 
     try {
-        // Build tool set — pass persistentSandbox so codeInterpreter uses shared state
-        let tools = getToolsFromCapabilities(
-            childWeblet?.capabilities,
-            childWebletId,
-            persistentSandbox ?? undefined
-        )
+        // No presentToUser for children — only the parent/master presents artifacts.
+        let tools = {
+            ...getToolsFromCapabilities(
+                childWeblet?.capabilities,
+                childWebletId,
+                persistentSandbox ?? undefined
+            ),
+        }
 
         // OpenAPI custom actions
         if (activeVersion.openapiSchema) {
@@ -169,10 +181,10 @@ Use judgment — generate charts and files when they genuinely add value, not fo
 - **Skip artifacts** for quick calculations, simple lookups, or short text answers — just respond directly.
 - **Sandbox state persists**: Variables, imports, installed packages, and files from previous codeInterpreter calls in this session are still in scope — do not repeat setup.
 
-### Artifact Rendering (IMPORTANT)
-- Charts and files you create via codeInterpreter are **automatically rendered in the UI** as inline images and download cards. The user already sees them.
-- **Do NOT list, re-link, or enumerate created files in your text response.** No numbered lists of file names, no markdown links to artifacts, no "Here are the files:" sections. This creates ugly duplication.
-- Instead, briefly describe **what you built and how to use it** — e.g., "I built a Flask calculator app with a clean UI. Run it with \`python app.py\` and open localhost:5000." The files themselves are already visible above your response.
+### Artifact Handling
+- When your tools produce artifacts (images, files, charts), describe what you created in your text response.
+- Include artifact URLs in your response text so the parent agent can relay them to the user.
+- Example: "I generated an image of a sunset. The image URL is: /api/image/abc123.png"
 
 ### Response Format
 - Use markdown with headers, bullet points, and code blocks where appropriate.
@@ -247,6 +259,48 @@ Use judgment — generate charts and files when they genuinely add value, not fo
             }
         }
 
+        // Children produce raw artifacts via tool results (no presentToUser).
+        const presentedArtifacts: PresentedArtifact[] = []
+        for (const tc of toolCalls) {
+            if (tc.toolName === 'imageGeneration' && tc.result?.url) {
+                presentedArtifacts.push({
+                    type: 'image',
+                    url: tc.result.url,
+                    title: tc.args?.prompt?.slice(0, 80) || 'Generated image',
+                    caption: null,
+                    mimeType: 'image/png',
+                    fileName: null,
+                })
+            }
+            if (tc.toolName === 'codeInterpreter' && tc.result?.data) {
+                const data = tc.result.data
+                for (const img of data.images || []) {
+                    if (img.url) {
+                        presentedArtifacts.push({
+                            type: 'chart',
+                            url: img.url,
+                            title: 'Chart',
+                            caption: null,
+                            mimeType: img.mimeType || 'image/png',
+                            fileName: null,
+                        })
+                    }
+                }
+                for (const f of data.files || []) {
+                    if (f.url) {
+                        presentedArtifacts.push({
+                            type: 'file',
+                            url: f.url,
+                            title: f.name || 'File',
+                            caption: null,
+                            mimeType: f.mimeType || null,
+                            fileName: f.name || null,
+                        })
+                    }
+                }
+            }
+        }
+
         // Debug: log artifact summary from child execution
         const artifactSummary = toolCalls.map(tc => ({
             tool: tc.toolName,
@@ -258,6 +312,7 @@ Use judgment — generate charts and files when they genuinely add value, not fo
         return {
             text: result.text || "No response from child weblet",
             toolCalls,
+            presentedArtifacts,
             stepsUsed: result.steps?.length || 1,
             durationMs: Date.now() - startTime,
         }

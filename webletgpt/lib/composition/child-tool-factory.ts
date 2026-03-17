@@ -116,14 +116,24 @@ export function createChildWebletTools(
                     const toolSummary = Object.entries(toolCounts)
                         .map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ''}`).join(', ')
                     const artifactLines: string[] = []
-                    if (fileNames.length > 0) artifactLines.push(`- Files created: ${fileNames.join(', ')} (shown as download cards in UI — do not re-link)`)
-                    if (chartCount > 0) artifactLines.push(`- Charts generated: ${chartCount} (shown inline in UI — do not re-link)`)
-                    if (imageCount > 0) artifactLines.push(`- Images generated: ${imageCount} (shown inline in UI — do not re-link)`)
+                    if (fileNames.length > 0) artifactLines.push(`- Files created: ${fileNames.join(', ')}`)
+                    if (chartCount > 0) artifactLines.push(`- Charts generated: ${chartCount}`)
+                    if (imageCount > 0) artifactLines.push(`- Images generated: ${imageCount}`)
                     if (artifactLines.length === 0) artifactLines.push('- No files or images produced')
                     summaryBlock = `\n\nExecution summary:\n- Tools used: ${toolSummary}\n${artifactLines.join('\n')}`
                 }
 
-                return { type: 'text' as const, value: `${header}\n\n${result?.response || ''}${summaryBlock}` }
+                const presentedArtifacts: any[] = result?._childExecution?.presentedArtifacts || []
+                let artifactBlock = ''
+                if (presentedArtifacts.length > 0) {
+                    const artifactList = presentedArtifacts.map((a: any) => {
+                        const label = a.title || a.fileName || a.type
+                        return `- ${a.type}: "${label}" (url: ${a.url})`
+                    }).join('\n')
+                    artifactBlock = `\n\nGenerated Artifacts (call presentToUser for each to display them to the user):\n${artifactList}`
+                }
+
+                return { type: 'text' as const, value: `${header}\n\n${result?.response || ''}${summaryBlock}${artifactBlock}` }
             },
             execute: async ({ message }: { message: string }) => {
                 try {
@@ -137,6 +147,7 @@ export function createChildWebletTools(
                         // does NOT inflate the LLM's context.
                         _childExecution: {
                             toolCalls: result.toolCalls,
+                            presentedArtifacts: result.presentedArtifacts,
                             stepsUsed: result.stepsUsed,
                             durationMs: result.durationMs,
                         },
