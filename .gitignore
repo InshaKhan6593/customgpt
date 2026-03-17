@@ -30,4 +30,9 @@ Thumbs.db
 # Local tool config
 .claude/
 agent-skills/
+.sisyphus/
 nul
+
+# Scratch / temp files
+*.pyc
+e2b_check/
