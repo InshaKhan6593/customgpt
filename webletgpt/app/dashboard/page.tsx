@@ -63,7 +63,7 @@ export default function DashboardOverviewPage() {
             You don't have any weblets yet. Build your first AI agent to see analytics here.
           </p>
         </div>
-        <Link href="/builder">
+        <Link href="/dashboard/builder">
           <Button variant="secondary" size="lg" className="gap-2">
             <Plus className="h-4 w-4" /> Create a Weblet
           </Button>
@@ -83,7 +83,7 @@ export default function DashboardOverviewPage() {
           <p className="text-muted-foreground mt-1 text-sm">Aggregate performance across your portfolio.</p>
          </div>
          <div className="flex items-center gap-2">
-            <Link href="/builder">
+            <Link href="/dashboard/builder">
                <Button size="sm" variant="outline" className="gap-2"><Plus className="w-4 h-4" /> New Weblet</Button>
             </Link>
          </div>
@@ -218,9 +218,9 @@ export default function DashboardOverviewPage() {
                            <Link href={`/dashboard/weblet/${w.id}`}>
                               <DropdownMenuItem>View Analytics</DropdownMenuItem>
                            </Link>
-                           <Link href={`/builder?id=${w.id}`}>
-                              <DropdownMenuItem>Edit in Builder</DropdownMenuItem>
-                           </Link>
+                            <Link href={`/dashboard/builder/${w.id}`}>
+                               <DropdownMenuItem>Edit in Builder</DropdownMenuItem>
+                            </Link>
                          </DropdownMenuContent>
                        </DropdownMenu>
                      </td>
