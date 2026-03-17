@@ -124,46 +124,61 @@ export function RSILOverview({
   ]
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map((card, i) => (
-        <motion.div
-          key={card.title}
-          custom={i}
-          initial="hidden"
-          animate="visible"
-          variants={cardVariants}
-        >
-          <Card className="relative overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {card.title}
-              </CardTitle>
-              <card.icon className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline gap-1.5">
-                <span className={cn("text-2xl font-bold", card.accent)}>
-                  {card.value}
-                </span>
-                {card.suffix && (
-                  <span className="text-sm text-muted-foreground">
-                    {card.suffix}
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((card, i) => (
+          <motion.div
+            key={card.title}
+            custom={i}
+            initial="hidden"
+            animate="visible"
+            variants={cardVariants}
+          >
+            <Card className="relative overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {card.title}
+                </CardTitle>
+                <card.icon className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline gap-1.5">
+                  <span className={cn("text-2xl font-bold", card.accent)}>
+                    {card.value}
                   </span>
+                  {card.suffix && (
+                    <span className="text-sm text-muted-foreground">
+                      {card.suffix}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {card.detail}
+                </p>
+                {card.title === "Composite Score" && compositeScore > 0 && (
+                  <Progress
+                    value={compositeScore * 10}
+                    className="mt-2 h-1.5"
+                  />
                 )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 truncate">
-                {card.detail}
-              </p>
-              {card.title === "Composite Score" && compositeScore > 0 && (
-                <Progress
-                  value={compositeScore * 10}
-                  className="mt-2 h-1.5"
-                />
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {latestVersion?.prompt && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Active Prompt (V{latestVersion.versionNum})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-sm font-mono whitespace-pre-wrap bg-muted rounded-lg p-4 max-h-48 overflow-y-auto">
+              {latestVersion.prompt}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

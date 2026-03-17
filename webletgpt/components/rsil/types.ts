@@ -25,6 +25,9 @@ export interface GovernanceConfig {
   minTestDurationHours: number
   requireCreatorApproval: boolean
   performanceFloor: number
+  autoOptimizationEnabled: boolean
+  autoOptimizationFrequency: 'every_6h' | 'every_12h' | 'daily' | 'weekly'
+  autoOptimizationHour: number
 }
 
 export interface WebletVersion {
@@ -57,6 +60,14 @@ export interface LatestVersionInfo {
   status: string
   avgScore: number | null
   commitMsg: string | null
+  prompt?: string
+}
+
+export interface RatingEntry {
+  id: string
+  eventType: string
+  eventData: Record<string, unknown> | null
+  createdAt: string
 }
 
 export interface WebletOverview {

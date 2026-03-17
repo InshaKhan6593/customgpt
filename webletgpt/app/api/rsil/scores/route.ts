@@ -43,10 +43,20 @@ export async function GET(req: NextRequest) {
     const fromTimestamp = subHours(new Date(), hours).toISOString()
     const analysis = await analyzeWeblet(webletId, hours)
     const rawScoresResponse = await fetchScores({ webletId, fromTimestamp, limit: 200 })
+    const recentRatings = await prisma.analyticsEvent.findMany({
+      where: {
+        webletId,
+        eventType: { in: ["user_rating", "thumbs_up", "thumbs_down"] },
+        createdAt: { gte: new Date(fromTimestamp) },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    })
 
     return NextResponse.json({
       analysis,
       rawScores: rawScoresResponse?.data || [],
+      recentRatings,
     })
   } catch (error) {
     console.error("RSIL scores error:", error)

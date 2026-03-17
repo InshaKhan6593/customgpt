@@ -4,6 +4,9 @@
 
 import { prisma } from '@/lib/prisma'
 
+export const AUTO_OPTIMIZATION_FREQUENCIES = ['every_6h', 'every_12h', 'daily', 'weekly'] as const
+export type AutoOptimizationFrequency = (typeof AUTO_OPTIMIZATION_FREQUENCIES)[number]
+
 const DEFAULT_GOVERNANCE = {
   minInteractionsBeforeOptimize: 100,
   cooldownHours: 6,
@@ -11,6 +14,9 @@ const DEFAULT_GOVERNANCE = {
   minTestDurationHours: 48,
   requireCreatorApproval: false,
   performanceFloor: 3.0,
+  autoOptimizationEnabled: false,
+  autoOptimizationFrequency: 'daily' as AutoOptimizationFrequency,
+  autoOptimizationHour: 0,
 }
 
 export type GovernanceConfig = typeof DEFAULT_GOVERNANCE
@@ -18,6 +24,27 @@ export type GovernanceConfig = typeof DEFAULT_GOVERNANCE
 export function getGovernance(raw: any): GovernanceConfig {
   if (!raw || typeof raw !== 'object') return DEFAULT_GOVERNANCE
   return { ...DEFAULT_GOVERNANCE, ...raw }
+}
+
+export function shouldRunAutoOptimization(governance: GovernanceConfig): boolean {
+  if (!governance.autoOptimizationEnabled) return false
+
+  const now = new Date()
+  const currentHour = now.getUTCHours()
+  const targetHour = governance.autoOptimizationHour
+
+  switch (governance.autoOptimizationFrequency) {
+    case 'every_6h':
+      return currentHour % 6 === targetHour % 6
+    case 'every_12h':
+      return currentHour % 12 === targetHour % 12
+    case 'daily':
+      return currentHour === targetHour
+    case 'weekly':
+      return now.getUTCDay() === 1 && currentHour === targetHour
+    default:
+      return false
+  }
 }
 
 export async function checkGovernance(webletId: string): Promise<{ allowed: boolean; reason: string }> {

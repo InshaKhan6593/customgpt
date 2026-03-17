@@ -2,13 +2,23 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Sparkles, Loader2 } from "lucide-react"
+import { Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 
 import { WebletSelector } from "@/components/rsil/weblet-selector"
 import { RSILOverview } from "@/components/rsil/rsil-overview"
@@ -17,7 +27,6 @@ import { AbTestStatus } from "@/components/rsil/ab-test-status"
 import { VersionHistory } from "@/components/rsil/version-history"
 import { GovernanceConfigForm } from "@/components/rsil/governance-config"
 import { OptimizeToggle } from "@/components/rsil/optimize-toggle"
-import { RollbackButton } from "@/components/rsil/rollback-button"
 import { RsilEmptyState } from "@/components/rsil/rsil-empty-state"
 import { OptimizationLog } from "@/components/rsil/optimization-log"
 
@@ -27,7 +36,7 @@ import type {
   TestResult,
   WebletOverview,
   WebletVersion,
-  LatestVersionInfo,
+  RatingEntry,
 } from "@/components/rsil/types"
 
 type OverviewResponse = {
@@ -44,6 +53,7 @@ type ScoresResponse = {
     coherence: number
     safety: number
   }>
+  recentRatings: RatingEntry[]
 }
 
 type TestsResponse = {
@@ -74,6 +84,7 @@ export default function RSILDashboardPage() {
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [rawScores, setRawScores] = useState<ScoresResponse["rawScores"]>([])
+  const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [testingVersion, setTestingVersion] = useState<WebletVersion | null>(null)
   const [versions, setVersions] = useState<WebletVersion[]>([])
@@ -107,9 +118,11 @@ export default function RSILDashboardPage() {
       const data: ScoresResponse = await res.json()
       setAnalysis(data.analysis)
       setRawScores(data.rawScores || [])
+      setRecentRatings(data.recentRatings || [])
     } catch {
       setAnalysis(null)
       setRawScores([])
+      setRecentRatings([])
     } finally {
       setScoresLoading(false)
     }
@@ -178,6 +191,7 @@ export default function RSILDashboardPage() {
     setActiveTab("overview")
     setAnalysis(null)
     setRawScores([])
+    setRecentRatings([])
     setTestResult(null)
     setTestingVersion(null)
     setVersions([])
@@ -362,6 +376,19 @@ export default function RSILDashboardPage() {
   const currentVersionNum = selectedWeblet?.latestVersion?.versionNum ?? 1
   const hasActiveTest = !!selectedWeblet?.activeTest
   const totalVersions = selectedWeblet?.totalVersions ?? 0
+  const controlVersion = versions.find((v) => v.status === "ACTIVE" && v.id === currentVersionId) ?? null
+
+  function getEventDataValue(eventData: Record<string, unknown> | null, keys: string[]) {
+    if (!eventData) return null
+
+    for (const key of keys) {
+      const value = eventData[key]
+      if (typeof value === "string" && value.trim().length > 0) return value
+      if (typeof value === "number") return value
+    }
+
+    return null
+  }
 
   const chartData = rawScores.map((s) => ({
     date: new Date(s.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
@@ -498,6 +525,80 @@ export default function RSILDashboardPage() {
                 data={chartData}
                 dimensions={analysis?.dimensions ?? []}
               />
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Recent Ratings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {recentRatings.length === 0 ? (
+                    <div className="py-8 text-sm text-muted-foreground text-center">
+                      No individual ratings in this time range yet.
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Score</TableHead>
+                            <TableHead>Trace ID</TableHead>
+                            <TableHead>Feedback</TableHead>
+                            <TableHead className="text-right">Timestamp</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {recentRatings.map((entry) => {
+                            const numericScore = getEventDataValue(entry.eventData, ["score", "rating", "value"])
+                            const traceId = getEventDataValue(entry.eventData, ["traceId", "langfuseTraceId", "trace_id", "sessionTraceId"])
+                            const feedback = getEventDataValue(entry.eventData, ["feedback", "comment", "reason", "notes"])
+
+                            return (
+                              <TableRow key={entry.id}>
+                                <TableCell>
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "uppercase tracking-wide",
+                                      entry.eventType === "thumbs_up" && "text-emerald-500 border-emerald-500/30",
+                                      entry.eventType === "thumbs_down" && "text-rose-500 border-rose-500/30"
+                                    )}
+                                  >
+                                    {entry.eventType}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {typeof numericScore === "number"
+                                    ? numericScore
+                                    : entry.eventType === "thumbs_up"
+                                      ? "👍"
+                                      : entry.eventType === "thumbs_down"
+                                        ? "👎"
+                                        : "-"}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground max-w-[180px] truncate">
+                                  {typeof traceId === "string" ? traceId : "-"}
+                                </TableCell>
+                                <TableCell className="max-w-[280px] truncate text-sm text-muted-foreground">
+                                  {typeof feedback === "string" ? feedback : "-"}
+                                </TableCell>
+                                <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                                  {new Date(entry.createdAt).toLocaleString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>
@@ -511,6 +612,7 @@ export default function RSILDashboardPage() {
             <>
               <AbTestStatus
                 testResult={testResult}
+                controlVersion={controlVersion}
                 testingVersion={testingVersion}
                 currentVersionNum={currentVersionNum}
                 onPromote={handlePromoteTest}

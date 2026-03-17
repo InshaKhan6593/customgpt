@@ -6,6 +6,7 @@ import { z } from "zod"
 
 const schema = z.object({
   sessionId: z.string(),
+  messageId: z.string().optional(),
   score: z.number().min(1).max(5),
   comment: z.string().optional(),
 })
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
   }
 
-  const { sessionId, score, comment } = result.data
+  const { sessionId, messageId, score, comment } = result.data
 
   // Verify session belongs to this user
   const chatSession = await prisma.chatSession.findFirst({
@@ -34,14 +35,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
+  let langfuseTraceId = chatSession.langfuseTraceId
+
+  if (messageId) {
+    const chatMessage = await prisma.chatMessage.findFirst({
+      where: {
+        id: messageId,
+        chatSessionId: sessionId,
+        chatSession: {
+          userId: session.user.id,
+        },
+      },
+      select: { langfuseTraceId: true },
+    })
+
+    langfuseTraceId = chatMessage?.langfuseTraceId ?? langfuseTraceId
+  }
+
   // Push to Langfuse if we have a trace ID
-  if (chatSession.langfuseTraceId) {
+  if (langfuseTraceId) {
     await pushScore({
-      traceId: chatSession.langfuseTraceId,
+      traceId: langfuseTraceId,
       name: "user-rating",
       value: score,
       comment,
-      id: `${chatSession.langfuseTraceId}-user-rating`,
+      id: `${langfuseTraceId}-user-rating`,
       dataType: "NUMERIC",
     }).catch(err => console.error("Langfuse score push failed:", err))
   }
@@ -51,7 +69,7 @@ export async function POST(req: NextRequest) {
     data: {
       webletId: chatSession.webletId,
       eventType: "user_rating",
-      eventData: { sessionId, score, comment, langfuseTraceId: chatSession.langfuseTraceId },
+      eventData: { sessionId, messageId, score, comment, langfuseTraceId },
     },
   })
 

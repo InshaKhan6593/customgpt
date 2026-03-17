@@ -41,14 +41,16 @@ export async function saveMessage(
   sessionId: string,
   role: "user" | "assistant" | "system" | "tool",
   content: string,
-  tokensUsed?: number
+  tokensUsed?: number,
+  langfuseTraceId?: string
 ) {
   return prisma.chatMessage.create({
     data: {
       chatSessionId: sessionId,
       role,
       content,
-      tokensUsed
+      tokensUsed,
+      langfuseTraceId
     }
   })
 }

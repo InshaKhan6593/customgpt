@@ -27,6 +27,11 @@ export async function GET() {
 
     const items = await Promise.all(weblets.map(async (weblet) => {
       const latestVersion = weblet.versions[0] ?? null
+      const activeVersion = await prisma.webletVersion.findFirst({
+        where: { webletId: weblet.id, status: "ACTIVE" },
+        select: { id: true, prompt: true },
+        orderBy: { createdAt: "desc" },
+      })
       const activeTest = weblet.versions.find(version => version.status === "TESTING" && version.isAbTest)
 
       const interactionCount = await prisma.chatMessage.count({
@@ -46,6 +51,7 @@ export async function GET() {
               status: latestVersion.status,
               avgScore: latestVersion.avgScore,
               commitMsg: latestVersion.commitMsg,
+              prompt: (activeVersion?.id === latestVersion.id ? latestVersion.prompt : activeVersion?.prompt) ?? latestVersion.prompt,
             }
           : null,
         activeTest: activeTest

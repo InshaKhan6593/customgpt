@@ -15,6 +15,9 @@ const governanceSchema: z.ZodType<GovernanceConfig> = z.object({
   minTestDurationHours: z.number().int().min(1),
   requireCreatorApproval: z.boolean(),
   performanceFloor: z.number().min(0).max(5),
+  autoOptimizationEnabled: z.boolean(),
+  autoOptimizationFrequency: z.enum(['every_6h', 'every_12h', 'daily', 'weekly']),
+  autoOptimizationHour: z.number().int().min(0).max(23),
 })
 
 const putSchema = z.object({

@@ -199,6 +199,7 @@ model ChatMessage {
   role          String
   content       String
   tokensUsed    Int?
+  langfuseTraceId String?
   createdAt     DateTime    @default(now())
   chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 

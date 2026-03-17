@@ -38,14 +38,31 @@ export async function POST(req: NextRequest) {
 
     if (sessionId) {
       try {
-        const chatSession = await prisma.chatSession.findUnique({
-          where: { id: sessionId },
-          select: { langfuseTraceId: true },
-        })
+        let langfuseTraceId: string | null | undefined
 
-        if (chatSession?.langfuseTraceId) {
+        if (messageId) {
+          const chatMessage = await prisma.chatMessage.findFirst({
+            where: {
+              id: messageId,
+              chatSessionId: sessionId,
+            },
+            select: { langfuseTraceId: true },
+          })
+
+          langfuseTraceId = chatMessage?.langfuseTraceId
+        }
+
+        if (!langfuseTraceId) {
+          const chatSession = await prisma.chatSession.findUnique({
+            where: { id: sessionId },
+            select: { langfuseTraceId: true },
+          })
+          langfuseTraceId = chatSession?.langfuseTraceId
+        }
+
+        if (langfuseTraceId) {
           await pushScore({
-            traceId: chatSession.langfuseTraceId,
+            traceId: langfuseTraceId,
             name: 'user-rating',
             value: rating === 'UP' ? 5 : 1,
             comment: feedbackText || undefined,

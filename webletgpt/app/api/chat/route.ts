@@ -207,6 +207,7 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
     // visible pauses after the last token.
     type FinishData = Parameters<NonNullable<Parameters<typeof streamText>[0]['onFinish']>>[0]
     let capturedFinish: FinishData | null = null
+    const messageTraceId = generateId()
 
     const response = streamText({
       model,
@@ -219,7 +220,7 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
         isEnabled: true,
         functionId: `weblet-${webletId}`,
         metadata: {
-          "langfuse.trace.id": activeSessionId,
+          "langfuse.trace.id": messageTraceId,
           "langfuse.trace.name": `weblet-${webletId}`,
           "langfuse.user.id": userId,
           "langfuse.session.id": activeSessionId,
@@ -276,23 +277,14 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
       }
       if (!finalText?.trim()) finalText = "(No response)"
 
-      // All writes run in parallel — they're independent of each other
-      // Note: Langfuse trace is created by OTel (experimental_telemetry) with activeSessionId
-      // as the trace ID (via langfuse.trace.id). No manual upsertTrace needed.
       // Both user + assistant messages saved here so orphans don't occur on stream failure.
       await Promise.all([
         userMessageText
           ? saveMessage(activeSessionId, "user", userMessageText)
               .catch(err => console.error("Failed to save user message:", err))
           : Promise.resolve(),
-        saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens)
+        saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens, messageTraceId)
           .catch(err => console.error("Failed to save assistant message:", err)),
-
-        // Persist the Langfuse trace ID so rate/route.ts can push user rating scores
-        prisma.chatSession.update({
-          where: { id: activeSessionId },
-          data: { langfuseTraceId: activeSessionId },
-        }).catch(err => console.error("Failed to set langfuseTraceId:", err)),
 
         (async () => {
           if (!usage?.totalTokens) return

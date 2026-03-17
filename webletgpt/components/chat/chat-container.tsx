@@ -172,7 +172,7 @@ export function ChatContainer({
         await fetch("/api/chat/sessions/rate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, score: 5 }),
+          body: JSON.stringify({ sessionId, score: 5, messageId }),
         })
         toast.success("Thanks for the feedback!")
       } catch {
@@ -192,7 +192,7 @@ export function ChatContainer({
       await fetch("/api/chat/sessions/rate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, score: 1, comment: feedbackText }),
+        body: JSON.stringify({ sessionId, score: 1, comment: feedbackText, messageId: selectedMessageId }),
       })
       toast.success("Thanks for the detailed feedback!")
       setFeedbackModalOpen(false)

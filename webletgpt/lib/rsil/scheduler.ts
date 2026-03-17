@@ -1,24 +1,20 @@
-/**
- * RSIL Scheduler — Inngest function that runs daily to optimize all enabled weblets.
- */
-
 import { inngest } from '@/lib/inngest/client'
 import { prisma } from '@/lib/prisma'
 import { analyzeWeblet } from './analyzer'
 import { generateImprovedPrompt } from './generator'
 import { createAbTestVersion, getVersionForUser } from './ab-test'
 import { deployWinner, evaluateAbTest } from './deployer'
-import { checkGovernance } from './governance'
+import { checkGovernance, getGovernance, shouldRunAutoOptimization } from './governance'
 
 export const rsilDailyOptimizer = inngest.createFunction(
   { id: 'rsil-daily-optimizer', name: 'RSIL Daily Optimizer' },
-  { cron: '0 0 * * *' }, // Every day at midnight
+  { cron: '0 * * * *' },
   async ({ step, logger }) => {
     // 1. Find all RSIL-enabled weblets
     const weblets = await step.run('fetch-rsil-weblets', async () => {
       return prisma.weblet.findMany({
         where: { rsilEnabled: true, isActive: true },
-        select: { id: true, name: true, description: true },
+        select: { id: true, name: true, description: true, rsilGovernance: true },
       })
     })
 
@@ -42,13 +38,16 @@ export const rsilDailyOptimizer = inngest.createFunction(
             return { webletId: weblet.id, action: `skipped: ${gov.reason}` }
           }
 
-          // 3. Analyze performance
+          const govConfig = getGovernance(weblet.rsilGovernance)
+          if (!shouldRunAutoOptimization(govConfig)) {
+            return { webletId: weblet.id, action: 'skipped: not scheduled for this hour' }
+          }
+
           const analysis = await analyzeWeblet(weblet.id, 24)
           if (analysis.decision === 'NONE') {
             return { webletId: weblet.id, action: `no_action: ${analysis.reason}` }
           }
 
-          // 4. Get current active version
           const activeVersion = await prisma.webletVersion.findFirst({
             where: { webletId: weblet.id, status: 'ACTIVE' },
             orderBy: { createdAt: 'desc' },
@@ -64,7 +63,6 @@ export const rsilDailyOptimizer = inngest.createFunction(
             return { webletId: weblet.id, action: `suggestion_queued: ${analysis.reason}` }
           }
 
-          // 5. AUTO_UPDATE — generate improved prompt and start A/B test
           const improvedPrompt = await generateImprovedPrompt({
             currentPrompt: activeVersion.prompt,
             webletId: weblet.id,

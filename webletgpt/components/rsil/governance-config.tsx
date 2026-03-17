@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Card,
   CardContent,
   CardDescription,
@@ -29,7 +36,22 @@ const DEFAULT_CONFIG: GovernanceConfig = {
   minTestDurationHours: 48,
   requireCreatorApproval: false,
   performanceFloor: 3.0,
+  autoOptimizationEnabled: false,
+  autoOptimizationFrequency: 'daily',
+  autoOptimizationHour: 0,
 }
+
+const FREQUENCY_OPTIONS: Array<{ value: GovernanceConfig['autoOptimizationFrequency']; label: string }> = [
+  { value: 'every_6h', label: 'Every 6 Hours' },
+  { value: 'every_12h', label: 'Every 12 Hours' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+]
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: String(hour),
+  label: `${hour.toString().padStart(2, '0')}:00 UTC`,
+}))
 
 export function GovernanceConfigForm({ initialConfig, onSave, isSaving }: GovernanceConfigFormProps) {
   const [config, setConfig] = React.useState<GovernanceConfig>(initialConfig || DEFAULT_CONFIG)
@@ -41,7 +63,7 @@ export function GovernanceConfigForm({ initialConfig, onSave, isSaving }: Govern
     }
   }, [initialConfig])
 
-  const handleChange = (key: keyof GovernanceConfig, value: number | boolean) => {
+  const handleChange = (key: keyof GovernanceConfig, value: GovernanceConfig[keyof GovernanceConfig]) => {
     setConfig(prev => ({ ...prev, [key]: value }))
   }
 
@@ -111,6 +133,67 @@ export function GovernanceConfigForm({ initialConfig, onSave, isSaving }: Govern
               <p className="text-xs text-muted-foreground">Automatically revert if score drops below this threshold.</p>
             </div>
           </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4 my-1">
+            <div className="space-y-0.5">
+              <Label className="text-base">Auto-Optimization Schedule</Label>
+              <p className="text-sm text-muted-foreground">
+                Enable scheduled RSIL optimization runs for this weblet.
+              </p>
+            </div>
+            <Switch
+              checked={config.autoOptimizationEnabled}
+              onCheckedChange={(checked) => handleChange('autoOptimizationEnabled', checked)}
+            />
+          </div>
+
+          {config.autoOptimizationEnabled ? (
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="auto-opt-frequency">Frequency</Label>
+                <Select
+                  value={config.autoOptimizationFrequency}
+                  onValueChange={(value: GovernanceConfig['autoOptimizationFrequency']) =>
+                    handleChange('autoOptimizationFrequency', value)
+                  }
+                >
+                  <SelectTrigger id="auto-opt-frequency">
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FREQUENCY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="auto-opt-hour">Preferred Hour (UTC)</Label>
+                <Select
+                  value={String(config.autoOptimizationHour)}
+                  onValueChange={(value) => handleChange('autoOptimizationHour', Number(value))}
+                >
+                  <SelectTrigger id="auto-opt-hour">
+                    <SelectValue placeholder="Select UTC hour" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HOUR_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Auto-optimization is disabled. Use the "Run Now" button to optimize manually.
+            </p>
+          )}
 
           <div className="flex items-center justify-between rounded-lg border p-4 my-1">
             <div className="space-y-0.5">

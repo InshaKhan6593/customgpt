@@ -9,6 +9,7 @@ import type { TestResult, WebletVersion } from "./types"
 
 interface AbTestStatusProps {
   testResult: TestResult | null
+  controlVersion?: WebletVersion | null
   testingVersion: WebletVersion | null
   currentVersionNum: number
   onPromote: () => void
@@ -19,6 +20,7 @@ interface AbTestStatusProps {
 
 export function AbTestStatus({
   testResult,
+  controlVersion,
   testingVersion,
   currentVersionNum,
   onPromote,
@@ -114,6 +116,26 @@ export function AbTestStatus({
             </span>
           </div>
         </div>
+
+        {controlVersion && testingVersion && (
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold">Prompt Comparison</h4>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Control (V{controlVersion.versionNum})</span>
+                <pre className="text-xs font-mono whitespace-pre-wrap bg-muted rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {controlVersion.prompt}
+                </pre>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Variant (V{testingVersion.versionNum})</span>
+                <pre className="text-xs font-mono whitespace-pre-wrap bg-muted rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {testingVersion.prompt}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
       
       <CardFooter className="flex gap-3 justify-end bg-muted/20 border-t py-4">
