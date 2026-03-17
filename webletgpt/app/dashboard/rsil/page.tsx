@@ -215,8 +215,10 @@ export default function RSILDashboardPage() {
       })
       if (!res.ok) throw new Error("Failed to run")
       const data = await res.json()
-      if (data.ok && !data.skipped) {
-        toast.success("Optimization run started")
+      if (data.skipped) {
+        toast.warning(data.reason || "Optimization skipped — governance check failed")
+      } else if (data.action === "ab_test_started") {
+        toast.success("Optimization started — A/B test created")
         setTimeout(() => {
           if (selectedWebletId) {
             fetchScores(selectedWebletId)
@@ -224,8 +226,12 @@ export default function RSILDashboardPage() {
             fetchVersions(selectedWebletId)
           }
         }, 3000)
+      } else if (data.action === "suggestion") {
+        toast.info(data.analysis?.reason || "Suggestion generated — review in Scores tab")
+      } else if (data.action === "none") {
+        toast.info(data.analysis?.reason || "Not enough score data yet — keep collecting user feedback")
       } else {
-        toast.info(data.reason || "Optimization not needed at this time")
+        toast.info("Optimization completed — no changes needed")
       }
     } catch {
       toast.error("Failed to start optimization")
