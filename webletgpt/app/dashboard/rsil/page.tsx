@@ -29,6 +29,7 @@ import { GovernanceConfigForm } from "@/components/rsil/governance-config"
 import { OptimizeToggle } from "@/components/rsil/optimize-toggle"
 import { RsilEmptyState } from "@/components/rsil/rsil-empty-state"
 import { OptimizationLog } from "@/components/rsil/optimization-log"
+import { PromptScoreTable } from "@/components/rsil/prompt-score-table"
 
 import type {
   AnalysisResult,
@@ -38,6 +39,7 @@ import type {
   WebletOverview,
   WebletVersion,
   RatingEntry,
+  PromptVersionScore,
 } from "@/components/rsil/types"
 
 type OverviewResponse = {
@@ -75,9 +77,11 @@ export default function RSILDashboardPage() {
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [configLoading, setConfigLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [promptScoresLoading, setPromptScoresLoading] = useState(false)
 
    const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
    const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
+   const [promptVersionScores, setPromptVersionScores] = useState<PromptVersionScore[]>([])
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [testingVersion, setTestingVersion] = useState<WebletVersion | null>(null)
   const [versions, setVersions] = useState<WebletVersion[]>([])
@@ -119,6 +123,20 @@ export default function RSILDashboardPage() {
        setMetrics(null)
     } finally {
       setScoresLoading(false)
+    }
+  }, [])
+
+  const fetchPromptScores = useCallback(async (webletId: string) => {
+    setPromptScoresLoading(true)
+    try {
+      const res = await fetch(`/api/rsil/prompt-scores?webletId=${webletId}&hours=168`)
+      if (!res.ok) throw new Error("Failed to load prompt scores")
+      const data = await res.json()
+      setPromptVersionScores(data.promptVersionScores || [])
+    } catch {
+      setPromptVersionScores([])
+    } finally {
+      setPromptScoresLoading(false)
     }
   }, [])
 
@@ -175,16 +193,18 @@ export default function RSILDashboardPage() {
   useEffect(() => {
     if (!selectedWebletId) return
     fetchScores(selectedWebletId)
+    fetchPromptScores(selectedWebletId)
     fetchTests(selectedWebletId)
     fetchVersions(selectedWebletId)
     fetchConfig(selectedWebletId)
-  }, [selectedWebletId, fetchScores, fetchTests, fetchVersions, fetchConfig])
+  }, [selectedWebletId, fetchScores, fetchPromptScores, fetchTests, fetchVersions, fetchConfig])
 
    function handleWebletChange(id: string) {
      setSelectedWebletId(id)
      setActiveTab("overview")
      setAnalysis(null)
      setRecentRatings([])
+     setPromptVersionScores([])
      setMetrics(null)
      setTestResult(null)
      setTestingVersion(null)
@@ -460,6 +480,8 @@ export default function RSILDashboardPage() {
         </TabsContent>
 
         <TabsContent value="scores" className="mt-4 space-y-6">
+          <PromptScoreTable scores={promptVersionScores} loading={promptScoresLoading} />
+
           {scoresLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-80 rounded-xl" />

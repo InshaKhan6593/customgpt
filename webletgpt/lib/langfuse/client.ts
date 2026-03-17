@@ -148,6 +148,190 @@ export interface ScoreTimeSeries {
   [scoreName: string]: number | string
 }
 
+export interface PromptVersionScoreData {
+  versionNum: number
+  versionId: string
+  dimensions: Array<{
+    name: string
+    avg: number
+    count: number
+    min: number
+    max: number
+  }>
+  compositeScore: number
+  totalSamples: number
+}
+
+const PROMPT_SCORE_CONFIGS: Record<string, { max: number; higherIsBetter: boolean; weight: number }> = {
+  'user-rating': { max: 5, higherIsBetter: true, weight: 0.5 },
+  helpfulness: { max: 1, higherIsBetter: true, weight: 0.2 },
+  correctness: { max: 1, higherIsBetter: true, weight: 0.15 },
+  hallucination: { max: 1, higherIsBetter: false, weight: 0.1 },
+  toxicity: { max: 1, higherIsBetter: false, weight: 0.03 },
+  conciseness: { max: 1, higherIsBetter: true, weight: 0.02 },
+}
+
+function normalizePromptScore(value: number, config: { max: number; higherIsBetter: boolean }): number {
+  const ratio = Math.min(Math.max(value / config.max, 0), 1)
+  return config.higherIsBetter ? ratio : 1 - ratio
+}
+
+export async function fetchScoresByPromptVersion({
+  webletId,
+  fromTimestamp,
+}: {
+  webletId: string
+  fromTimestamp?: string
+}): Promise<PromptVersionScoreData[]> {
+  const tracesByVersion = new Map<string, { versionNum: number; traceIds: Set<string> }>()
+  const traceVersionIdMap = new Map<string, string>()
+  let tracePage = 1
+
+  while (true) {
+    const traces = await fetchTraces({
+      webletId,
+      fromTimestamp,
+      limit: LANGFUSE_MAX_LIMIT,
+      page: tracePage,
+    })
+
+    for (const trace of traces.data) {
+      const traceId = trace.id
+      if (!traceId) continue
+
+      const tags = Array.isArray(trace.tags) ? trace.tags : []
+      const versionIdTag = tags.find((tag): tag is string => typeof tag === 'string' && tag.startsWith('versionId:'))
+      const versionId = versionIdTag?.slice('versionId:'.length)
+      if (!versionId) continue
+
+      const metadata = trace.metadata && typeof trace.metadata === 'object'
+        ? trace.metadata as Record<string, unknown>
+        : undefined
+      const versionNumRaw = metadata?.versionNum
+      const parsedVersionNum = Number.parseInt(String(versionNumRaw ?? ''), 10)
+      const versionNum = Number.isFinite(parsedVersionNum) ? parsedVersionNum : 0
+
+      const existing = tracesByVersion.get(versionId)
+      if (existing) {
+        existing.traceIds.add(traceId)
+        if (versionNum > existing.versionNum) {
+          existing.versionNum = versionNum
+        }
+      } else {
+        tracesByVersion.set(versionId, {
+          versionNum,
+          traceIds: new Set([traceId]),
+        })
+      }
+
+      traceVersionIdMap.set(traceId, versionId)
+    }
+
+    if (traces.data.length < LANGFUSE_MAX_LIMIT) break
+    tracePage++
+  }
+
+  if (traceVersionIdMap.size === 0) {
+    return []
+  }
+
+  const credentials = Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString('base64')
+  const headers = { Authorization: `Basic ${credentials}` }
+
+  const scoresByVersion = new Map<string, Map<string, number[]>>()
+  let scorePage = 1
+
+  while (true) {
+    const params = new URLSearchParams()
+    params.set('limit', String(LANGFUSE_MAX_LIMIT))
+    params.set('page', String(scorePage))
+    if (fromTimestamp) {
+      params.set('fromTimestamp', new Date(fromTimestamp).toISOString())
+    }
+
+    const res = await fetch(`${LANGFUSE_BASE}/api/public/v2/scores?${params.toString()}`, {
+      headers,
+    })
+
+    if (!res.ok) {
+      throw new Error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
+    }
+
+    const json = await res.json() as {
+      data: Array<{ traceId?: string; name?: string; value?: number }>
+    }
+
+    for (const score of json.data) {
+      const traceId = score.traceId
+      const name = score.name
+      const value = score.value
+      if (!traceId || !name || typeof value !== 'number') continue
+
+      const versionId = traceVersionIdMap.get(traceId)
+      if (!versionId) continue
+
+      let dimensions = scoresByVersion.get(versionId)
+      if (!dimensions) {
+        dimensions = new Map<string, number[]>()
+        scoresByVersion.set(versionId, dimensions)
+      }
+
+      const values = dimensions.get(name) ?? []
+      values.push(value)
+      dimensions.set(name, values)
+    }
+
+    if (json.data.length < LANGFUSE_MAX_LIMIT) break
+    scorePage++
+  }
+
+  const output: PromptVersionScoreData[] = []
+
+  for (const [versionId, traceData] of tracesByVersion.entries()) {
+    const dimensionsMap = scoresByVersion.get(versionId) ?? new Map<string, number[]>()
+    const dimensions = Array.from(dimensionsMap.entries())
+      .map(([name, values]) => {
+        const count = values.length
+        const sum = values.reduce((acc, v) => acc + v, 0)
+        const avg = count > 0 ? sum / count : 0
+        const min = count > 0 ? Math.min(...values) : 0
+        const max = count > 0 ? Math.max(...values) : 0
+
+        return { name, avg, count, min, max }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    let totalWeight = 0
+    for (const dim of dimensions) {
+      if (PROMPT_SCORE_CONFIGS[dim.name]) {
+        totalWeight += PROMPT_SCORE_CONFIGS[dim.name].weight
+      }
+    }
+
+    let compositeScore = 0
+    if (totalWeight > 0) {
+      for (const dim of dimensions) {
+        const config = PROMPT_SCORE_CONFIGS[dim.name]
+        if (!config) continue
+        const normalized = normalizePromptScore(dim.avg, config)
+        compositeScore += (normalized * config.weight) / totalWeight
+      }
+    }
+
+    const totalSamples = dimensions.reduce((acc, dim) => acc + dim.count, 0)
+
+    output.push({
+      versionNum: traceData.versionNum,
+      versionId,
+      dimensions,
+      compositeScore,
+      totalSamples,
+    })
+  }
+
+  return output.sort((a, b) => b.versionNum - a.versionNum)
+}
+
 export async function fetchScoreMetrics({
   webletId,
   fromTimestamp,

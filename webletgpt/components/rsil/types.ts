@@ -109,3 +109,19 @@ export interface TestResult {
   pValue: number
   isSignificant: boolean
 }
+
+export interface PromptVersionDimensionScore {
+  name: string
+  avg: number
+  count: number
+  min: number
+  max: number
+}
+
+export interface PromptVersionScore {
+  versionNum: number
+  versionId: string
+  dimensions: PromptVersionDimensionScore[]
+  compositeScore: number
+  totalSamples: number
+}
