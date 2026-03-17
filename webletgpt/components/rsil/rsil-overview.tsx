@@ -22,6 +22,7 @@ interface RSILOverviewProps {
   latestVersion: LatestVersionInfo | null
   totalVersions: number
   hasActiveTest: boolean
+  interactionCount: number
   loading: boolean
 }
 
@@ -57,6 +58,7 @@ export function RSILOverview({
   latestVersion,
   totalVersions,
   hasActiveTest,
+  interactionCount,
   loading,
 }: RSILOverviewProps) {
   if (loading) {
@@ -95,11 +97,11 @@ export function RSILOverview({
               : "text-muted-foreground",
     },
     {
-      title: "Sample Size",
+      title: "Interactions",
       icon: BarChart3,
-      value: sampleSize.toLocaleString(),
-      suffix: "interactions",
-      detail: sampleSize === 0 ? "Collecting data..." : "Scored interactions",
+      value: interactionCount.toLocaleString(),
+      suffix: sampleSize > 0 ? `(${sampleSize} rated)` : "",
+      detail: interactionCount === 0 ? "No chats yet" : sampleSize === 0 ? "No ratings yet — users can rate with 👍/👎" : "Chat sessions with this weblet",
       accent: "text-foreground",
     },
     {

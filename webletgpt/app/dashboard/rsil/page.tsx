@@ -424,6 +424,7 @@ export default function RSILDashboardPage() {
             latestVersion={selectedWeblet?.latestVersion ?? null}
             totalVersions={totalVersions}
             hasActiveTest={hasActiveTest}
+            interactionCount={selectedWeblet?.interactionCount ?? 0}
             loading={scoresLoading}
           />
 

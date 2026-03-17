@@ -54,6 +54,12 @@ export async function fetchTraces({
   })
 }
 
+const LANGFUSE_MAX_LIMIT = 100
+
+/**
+ * Fetch scores from Langfuse, automatically paginating when the requested
+ * limit exceeds the API maximum of 100 per page.
+ */
 export async function fetchScores({
   webletId,
   fromTimestamp,
@@ -63,23 +69,40 @@ export async function fetchScores({
   fromTimestamp?: string
   limit?: number
 }) {
-  const params = new URLSearchParams()
-  params.set("limit", String(limit))
-  params.set("traceTags", `webletId:${webletId}`)
-  if (fromTimestamp) {
-    params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
-  }
-
   const credentials = Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString("base64")
-  const res = await fetch(`${LANGFUSE_BASE}/api/public/scores?${params.toString()}`, {
-    headers: { Authorization: `Basic ${credentials}` },
-  })
+  const allData: Array<{ traceId: string; name: string; value: number; id: string }> = []
+  let page = 1
+  let remaining = limit
 
-  if (!res.ok) {
-    throw new Error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
+  while (remaining > 0) {
+    const pageLimit = Math.min(remaining, LANGFUSE_MAX_LIMIT)
+    const params = new URLSearchParams()
+    params.set("limit", String(pageLimit))
+    params.set("page", String(page))
+    params.set("traceTags", `webletId:${webletId}`)
+    if (fromTimestamp) {
+      params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
+    }
+
+    const res = await fetch(`${LANGFUSE_BASE}/api/public/scores?${params.toString()}`, {
+      headers: { Authorization: `Basic ${credentials}` },
+    })
+
+    if (!res.ok) {
+      throw new Error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
+    }
+
+    const json = await res.json() as { data: Array<{ traceId: string; name: string; value: number; id: string }>; meta: unknown }
+    allData.push(...json.data)
+
+    // Stop if this page returned fewer results than requested (no more pages)
+    if (json.data.length < pageLimit) break
+
+    remaining -= json.data.length
+    page++
   }
 
-  return res.json() as Promise<{ data: Array<{ traceId: string; name: string; value: number; id: string }>; meta: unknown }>
+  return { data: allData, meta: {} }
 }
 
 export async function shutdownLangfuse() {

@@ -68,6 +68,7 @@ export interface WebletOverview {
   latestVersion: LatestVersionInfo | null
   activeTest: ActiveTestInfo | null
   totalVersions: number
+  interactionCount: number
 }
 
 export interface TestResult {

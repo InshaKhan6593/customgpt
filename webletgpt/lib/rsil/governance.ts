@@ -73,5 +73,13 @@ export async function checkGovernance(webletId: string): Promise<{ allowed: bool
     return { allowed: false, reason: `Max ${governance.maxUpdatesPerDay} updates per day reached` }
   }
 
+  const interactionCount = await prisma.chatMessage.count({
+    where: { chatSession: { webletId } },
+  })
+
+  if (interactionCount < governance.minInteractionsBeforeOptimize) {
+    return { allowed: false, reason: `Not enough interactions yet (${interactionCount}/${governance.minInteractionsBeforeOptimize})` }
+  }
+
   return { allowed: true, reason: 'OK' }
 }

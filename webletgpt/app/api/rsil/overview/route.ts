@@ -25,9 +25,13 @@ export async function GET() {
       orderBy: { updatedAt: "desc" },
     })
 
-    const items = weblets.map(weblet => {
+    const items = await Promise.all(weblets.map(async (weblet) => {
       const latestVersion = weblet.versions[0] ?? null
       const activeTest = weblet.versions.find(version => version.status === "TESTING" && version.isAbTest)
+
+      const interactionCount = await prisma.chatMessage.count({
+        where: { chatSession: { webletId: weblet.id } },
+      })
 
       return {
         id: weblet.id,
@@ -53,8 +57,9 @@ export async function GET() {
             }
           : null,
         totalVersions: weblet._count.versions,
+        interactionCount,
       }
-    })
+    }))
 
     return NextResponse.json({ weblets: items })
   } catch (error) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { pushScore } from "@/lib/langfuse/client"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
 
@@ -34,6 +35,27 @@ export async function POST(req: NextRequest) {
         }
       }
     })
+
+    if (sessionId) {
+      try {
+        const chatSession = await prisma.chatSession.findUnique({
+          where: { id: sessionId },
+          select: { langfuseTraceId: true },
+        })
+
+        if (chatSession?.langfuseTraceId) {
+          await pushScore({
+            traceId: chatSession.langfuseTraceId,
+            name: 'user-rating',
+            value: rating === 'UP' ? 5 : 1,
+            comment: feedbackText || undefined,
+            dataType: 'NUMERIC',
+          })
+        }
+      } catch (langfuseError) {
+        console.error('Failed to push score to Langfuse:', langfuseError)
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

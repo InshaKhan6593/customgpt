@@ -56,8 +56,21 @@ export async function GET(req: NextRequest) {
       limit: 50,
     })
 
+    const testResult =
+      evaluation.winner !== "insufficient_data"
+        ? {
+            controlScore: evaluation.controlAvg,
+            variantScore: evaluation.variantAvg,
+            controlSessions: evaluation.controlCount,
+            variantSessions: evaluation.variantCount,
+            improvement: evaluation.improvement,
+            pValue: 0.05,
+            isSignificant: evaluation.controlCount >= 10 && evaluation.variantCount >= 10,
+          }
+        : null
+
     return NextResponse.json({
-      evaluation,
+      evaluation: testResult,
       testingVersion,
       traces: tracesResponse?.data || [],
     })

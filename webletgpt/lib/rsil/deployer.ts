@@ -6,6 +6,7 @@
 import { prisma } from '@/lib/prisma'
 import { fetchScores } from '@/lib/langfuse/client'
 import { isInTestGroup } from './ab-test'
+import { getGovernance } from './governance'
 
 interface TestResult {
   winner: 'control' | 'variant' | 'insufficient_data'
@@ -25,7 +26,12 @@ export async function evaluateAbTest(webletId: string): Promise<TestResult> {
     return { winner: 'insufficient_data', controlAvg: 0, variantAvg: 0, controlCount: 0, variantCount: 0, improvement: 0 }
   }
 
-  const minDurationMs = 48 * 60 * 60 * 1000
+  const weblet = await prisma.weblet.findUnique({
+    where: { id: webletId },
+    select: { rsilGovernance: true },
+  })
+  const governance = getGovernance(weblet?.rsilGovernance)
+  const minDurationMs = governance.minTestDurationHours * 60 * 60 * 1000
   const testAge = Date.now() - (testingVersion.abTestStartedAt?.getTime() || 0)
 
   if (testAge < minDurationMs) {
@@ -85,6 +91,26 @@ export async function deployWinner(webletId: string): Promise<{ deployed: boolea
 
   if (result.winner === 'insufficient_data') {
     return { deployed: false, action: 'waiting_for_data' }
+  }
+
+  const webletForFloor = await prisma.weblet.findUnique({
+    where: { id: webletId },
+    select: { rsilGovernance: true },
+  })
+  const gov = getGovernance(webletForFloor?.rsilGovernance)
+
+  if (result.winner === 'variant' && result.variantAvg < gov.performanceFloor) {
+    const testingVersionForFloor = await prisma.webletVersion.findFirst({
+      where: { webletId, status: 'TESTING', isAbTest: true },
+    })
+
+    if (!testingVersionForFloor) return { deployed: false, action: 'no_test_running' }
+
+    await prisma.webletVersion.update({
+      where: { id: testingVersionForFloor.id },
+      data: { status: 'ARCHIVED', isAbTest: false, abTestEndedAt: new Date(), abTestWinner: false },
+    })
+    return { deployed: false, action: `variant_below_floor (${result.variantAvg.toFixed(2)} < ${gov.performanceFloor})` }
   }
 
   const testingVersion = await prisma.webletVersion.findFirst({
