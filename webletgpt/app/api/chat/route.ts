@@ -32,7 +32,7 @@ print("hello")
 - Be direct and helpful — answer the user's question first, then provide additional context if needed.
 - If you use any tools to look up information, present the findings naturally without exposing raw tool output.
 - When you are uncertain about something, say so clearly rather than guessing.
-- When codeInterpreter creates files or charts, they are **automatically rendered in the UI** as download cards and inline images. Do NOT list, re-link, or enumerate created files/charts in your text. Describe what you built and how to use it instead.`
+- When codeInterpreter creates files or charts, call **presentToUser** for each artifact to show them to the user. Do NOT embed artifact URLs in your markdown text — presentToUser handles rendering. Describe what you built and how to use it instead.`
 
 const chatSchema = z.object({
   messages: z.array(z.object({
@@ -190,7 +190,9 @@ export async function POST(req: NextRequest) {
 You have specialist sub-agents available as tools (look for weblet_* tools). For each request:
 1. Identify which specialist has the right capability — their tool descriptions list what they can do.
 2. Delegate entirely — do not do the work yourself if a specialist covers it.
-3. Synthesize the specialist's response into your reply. Artifacts are already in the UI — acknowledge but do not re-link.`
+3. When a specialist returns artifacts in "Generated Artifacts", call **presentToUser** for each artifact you want the user to see. Pass the url, type, title, and a caption explaining what it is.
+4. If you don't call presentToUser, the user will NOT see the artifact — it will be hidden.
+5. Synthesize the specialist's text response into your reply.`
     }
 
     const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct"
@@ -544,36 +546,35 @@ function buildCapabilityPrompt(
       }
     }
   }
-  // requestUserInput is always available — add unconditionally
   caps.push(
-    '- **Request User Input (requestUserInput)**: When you need the user to make a decision, choose between options, ' +
-    'or provide specific information before you can proceed, call this tool instead of asking in plain text. ' +
-    'It renders a structured card with optional predefined choices. Use it for: confirming destructive actions, ' +
-    'choosing between approaches, selecting from a list, or any situation where a clear structured response is better than free-form text. ' +
-    'Do NOT use it for simple conversational follow-ups — only when you genuinely need specific input to continue.'
+    '- **Present to User (presentToUser)**: Show an artifact (image, file, chart) to the user in the chat. ' +
+    'Call this tool AFTER generating an image (imageGeneration) or creating files (codeInterpreter) to make them visible. ' +
+    'Also call this to relay artifacts from sub-agents. Without calling this tool, artifacts are NOT shown to the user. ' +
+    'Pass the artifact URL, type, and an optional title/caption. Call once per artifact.'
   )
+
 
   if (caps.length === 0) return ''
   return '\n\n## Your Tools\nYou have the following capabilities — use them proactively when the task calls for it:\n' + caps.join('\n')
 }
 
-/** Shared helper: build clean text from a raw child weblet result object. */
 function buildChildSummary(raw: any): string {
   let text = raw.response || ""
   const artifacts: string[] = []
   for (const tc of raw._childExecution?.toolCalls || []) {
     const r = tc?.result
     if (!r || typeof r !== "object") continue
-    if (r.url) artifacts.push(`Generated image (already shown in UI)`)
+    if (r.url) artifacts.push(`Image: ${r.url}`)
     for (const img of r.data?.images || []) {
-      if (img.url) artifacts.push(`Generated chart (already shown in UI)`)
+      if (img.url) artifacts.push(`Chart: ${img.url}`)
     }
     for (const f of r.data?.files || []) {
-      if (f.url && f.name) artifacts.push(`Generated file: "${f.name}" (shown as download card in UI)`)
+      if (f.url && f.name) artifacts.push(`File "${f.name}": ${f.url}`)
     }
   }
   if (artifacts.length > 0) {
-    text += "\n\n[Artifacts from sub-agent — already rendered in the UI]\n" + artifacts.join("\n")
+    text += "\n\nArtifacts from sub-agent:\n" + artifacts.join("\n")
   }
   return text
 }
+
