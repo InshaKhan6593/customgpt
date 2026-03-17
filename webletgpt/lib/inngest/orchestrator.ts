@@ -2,16 +2,14 @@ import { inngest } from "./client";
 import { prisma } from "@/lib/prisma";
 import { publishProgress, type OrchestratorPublish } from "../orchestrator/realtime";
 import { buildRolePrompt } from "../orchestrator/roles";
-import { buildAgentMessage } from "../orchestrator/step-output-schema";
-import { Sandbox } from "@e2b/code-interpreter";
-import { extractArtifacts, generateHandoff, type NodeHandoff, type ArtifactRef } from "@/lib/orchestrator/artifact-extractor";
+import { AgentOutputSchema, buildAgentMessage } from "../orchestrator/step-output-schema";
 import { getActiveVersion } from "@/lib/chat/engine";
 import { getLanguageModel } from "@/lib/ai/openrouter";
 import { getToolsFromCapabilities } from "@/lib/tools/registry";
 import { getToolsFromOpenAPI } from "@/lib/tools/openapi";
 import { getMCPTools, closeMCPClients } from "@/lib/mcp/client";
 import { createChildWebletTools } from "@/lib/composition/child-tool-factory";
-import { generateText, streamText, stepCountIs } from "ai";
+import { generateText, streamText, stepCountIs, Output } from "ai";
 import { stopWhenAny, toolLoopDetected, noProgressDetected } from "@/lib/ai/stop-conditions";
 import { langfuseSpanProcessor } from "@/instrumentation";
 import { checkQuotas } from "@/lib/billing/quota-check";
@@ -21,84 +19,6 @@ import { autoCompactMessages } from "@/lib/utils/truncate";
 
 const MAX_HITL_REVISIONS = 3;
 const FLOW_ITERATION_LIMIT = 50; // Safety cap — prevents infinite loops on malformed DAGs
-
-function buildOrchestratorToolGuidance(
-  capabilities: any,
-  toolNames: string[],
-  mcpServers?: Array<{ label: string; description?: string | null }>,
-  compositions?: Array<{ childWebletName: string; childWebletId: string; capabilities?: any }>
-): string {
-  if (!toolNames || toolNames.length === 0) return "";
-
-  const sections: string[] = [];
-
-  if (capabilities?.codeInterpreter) {
-    sections.push(
-      "- **Code Interpreter (codeInterpreter)**: Execute Python code and produce real outputs. ALWAYS use this when asked to create files, build apps, analyze data, make charts. DO NOT paste code in text — run it. Files at /home/user/ appear as artifacts."
-    );
-  }
-  if (capabilities?.webSearch) {
-    sections.push(
-      "- **Web Search (webSearch)**: Search the web for live information. Use for current events, fact-checking, finding URLs."
-    );
-  }
-  if (capabilities?.imageGen) {
-    sections.push(
-      "- **Image Generation (imageGeneration)**: Generate images from text descriptions."
-    );
-  }
-  if (capabilities?.fileSearch) {
-    sections.push(
-      "- **File Search (fileSearch)**: Search uploaded knowledge base documents."
-    );
-  }
-
-  const childWebletTools = toolNames.filter((name) => name.startsWith("weblet_"));
-  if (childWebletTools.length > 0) {
-    const composedNames = (compositions || [])
-      .map((c) => c.childWebletName)
-      .filter((name): name is string => !!name && name.trim().length > 0);
-    const specialistHint = composedNames.length > 0
-      ? ` Specialists: ${composedNames.join(", ")}.`
-      : "";
-    sections.push(
-      `- **Specialist Sub-Agents**: You have child weblets available as tools. DELEGATE tasks to them — they have their own capabilities and expertise.${specialistHint} Tools: ${childWebletTools.map((name) => `\`${name}\``).join(", ")}.`
-    );
-  }
-
-  const mcpTools = toolNames.filter((name) => name.startsWith("mcp_"));
-  const usedMcpTools = new Set<string>();
-  if (mcpTools.length > 0 && mcpServers && mcpServers.length > 0) {
-    for (const server of mcpServers) {
-      const normalized = server.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-      if (!normalized) continue;
-      const serverTools = mcpTools.filter((name) => name.startsWith(`mcp_${normalized}_`));
-      if (serverTools.length === 0) continue;
-      serverTools.forEach((name) => usedMcpTools.add(name));
-      sections.push(
-        `- **${server.label}** (External Service): ${server.description || "No description provided."} Tools: ${serverTools.map((name) => `\`${name}\``).join(", ")}.`
-      );
-    }
-  }
-  const uncategorizedMcpTools = mcpTools.filter((name) => !usedMcpTools.has(name));
-  if (uncategorizedMcpTools.length > 0) {
-    sections.push(
-      `- **External Service Tools (MCP)**: ${uncategorizedMcpTools.map((name) => `\`${name}\``).join(", ")}.`
-    );
-  }
-
-  const knownCapabilityTools = new Set(["codeInterpreter", "webSearch", "imageGeneration", "fileSearch"]);
-  const customApiTools = toolNames.filter(
-    (name) => !name.startsWith("weblet_") && !name.startsWith("mcp_") && !knownCapabilityTools.has(name)
-  );
-  if (customApiTools.length > 0) {
-    sections.push(
-      `- **Custom API Tools**: ${customApiTools.map((name) => `\`${name}\``).join(", ")}. Use these when the task requires external API interaction.`
-    );
-  }
-
-  return `\n\n## Your Tools\n${sections.join("\n")}\n\nCRITICAL: You MUST use your tools to accomplish tasks. Do NOT respond with plain text when a tool can handle the work. If you have a code interpreter, USE IT to run code. If you have sub-agent tools, DELEGATE to them. Plain-text-only responses are a failure mode.\n\nAfter receiving tool results, synthesize them into clear, natural language. Never echo raw JSON or code output. Do not call any single tool more than 3 times for the same task.`;
-}
 
 /**
  * Validate DAG before execution.
@@ -185,8 +105,6 @@ interface StepExecutionResult {
   modelId: string;
   toolCalls: Record<string, number>;
   toolCallDetails: ToolCallDetail[];
-  handoff?: NodeHandoff;
-  artifacts?: ArtifactRef[];
   developerId: string;
 }
 
@@ -351,20 +269,13 @@ Your job:
 3. Synthesize all results into a final, cohesive response
 4. NEVER echo raw tool output — always integrate and present information naturally`;
 
-        const masterToolGuidance = buildOrchestratorToolGuidance(
-          masterInfo.capabilities,
-          Object.keys(masterTools),
-          masterInfo.mcpServers,
-          masterInfo.parentCompositions
-        );
-
         let tokensIn = 0, tokensOut = 0;
         const toolCallsMap: Record<string, number> = {};
         const toolCallDetails: ToolCallDetail[] = [];
 
         const stream = streamText({
           model: masterModel,
-          system: masterSystem + masterToolGuidance,
+          system: masterSystem,
           messages: [{ role: "user", content: initialInput }],
           tools: masterTools,
           stopWhen: stopWhenAny(stepCountIs(10), toolLoopDetected(3), noProgressDetected(5)),
@@ -440,41 +351,26 @@ Your job:
     const completedNodeIds = new Set<string>();
     let finalOutput = "";
 
-    const anyNodeHasCodeInterpreter = webletNodes.some(n => {
-      const caps = webletInfoMap[n.data.webletId]?.capabilities as any;
-      return caps?.codeInterpreter;
-    });
-    let flowSandbox: any = null;
-    try {
-      if (anyNodeHasCodeInterpreter && process.env.E2B_API_KEY) {
-        flowSandbox = await Sandbox.create({ timeoutMs: 10 * 60 * 1000 });
-        await flowSandbox.commands.run("mkdir -p /home/user/shared /home/user/nodes");
-      }
-    } catch (err) {
-      console.warn("[Orchestrator] Failed to create shared sandbox:", err);
-    }
-
-    try {
-      let currentFrontier = webletNodes.filter(n => {
-        const incomingEdges = edges.filter(e => e.target === n.id);
-        return incomingEdges.every(e => {
-          const sourceNode = nodes.find(sn => sn.id === e.source);
-          return sourceNode?.type === "prompt";
-        });
+    let currentFrontier = webletNodes.filter(n => {
+      const incomingEdges = edges.filter(e => e.target === n.id);
+      return incomingEdges.every(e => {
+        const sourceNode = nodes.find(sn => sn.id === e.source);
+        return sourceNode?.type === "prompt";
       });
+    });
 
-      let iteration = 0;
+    let iteration = 0;
 
-      while (currentFrontier.length > 0) {
-        iteration++;
+    while (currentFrontier.length > 0) {
+      iteration++;
 
       if (iteration > FLOW_ITERATION_LIMIT) {
         await publishProgress(pub, sessionId, "failed", { message: `Flow exceeded ${FLOW_ITERATION_LIMIT} iteration limit — possible infinite loop.` });
         return { status: "failed", reason: "Iteration limit exceeded" };
       }
 
-        const frontierResults = await Promise.all(
-          currentFrontier.map(async (node) => {
+      const frontierResults = await Promise.all(
+        currentFrontier.map(async (node) => {
           const nodeId = node.id;
           const webletId = node.data.webletId;
           const webletInfo = webletInfoMap[webletId];
@@ -533,26 +429,18 @@ Your job:
                 .map(e => {
                   const sourceNode = nodes.find(sn => sn.id === e.source);
                   if (sourceNode && sourceNode.type === "weblet" && nodeOutputs[e.source]) {
-                    const prev = nodeOutputs[e.source];
-                    if (prev.handoff) {
-                      return prev.handoff;
-                    }
-                    let output = prev.text;
+                    let output = nodeOutputs[e.source].text;
                     if (output.length > MAX_PREV_OUTPUT_CHARS) {
                       output = output.substring(0, MAX_PREV_OUTPUT_CHARS) + "\n\n...[Output truncated]...";
                     }
                     return {
                       agentName: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
-                      role: sourceNode.data.role || webletInfoMap[sourceNode.data.webletId]?.name || "Previous Agent",
-                      outcomeSummary: output,
-                      reasoningSummary: "",
-                      artifacts: prev.artifacts || [],
-                      workspaceHint: "",
-                    } as NodeHandoff;
+                      output,
+                    };
                   }
                   return null;
                 })
-                .filter(Boolean) as NodeHandoff[];
+                .filter(Boolean) as { agentName: string; output: string }[];
 
               let systemPrompt = activeVersion.prompt;
               if (node.data.role) {
@@ -563,16 +451,7 @@ Your job:
                 );
               }
 
-              if (flowSandbox) {
-                try {
-                  await flowSandbox.commands.run(`mkdir -p /home/user/nodes/${nodeId}`);
-                  await flowSandbox.setTimeout(5 * 60 * 1000);
-                } catch (err) {
-                  console.warn(`[Orchestrator] Failed to setup node workspace:`, err);
-                }
-              }
-
-              let tools = getToolsFromCapabilities(webletInfo.capabilities, webletInfo.id, flowSandbox ?? undefined);
+              let tools = getToolsFromCapabilities(webletInfo.capabilities, webletInfo.id);
               if (activeVersion.openapiSchema) {
                 const customTools = getToolsFromOpenAPI(
                   typeof activeVersion.openapiSchema === "string"
@@ -600,20 +479,14 @@ Your job:
               const agentMessage = buildAgentMessage({
                 userTask: initialInput,
                 stepInstructions: node.data.stepPrompt?.trim() || undefined,
-                previousHandoffs: previousOutputs,
+                previousOutputs,
                 reviewerFeedback,
               });
 
               const toolNames = Object.keys(tools);
               const hasTools = toolNames.length > 0;
-              const toolGuidance = buildOrchestratorToolGuidance(
-                webletInfo.capabilities,
-                toolNames,
-                webletInfo.mcpServers,
-                webletInfo.parentCompositions
-              );
-              if (toolGuidance) {
-                systemPrompt += toolGuidance;
+              if (hasTools) {
+                systemPrompt += `\n\nYou have access to the following tools: ${toolNames.join(", ")}. Use these tools if necessary to gather information. Do not call any single tool more than 3 times for the same task.\n\nIMPORTANT: After receiving tool results, synthesize the information into a clear, natural language response. NEVER echo raw tool output (JSON arrays, objects, code) directly into your answer. Always present the information in a readable, human-friendly format.`;
               }
 
               const modelId = activeVersion.model || "meta-llama/llama-3.3-70b-instruct";
@@ -647,7 +520,7 @@ Your job:
                         const tc = toolCalls[t] as any;
                         toolCallsMap[tc.toolName] = (toolCallsMap[tc.toolName] || 0) + 1;
                         const tr = (toolResults as any[])?.find(r => r.toolCallId === tc.toolCallId);
-                        const result = tr?.result ?? null;
+                        const result = tr ? tr.result : null;
                         toolCallDetails.push({ toolName: tc.toolName, args: tc.args || tc.input || {}, result });
                         await publishProgress(pub, sessionId, "tool_call", {
                           stepNumber: iteration, toolName: tc.toolName,
@@ -707,10 +580,9 @@ Your job:
                       system: "You are a helpful assistant. Summarize the following tool call results into a clear, concise, and useful response for the user.",
                       messages: [{
                         role: "user",
-                        content: toolCallDetails.map(tc => {
-                          const res = tc.result ?? "[No result returned]";
-                          return `Tool: ${tc.toolName}\nResult: ${typeof res === "string" ? res : JSON.stringify(res, null, 2)}`;
-                        }).join("\n\n"),
+                        content: toolCallDetails.map(tc =>
+                          `Tool: ${tc.toolName}\nResult: ${typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2)}`
+                        ).join("\n\n"),
                       }],
                     });
                     outputText = synthesis.text || "[Tool executed successfully — no summary generated]";
@@ -727,21 +599,26 @@ Your job:
                 // from a tool result (e.g. `["some result"]` at start of response).
                 outputText = stripLeadingJsonArtifact(outputText) || "[No output generated]";
                 let outputStatus: "complete" | "needs_review" | "blocked" = "complete";
-                let handoff: NodeHandoff | undefined;
 
+                // For intermediate nodes, extract clean structured content for the next agent
                 const hasDownstreamNodes = edges.some(e => e.source === nodeId);
-                handoff = await generateHandoff({
-                  agentName: node.data.role || webletInfo.name,
-                  role: node.data.role || webletInfo.name,
-                  nodeId,
-                  rawOutput: outputText,
-                  toolCallDetails,
-                  hasDownstream: hasDownstreamNodes,
-                });
-
-                if (hasDownstreamNodes && handoff.outcomeSummary) {
-                  outputText = handoff.outcomeSummary;
-                  outputStatus = "complete";
+                if (hasDownstreamNodes && outputText.length > 200) {
+                  try {
+                    const extractionModel = getLanguageModel("openai/gpt-4o-mini");
+                    const extraction = await generateText({
+                      model: extractionModel,
+                      output: Output.object({ schema: AgentOutputSchema }),
+                      system: "Extract the agent's actual work product from the raw output below. Strip any preamble, reasoning, or meta-commentary. Return only the substantive content the next agent needs.",
+                      messages: [{ role: "user", content: outputText }],
+                    });
+                    const structured = (extraction as any).output;
+                    if (structured?.content) {
+                      outputText = structured.content;
+                      outputStatus = structured.status || "complete";
+                    }
+                  } catch (extractErr: any) {
+                    console.warn(`[Orchestrator] Structured extraction skipped:`, extractErr?.message?.substring(0, 100));
+                  }
                 }
 
                 stepResult = {
@@ -752,8 +629,6 @@ Your job:
                   modelId,
                   toolCalls: toolCallsMap,
                   toolCallDetails,
-                  handoff,
-                  artifacts: handoff?.artifacts ?? extractArtifacts(toolCallDetails),
                   developerId: webletInfo.developerId,
                 };
               } catch (llmError: any) {
@@ -783,13 +658,11 @@ Your job:
 
               await publishProgress(pub, sessionId, "node_completed", {
                 nodeId, output: stepResult.text, status: stepResult.status,
-                artifacts: stepResult.handoff?.artifacts,
               });
               await publishProgress(pub, sessionId, "step_completed", {
                 stepNumber: iteration, revision, nodeId,
                 webletName: webletInfo.name, output: stepResult.text,
                 status: stepResult.status,
-                artifacts: stepResult.handoff?.artifacts,
                 toolCallDetails: stepResult.toolCallDetails.length > 0 ? stepResult.toolCallDetails : undefined,
               });
 
@@ -845,41 +718,36 @@ Your job:
           }
 
           return { nodeId, status: "success", result: stepExecutionResult };
-          })
-        );
+        })
+      );
 
-        const failed = frontierResults.find(r => r.status === "failed" || r.status === "terminated");
-        if (failed) {
-          return { status: "failed", reason: failed.reason };
+      const failed = frontierResults.find(r => r.status === "failed" || r.status === "terminated");
+      if (failed) {
+        return { status: "failed", reason: failed.reason };
+      }
+
+      for (const res of frontierResults) {
+        if (res.result) {
+          nodeOutputs[res.nodeId] = res.result;
+          finalOutput = res.result.text;
         }
+        completedNodeIds.add(res.nodeId);
+      }
 
-        for (const res of frontierResults) {
-          if (res.result) {
-            nodeOutputs[res.nodeId] = res.result;
-            finalOutput = res.result.text;
-          }
-          completedNodeIds.add(res.nodeId);
-        }
-
-        currentFrontier = webletNodes.filter(n => {
-          if (completedNodeIds.has(n.id)) return false;
-          const incomingEdges = edges.filter(e => e.target === n.id);
-          return incomingEdges.every(e => {
-            const sourceNode = nodes.find(sn => sn.id === e.source);
-            return sourceNode?.type === "prompt" || completedNodeIds.has(e.source);
-          });
+      currentFrontier = webletNodes.filter(n => {
+        if (completedNodeIds.has(n.id)) return false;
+        const incomingEdges = edges.filter(e => e.target === n.id);
+        return incomingEdges.every(e => {
+          const sourceNode = nodes.find(sn => sn.id === e.source);
+          return sourceNode?.type === "prompt" || completedNodeIds.has(e.source);
         });
-      }
-
-      await step.run("publish-completed", async () => {
-        await publishProgress(pub, sessionId, "completed", { finalOutput });
       });
-
-      return { status: "success", finalOutput };
-    } finally {
-      if (flowSandbox) {
-        flowSandbox.kill().catch(() => {});
-      }
     }
+
+    await step.run("publish-completed", async () => {
+      await publishProgress(pub, sessionId, "completed", { finalOutput });
+    });
+
+    return { status: "success", finalOutput };
   }
 );

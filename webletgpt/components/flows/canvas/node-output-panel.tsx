@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Copy, Bot, CheckCircle2, Download, FileIcon } from "lucide-react";
+import { X, Copy, Bot, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { useState } from "react";
@@ -108,65 +108,6 @@ export function NodeOutputPanel({
                         </div>
                     )}
                 </div>
-
-                {/* Artifacts */}
-                {executionState.toolCalls && (() => {
-                  // Extract images and files from tool call results
-                  const images: { url: string; name: string }[] = [];
-                  const files: { url: string; name: string }[] = [];
-                  
-                  for (const tc of executionState.toolCalls) {
-                    if (tc.toolName === "codeInterpreter" && tc.result?.data) {
-                      for (const img of (tc.result.data.images || [])) {
-                        images.push({ url: img.url, name: `Chart` });
-                      }
-                      for (const file of (tc.result.data.files || [])) {
-                        files.push({ url: file.url, name: file.name });
-                      }
-                    }
-                    if (tc.toolName === "imageGeneration" && tc.result?.url) {
-                      images.push({ url: tc.result.url, name: "Generated Image" });
-                    }
-                  }
-
-                  if (images.length === 0 && files.length === 0) return null;
-
-                  return (
-                    <div className="px-4 py-3 border-t space-y-3">
-                      <h4 className="text-xs font-medium text-muted-foreground">Artifacts</h4>
-                      {images.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {images.map((img, i) => (
-                            <a key={i} href={img.url} target="_blank" rel="noopener noreferrer">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={img.url}
-                                alt={img.name}
-                                className="rounded-lg border border-border/40 max-w-[200px] max-h-[150px] object-contain bg-muted/20 hover:border-primary/40 transition-colors cursor-pointer"
-                              />
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                      {files.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {files.map((file, i) => (
-                            <a
-                              key={i}
-                              href={file.url}
-                              download={file.name}
-                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border/60 bg-card text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                            >
-                              <FileIcon className="size-3.5 text-muted-foreground" />
-                              <span className="truncate max-w-[120px]">{file.name}</span>
-                              <Download className="size-3 text-muted-foreground" />
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
             </div>
         </div>
     );
