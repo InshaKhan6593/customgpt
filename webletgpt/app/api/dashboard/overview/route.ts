@@ -74,18 +74,54 @@ export async function GET() {
     const categoryBreakdown = Array.from(categoryMap.entries()).map(([name, value]) => ({ name, value }));
     const totalChats = analytics.length;
     
-    // Calculate average rating across all weblets accurately, falling back to 0
-    let averageRating = "0.0";
+    const webletIds = weblets.map(w => w.id)
+    const ratingEvents = await db.analyticsEvent.findMany({
+      where: {
+        webletId: { in: webletIds },
+        eventType: "user_rating",
+      },
+      select: {
+        webletId: true,
+        eventData: true,
+      },
+    })
 
-    const topWeblets = weblets.map(w => ({
-      id: w.id,
-      name: w.name,
-      category: w.category,
-      status: w.isPublic ? "Active" : "Draft",
-      rating: "0.0",
-      revenue: 0, // Mocked for table
-      chats: analytics.filter(a => a.webletId === w.id).length
-    })).sort((a, b) => b.chats - a.chats).slice(0, 5);
+    const webletRatings = new Map<string, { sum: number; count: number }>()
+    for (const event of ratingEvents) {
+      const data = event.eventData as Record<string, unknown> | null
+      const score = data?.score ?? data?.rating
+      const numScore = typeof score === "number" ? score : Number(score)
+      if (!isFinite(numScore)) continue
+
+      const existing = webletRatings.get(event.webletId) || { sum: 0, count: 0 }
+      existing.sum += numScore
+      existing.count += 1
+      webletRatings.set(event.webletId, existing)
+    }
+
+    let totalRatingSum = 0
+    let totalRatingCount = 0
+    for (const { sum, count } of webletRatings.values()) {
+      totalRatingSum += sum
+      totalRatingCount += count
+    }
+    const averageRating = totalRatingCount > 0
+      ? (totalRatingSum / totalRatingCount).toFixed(1)
+      : "0.0"
+
+    const topWeblets = weblets.map(w => {
+      const wr = webletRatings.get(w.id)
+      const rating = wr && wr.count > 0 ? (wr.sum / wr.count).toFixed(1) : "0.0"
+      return {
+        id: w.id,
+        name: w.name,
+        category: w.category,
+        status: w.isPublic ? "Active" : "Draft",
+        rating,
+        revenue: 0, // Mocked for table
+        chats: analytics.filter(a => a.webletId === w.id).length,
+      }
+    }).sort((a, b) => b.chats - a.chats).slice(0, 5);
 
     return NextResponse.json({
       overview: {
