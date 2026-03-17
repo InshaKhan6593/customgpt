@@ -76,10 +76,6 @@ export function createCodeInterpreterTool(persistentSandbox?: any) {
                 "Variables and imports from previous calls in this session are already in scope."
             ),
         }),
-        // Send a compact text summary to the LLM (not the raw data object).
-        // Prevents large tool results from bloating context and triggering provider 500s.
-        // IMPORTANT: Only include raw program output — do NOT re-mention file/image names
-        // here, otherwise the LLM will parrot them back as a numbered list of links.
         toModelOutput: ({ output: result }: { toolCallId: string; input: unknown; output: any }) => {
             if (typeof result === 'string') return { type: 'text' as const, value: result }
             const parts: string[] = []
@@ -94,9 +90,18 @@ export function createCodeInterpreterTool(persistentSandbox?: any) {
                 if (cleanStdout) parts.push(cleanStdout)
             }
             if (result?.error?.trim()) parts.push(`Error:\n${result.error.trim()}`)
-            const artifactCount = (result?.data?.images?.length || 0) + (result?.data?.files?.length || 0)
+            const images: any[] = result?.data?.images || []
+            const files: any[] = result?.data?.files || []
+            const artifactCount = images.length + files.length
             if (artifactCount > 0) {
-                parts.push(`[${artifactCount} artifact(s) rendered in UI — do NOT list file names, add download links, or enumerate what was created. The user already sees them as cards/images above your text.]`)
+                const artifactLines: string[] = []
+                for (const img of images) {
+                    if (img.url) artifactLines.push(`- Chart image: ${img.url}`)
+                }
+                for (const f of files) {
+                    if (f.url) artifactLines.push(`- File "${f.name}": ${f.url}`)
+                }
+                parts.push(`[${artifactCount} artifact(s) produced:\n${artifactLines.join('\n')}]`)
             }
             return { type: 'text' as const, value: parts.join('\n') || 'Code executed successfully.' }
         },

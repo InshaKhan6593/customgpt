@@ -2,7 +2,7 @@ import { webSearchTool } from "./web-search"
 import { createCodeInterpreterTool, codeInterpreterTool } from "./code-interpreter"
 import { imageGenerationTool } from "./image-generation"
 import { fileSearchTool } from "./file-search"
-import { requestUserInputTool } from "./request-user-input"
+import { presentToUserTool } from "./present-to-user"
 
 /**
  * Maps capability flags from a Weblet config into AI SDK tool definitions.
@@ -54,6 +54,6 @@ export function getToolsFromCapabilities(
  */
 export function getAlwaysAvailableTools() {
     return {
-        requestUserInput: requestUserInputTool,
+        presentToUser: presentToUserTool,
     }
 }

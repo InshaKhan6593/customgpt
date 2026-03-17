@@ -27,11 +27,12 @@ WHEN TO USE:
 
 HOW IT WORKS:
 - You must craft a highly detailed, descriptive prompt.
-- The tool will generate the image and it will be displayed automatically to the user.
-- IMPORTANT: Do NOT write markdown image syntax like ![](url). The image is rendered automatically from the tool result. Just acknowledge that the image was generated and add any relevant commentary about it.`,
+- The tool will generate the image and return a URL.
+- Do NOT write markdown image syntax like ![](url) — use presentToUser if available.`,
   toModelOutput: ({ output: result }: { toolCallId: string; input: unknown; output: any }) => {
     if (result?.error) return { type: 'text' as const, value: result.error }
-    return { type: 'text' as const, value: `Image generated successfully. The image is now displayed to the user.` }
+    const url = result?.url || ''
+    return { type: 'text' as const, value: `Image generated successfully at url: ${url}` }
   },
   inputSchema: z.object({
     prompt: z.string().describe("A highly detailed, descriptive prompt for the image generator. You MUST specify the style (e.g., photorealistic, watercolor, 3D render), lighting, composition, time period, and color scheme. Do not request text rendering inside the image. Be extremely specific."),
