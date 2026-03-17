@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { UPGRADE_MESSAGES } from "@/lib/billing/pricing";
 import { Zap } from "lucide-react";
 
 interface UpgradeModalProps {
@@ -19,31 +20,10 @@ interface UpgradeModalProps {
   reason?: "user_credits_exceeded" | "developer_credits_exhausted" | string;
 }
 
-const MESSAGES = {
-  user_credits_exceeded: {
-    title: "You've run out of credits",
-    description:
-      "You've used all your free credits this month. Upgrade to Plus for 1,000 credits/month at just $9.99/month.",
-    cta: "Upgrade to Plus →",
-  },
-  developer_credits_exhausted: {
-    title: "This weblet is temporarily unavailable",
-    description:
-      "The creator of this weblet has exceeded their monthly quota. Please try again later or try a different weblet.",
-    cta: null,
-  },
-  default: {
-    title: "Upgrade your plan",
-    description:
-      "You need more credits to continue. Upgrade your plan to keep chatting.",
-    cta: "View Plans →",
-  },
-};
-
 export function UpgradeModal({ open, onClose, reason = "default" }: UpgradeModalProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const msg = MESSAGES[reason as keyof typeof MESSAGES] ?? MESSAGES.default;
+  const msg = UPGRADE_MESSAGES[reason as keyof typeof UPGRADE_MESSAGES] ?? UPGRADE_MESSAGES.default;
 
   const handleUpgrade = async () => {
     setLoading(true);

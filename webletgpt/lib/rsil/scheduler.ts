@@ -43,6 +43,22 @@ export const rsilDailyOptimizer = inngest.createFunction(
             return { webletId: weblet.id, action: 'skipped: not scheduled for this hour' }
           }
 
+          const webletOwner = await prisma.weblet.findUnique({
+            where: { id: weblet.id },
+            select: { developerId: true },
+          })
+          const developerId = webletOwner?.developerId ?? ''
+
+          if (developerId) {
+            const devPlan = await prisma.developerPlan.findUnique({
+              where: { userId: developerId },
+            })
+            const creditsRemaining = (devPlan?.creditsIncluded ?? 0) - (devPlan?.creditsUsed ?? 0)
+            if (devPlan && devPlan.creditsIncluded !== -1 && creditsRemaining <= 0) {
+              return { webletId: weblet.id, action: 'skipped: developer credits exhausted' }
+            }
+          }
+
           const analysis = await analyzeWeblet(weblet.id, 24)
           if (analysis.decision === 'NONE') {
             return { webletId: weblet.id, action: `no_action: ${analysis.reason}` }
@@ -70,6 +86,7 @@ export const rsilDailyOptimizer = inngest.createFunction(
             weakDimensions: analysis.weakDimensions,
             webletName: weblet.name,
             webletDescription: weblet.description,
+            developerId,
           })
 
           await createAbTestVersion({

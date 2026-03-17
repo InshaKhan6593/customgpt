@@ -12,6 +12,7 @@ import { langfuseSpanProcessor } from "@/instrumentation"
 import { autoCompactMessages } from "@/lib/utils/truncate"
 import { prisma } from "@/lib/prisma"
 import { logUsage } from "@/lib/billing/usage-logger"
+import { checkQuotas } from "@/lib/billing/quota-check"
 
 // Token budget for child agent's context — triggers compaction when exceeded
 const CHILD_CONTEXT_BUDGET = 24_000
@@ -78,6 +79,13 @@ export async function executeChildWeblet(
             mcpServers: { where: { isActive: true } },
         },
     })
+
+    if (userId) {
+        const quotaCheck = await checkQuotas(userId, childWebletId)
+        if (!quotaCheck.allowed) {
+            throw new Error(`Child weblet execution blocked: ${quotaCheck.reason || 'insufficient credits'}`)
+        }
+    }
 
     // ── Persistent E2B sandbox ──────────────────────────────────────────────
     // Create ONE sandbox before generateText begins. All codeInterpreter calls

@@ -6,6 +6,8 @@
 import { generateText } from 'ai'
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { fetchTraces } from '@/lib/langfuse/client'
+import { logUsage } from '@/lib/billing/usage-logger'
+import { RSIL_CREDIT_COST } from '@/lib/billing/pricing'
 
 const DIMENSION_HINTS: Record<string, string> = {
   'user-rating':   'Users rated these conversations poorly — address overall response quality and satisfaction.',
@@ -23,6 +25,7 @@ export async function generateImprovedPrompt({
   weakDimensions = [],
   webletName,
   webletDescription,
+  developerId,
 }: {
   currentPrompt: string
   webletId: string
@@ -30,6 +33,7 @@ export async function generateImprovedPrompt({
   weakDimensions?: string[]
   webletName: string
   webletDescription?: string | null
+  developerId: string
 }): Promise<string> {
   const tracesData = await fetchTraces({ webletId, limit: 10 })
   const traces = tracesData?.data || []
@@ -51,7 +55,7 @@ export async function generateImprovedPrompt({
 
   const model = getLanguageModel('openai/gpt-4o')
 
-  const { text } = await generateText({
+  const { text, usage } = await generateText({
     model,
     system: `You are a ruthless AI performance critic and prompt engineer. Your job is to rewrite system prompts to fix specific weaknesses. Be direct, specific, and harsh. Make the prompt significantly better.`,
     prompt: `You are optimizing a weblet called "${webletName}" (${webletDescription || 'an AI assistant'}).
@@ -73,6 +77,21 @@ Rewrite the system prompt to fix these weaknesses. Rules:
 
 Return ONLY the new system prompt text, no explanation.`,
   })
+
+  try {
+    await logUsage({
+      userId: developerId,
+      webletId,
+      developerId,
+      tokensIn: usage?.inputTokens ?? 0,
+      tokensOut: usage?.outputTokens ?? 0,
+      modelId: 'openai/gpt-4o',
+      toolCalls: { base: RSIL_CREDIT_COST },
+      source: 'RSIL',
+    })
+  } catch (err) {
+    console.error('[RSIL] Failed to log usage:', err)
+  }
 
   return text.trim()
 }

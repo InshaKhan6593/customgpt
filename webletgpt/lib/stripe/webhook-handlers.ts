@@ -1,19 +1,9 @@
 import Stripe from "stripe"
+import { CREDITS_BY_TIER, getWorkflowRunsForTier, OVERAGE_DEFAULTS } from "@/lib/billing/pricing"
 import { prisma } from "@/lib/prisma"
 import { stripe } from "@/lib/stripe/client"
 import { SubStatus, TxType, TxStatus } from "@prisma/client"
 import { PLATFORM_FEE_RATE } from "@/lib/constants"
-
-// ── Tier → credits mapping (mirrors the checkout route) ──
-const CREDITS_BY_TIER: Record<string, number> = {
-  STARTER: 200,
-  PRO: 10_000,
-  BUSINESS: 50_000,
-  ENTERPRISE: -1,
-  FREE_USER: 100,
-  PLUS: 1_000,
-  POWER: -1,
-}
 
 export async function handleCheckoutSessionCompleted(
   session: Stripe.Checkout.Session
@@ -32,7 +22,7 @@ export async function handleCheckoutSessionCompleted(
 
   if (planType === "developer_plan") {
     // ── Developer Platform Plan Subscription (Upgrade / New) ──
-    const creditsIncluded = CREDITS_BY_TIER[tier] ?? 10_000;
+    const creditsIncluded = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 10_000;
     await prisma.developerPlan.upsert({
       where: { userId },
       create: {
@@ -44,8 +34,8 @@ export async function handleCheckoutSessionCompleted(
         billingCycleEnd: nextMonth,
         stripeSubscriptionId: subscriptionId,
         autoReloadEnabled: true,
-        autoReloadAmount: 2000,
-        overageRate: 0.005,
+        autoReloadAmount: OVERAGE_DEFAULTS.autoReloadAmount,
+        overageRate: OVERAGE_DEFAULTS.overageRate,
       },
       update: {
         tier: tier as any,
@@ -75,7 +65,7 @@ export async function handleCheckoutSessionCompleted(
 
   } else if (planType === "user_plan") {
     // ── User Platform Plan Subscription (Upgrade / New) ──
-    const creditsIncluded = CREDITS_BY_TIER[tier] ?? 1_000;
+    const creditsIncluded = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000;
     await prisma.userPlan.upsert({
       where: { userId },
       create: {
@@ -83,7 +73,7 @@ export async function handleCheckoutSessionCompleted(
         tier: tier as any,
         creditsIncluded,
         creditsUsed: 0,
-        workflowRunsIncluded: tier === "PLUS" ? 20 : tier === "POWER" ? 999_999 : 2,
+        workflowRunsIncluded: getWorkflowRunsForTier(tier),
         workflowRunsUsed: 0,
         billingCycleStart: now,
         billingCycleEnd: nextMonth,
@@ -92,7 +82,7 @@ export async function handleCheckoutSessionCompleted(
       update: {
         tier: tier as any,
         creditsIncluded,
-        workflowRunsIncluded: tier === "PLUS" ? 20 : tier === "POWER" ? 999_999 : 2,
+        workflowRunsIncluded: getWorkflowRunsForTier(tier),
         stripeSubscriptionId: subscriptionId,
         creditsUsed: 0,
         billingCycleStart: now,
@@ -215,11 +205,7 @@ export async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   // On renewal: reset creditsUsed so the user gets a fresh quota each cycle
   if (invoice.billing_reason === "subscription_cycle") {
-    const creditsMap: Record<string, number> = {
-      STARTER: 200, PRO: 10_000, BUSINESS: 50_000,
-      FREE_USER: 100, PLUS: 1_000, POWER: -1,
-    };
-    const creditsIncluded = creditsMap[tier] ?? 1_000;
+    const creditsIncluded = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000;
 
     if (planType === "developer_plan") {
       const now = new Date();
@@ -285,11 +271,7 @@ export async function handleSubscriptionUpdated(
 
   if (!userId || !tier || !planType) return;
 
-  const creditsMap: Record<string, number> = {
-    STARTER: 200, PRO: 10_000, BUSINESS: 50_000,
-    FREE_USER: 100, PLUS: 1_000, POWER: -1,
-  };
-  const creditsIncluded = creditsMap[tier] ?? 1_000;
+  const creditsIncluded = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000;
 
   if (planType === "developer_plan") {
     await prisma.developerPlan.updateMany({
@@ -297,8 +279,7 @@ export async function handleSubscriptionUpdated(
       data: { tier: tier as any, creditsIncluded },
     });
   } else if (planType === "user_plan") {
-    const workflowRunsIncluded =
-      tier === "PLUS" ? 20 : tier === "POWER" ? 999_999 : 2;
+    const workflowRunsIncluded = getWorkflowRunsForTier(tier);
     await prisma.userPlan.updateMany({
       where: { userId, stripeSubscriptionId: subscription.id },
       data: { tier: tier as any, creditsIncluded, workflowRunsIncluded },
@@ -332,7 +313,7 @@ export async function handleSubscriptionDeleted(
       where: { id: devPlan.id },
       data: {
         tier: "STARTER",
-        creditsIncluded: 200,
+        creditsIncluded: CREDITS_BY_TIER.STARTER,
         stripeSubscriptionId: null,
         billingCycleStart: now,
         billingCycleEnd: new Date(new Date().setMonth(now.getMonth() + 1)),
@@ -350,8 +331,8 @@ export async function handleSubscriptionDeleted(
       where: { id: userPlan.id },
       data: {
         tier: "FREE_USER",
-        creditsIncluded: 100,
-        workflowRunsIncluded: 2,
+        creditsIncluded: CREDITS_BY_TIER.FREE_USER,
+        workflowRunsIncluded: getWorkflowRunsForTier("FREE_USER"),
         stripeSubscriptionId: null,
         billingCycleStart: now,
         billingCycleEnd: new Date(new Date().setMonth(now.getMonth() + 1)),

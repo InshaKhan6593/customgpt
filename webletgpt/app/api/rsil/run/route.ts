@@ -38,6 +38,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Weblet not found" }, { status: 404 })
     }
 
+    const devPlan = await prisma.developerPlan.findUnique({
+      where: { userId: developerId },
+    })
+    const creditsRemaining = (devPlan?.creditsIncluded ?? 0) - (devPlan?.creditsUsed ?? 0)
+    if (devPlan && devPlan.creditsIncluded !== -1 && creditsRemaining <= 0) {
+      return NextResponse.json({
+        error: "Insufficient credits for RSIL optimization",
+        reason: "developer_credits_exhausted",
+      }, { status: 402 })
+    }
+
     const governance = await checkGovernance(webletId)
     if (!governance.allowed) {
       return NextResponse.json({
@@ -81,6 +92,7 @@ export async function POST(req: NextRequest) {
       weakDimensions: analysis.weakDimensions,
       webletName: weblet.name,
       webletDescription: weblet.description,
+      developerId,
     })
 
     const testingVersion = await createAbTestVersion({

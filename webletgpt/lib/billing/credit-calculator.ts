@@ -1,16 +1,6 @@
-export const CREDIT_MULTIPLIERS = {
-  base: 1,            // Simple chat, no tools
-  fileSearch: 2,      // Knowledge search (rag)
-  rag: 2,
-  webSearch: 3,       // Web search (tavily)
-  tavily: 3,
-  codeInterpreter: 3, // Code interpreter (e2b)
-  e2b: 3,
-  imageGeneration: 5, // Image generation (dalle)
-  dalle: 5,
-  custom_action: 2,   // Custom HTTP action
-  mcp: 2,             // MCP server tool call
-} as const;
+import { CREDIT_MULTIPLIERS } from './pricing';
+
+export { CREDIT_MULTIPLIERS } from './pricing';
 
 export function calculateCredits(toolCalls?: Record<string, number> | null): number {
   if (!toolCalls || Object.keys(toolCalls).length === 0) {

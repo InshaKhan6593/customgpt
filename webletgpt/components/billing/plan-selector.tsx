@@ -4,69 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Sparkles, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DEV_PLAN_DISPLAY, USER_PLAN_DISPLAY } from "@/lib/billing/pricing";
 import { cn } from "@/lib/utils";
 
 type PlanType = "user" | "developer";
-
-const USER_PLANS = [
-  {
-    tier: "FREE_USER",
-    name: "Free",
-    price: "$0",
-    period: "/mo",
-    credits: "100 credits / month",
-    features: ["100 credits/month", "2 workflow runs/mo", "All free weblets"],
-    popular: false,
-  },
-  {
-    tier: "PLUS",
-    name: "Plus",
-    price: "$9.99",
-    period: "/mo",
-    credits: "1,000 credits / month",
-    features: ["1,000 credits/month", "20 workflow runs/mo", "Multi-agent (5 agents)", "Priority support"],
-    popular: true,
-  },
-  {
-    tier: "POWER",
-    name: "Power",
-    price: "$19.99",
-    period: "/mo",
-    credits: "Unlimited credits",
-    features: ["Unlimited credits", "Unlimited workflows", "Unlimited multi-agent", "Priority support"],
-    popular: false,
-  },
-];
-
-const DEV_PLANS = [
-  {
-    tier: "STARTER",
-    name: "Starter",
-    price: "$0",
-    period: "/mo",
-    credits: "200 credits / month",
-    features: ["1 weblet", "200 credits/month", "No RSIL", "No composability"],
-    popular: false,
-  },
-  {
-    tier: "PRO",
-    name: "Pro",
-    price: "$29",
-    period: "/mo",
-    credits: "10,000 credits / month",
-    features: ["5 weblets", "10,000 credits/month", "RSIL enabled", "Composability enabled"],
-    popular: true,
-  },
-  {
-    tier: "BUSINESS",
-    name: "Business",
-    price: "$99",
-    period: "/mo",
-    credits: "50,000 credits / month",
-    features: ["Unlimited weblets", "50,000 credits/month", "RSIL + Composability + MCP", "Auto-reload overage"],
-    popular: false,
-  },
-];
 
 interface PlanSelectorProps {
   type: PlanType;
@@ -83,7 +24,7 @@ export function PlanSelector({ type, currentTier, onSuccess }: PlanSelectorProps
   const router  = useRouter();
   const [loading,          setLoading]          = useState<string | null>(null);
   const [downgradeInfo,    setDowngradeInfo]     = useState<{ endsAt: string } | null>(null);
-  const plans = type === "user" ? USER_PLANS : DEV_PLANS;
+  const plans = type === "user" ? USER_PLAN_DISPLAY : DEV_PLAN_DISPLAY;
 
   const handleSelect = async (tier: string) => {
     if (tier === currentTier) return;

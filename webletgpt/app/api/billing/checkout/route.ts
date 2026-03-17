@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { CREDITS_BY_TIER, FREE_TIERS, getWorkflowRunsForTier } from "@/lib/billing/pricing";
 import { prisma as db } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 
@@ -10,24 +11,6 @@ const PLAN_PRICE_IDS: Record<string, string | undefined> = {
   PRO:      process.env.STRIPE_DEV_PRO_PRICE_ID,
   BUSINESS: process.env.STRIPE_DEV_BUSINESS_PRICE_ID,
 };
-
-const CREDITS_BY_TIER: Record<string, number> = {
-  STARTER:   200,
-  PRO:       10_000,
-  BUSINESS:  50_000,
-  FREE_USER: 100,
-  PLUS:      1_000,
-  POWER:     -1, // unlimited
-};
-
-// Tiers that have no Stripe price (free)
-const FREE_TIERS = new Set(["STARTER", "FREE_USER"]);
-
-function workflowRunsForTier(tier: string): number {
-  if (tier === "PLUS")  return 20;
-  if (tier === "POWER") return 999_999;
-  return 2;
-}
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -93,7 +76,7 @@ export async function POST(req: Request) {
 
         // Immediately update our DB — webhook does this too but we don't want
         // the user sitting on stale data while waiting for it.
-        const creditsIncluded = CREDITS_BY_TIER[tier] ?? 1_000;
+        const creditsIncluded = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000;
         if (type === "developer") {
           await db.developerPlan.update({
             where: { userId },
@@ -105,7 +88,7 @@ export async function POST(req: Request) {
             data: {
               tier: tier as any,
               creditsIncluded,
-              workflowRunsIncluded: workflowRunsForTier(tier),
+               workflowRunsIncluded: getWorkflowRunsForTier(tier),
               creditsUsed: 0,
             },
           });
@@ -151,14 +134,14 @@ export async function POST(req: Request) {
         tier,
         type,
         planType,
-        credits: String(CREDITS_BY_TIER[tier] ?? 1_000),
+        credits: String(CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000),
       },
       subscription_data: {
         metadata: {
           userId,
           tier,
           planType,
-          credits: String(CREDITS_BY_TIER[tier] ?? 1_000),
+          credits: String(CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 1_000),
         },
       },
     });

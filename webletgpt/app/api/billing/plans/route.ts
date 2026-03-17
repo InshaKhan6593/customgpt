@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { CREDITS_BY_TIER } from "@/lib/billing/pricing";
 import { prisma as db } from "@/lib/prisma";
 import { UserTier, DevTier } from "@prisma/client";
 
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid user tier" }, { status: 400 });
       }
       
-      const newLimits = tier === "FREE_USER" ? 100 : tier === "PLUS" ? 1000 : -1;
+      const newLimits = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 100;
 
       const plan = await db.userPlan.upsert({
         where: { userId },
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid dev tier" }, { status: 400 });
       }
 
-      const newLimits = tier === "STARTER" ? 200 : tier === "PRO" ? 10_000 : 50_000;
+      const newLimits = CREDITS_BY_TIER[tier as keyof typeof CREDITS_BY_TIER] ?? 200;
 
       const plan = await db.developerPlan.upsert({
         where: { userId },
