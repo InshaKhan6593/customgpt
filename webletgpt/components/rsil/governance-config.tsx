@@ -82,58 +82,6 @@ export function GovernanceConfigForm({ initialConfig, onSave, isSaving }: Govern
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="min-interactions">Min Data Before Optimize (Interactions)</Label>
-              <Input
-                id="min-interactions"
-                type="number"
-                min={10}
-                value={config.minInteractionsBeforeOptimize}
-                onChange={(e) => handleChange('minInteractionsBeforeOptimize', parseInt(e.target.value) || 0)}
-              />
-              <p className="text-xs text-muted-foreground">Minimum number of user interactions needed to evaluate performance.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cooldown">Cooldown Period (Hours)</Label>
-              <Input
-                id="cooldown"
-                type="number"
-                min={1}
-                value={config.cooldownHours}
-                onChange={(e) => handleChange('cooldownHours', parseInt(e.target.value) || 0)}
-              />
-              <p className="text-xs text-muted-foreground">Wait time between concluding one test and starting the next.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="min-test">Min Test Duration (Hours)</Label>
-              <Input
-                id="min-test"
-                type="number"
-                min={1}
-                value={config.minTestDurationHours}
-                onChange={(e) => handleChange('minTestDurationHours', parseInt(e.target.value) || 0)}
-              />
-              <p className="text-xs text-muted-foreground">How long to run an A/B test before deciding a winner.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="perf-floor">Auto-Rollback Below Rating (0-10)</Label>
-              <Input
-                id="perf-floor"
-                type="number"
-                min={0}
-                max={10}
-                step={0.1}
-                value={config.performanceFloor}
-                onChange={(e) => handleChange('performanceFloor', parseFloat(e.target.value) || 0)}
-              />
-              <p className="text-xs text-muted-foreground">Automatically revert if score drops below this threshold.</p>
-            </div>
-          </div>
-
           <div className="flex items-center justify-between rounded-lg border p-4 my-1">
             <div className="space-y-0.5">
               <Label className="text-base">Auto-Optimization Schedule</Label>
@@ -148,50 +96,104 @@ export function GovernanceConfigForm({ initialConfig, onSave, isSaving }: Govern
           </div>
 
           {config.autoOptimizationEnabled ? (
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="auto-opt-frequency">Frequency</Label>
-                <Select
-                  value={config.autoOptimizationFrequency}
-                  onValueChange={(value: GovernanceConfig['autoOptimizationFrequency']) =>
-                    handleChange('autoOptimizationFrequency', value)
-                  }
-                >
-                  <SelectTrigger id="auto-opt-frequency">
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FREQUENCY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="min-interactions">Min Data Before Optimize (Interactions)</Label>
+                  <Input
+                    id="min-interactions"
+                    type="number"
+                    min={10}
+                    value={config.minInteractionsBeforeOptimize}
+                    onChange={(e) => handleChange('minInteractionsBeforeOptimize', parseInt(e.target.value) || 0)}
+                  />
+                  <p className="text-xs text-muted-foreground">Minimum number of user interactions needed to evaluate performance.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cooldown">Cooldown Period (Hours)</Label>
+                  <Input
+                    id="cooldown"
+                    type="number"
+                    min={1}
+                    value={config.cooldownHours}
+                    onChange={(e) => handleChange('cooldownHours', parseInt(e.target.value) || 0)}
+                  />
+                  <p className="text-xs text-muted-foreground">Wait time between concluding one test and starting the next.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="min-test">Min Test Duration (Hours)</Label>
+                  <Input
+                    id="min-test"
+                    type="number"
+                    min={1}
+                    value={config.minTestDurationHours}
+                    onChange={(e) => handleChange('minTestDurationHours', parseInt(e.target.value) || 0)}
+                  />
+                  <p className="text-xs text-muted-foreground">How long to run an A/B test before deciding a winner.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="perf-floor">Auto-Rollback Below Rating (0-10)</Label>
+                  <Input
+                    id="perf-floor"
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    value={config.performanceFloor}
+                    onChange={(e) => handleChange('performanceFloor', parseFloat(e.target.value) || 0)}
+                  />
+                  <p className="text-xs text-muted-foreground">Automatically revert if score drops below this threshold.</p>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="auto-opt-hour">Preferred Hour (UTC)</Label>
-                <Select
-                  value={String(config.autoOptimizationHour)}
-                  onValueChange={(value) => handleChange('autoOptimizationHour', Number(value))}
-                >
-                  <SelectTrigger id="auto-opt-hour">
-                    <SelectValue placeholder="Select UTC hour" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HOUR_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="auto-opt-frequency">Frequency</Label>
+                  <Select
+                    value={config.autoOptimizationFrequency}
+                    onValueChange={(value: GovernanceConfig['autoOptimizationFrequency']) =>
+                      handleChange('autoOptimizationFrequency', value)
+                    }
+                  >
+                    <SelectTrigger id="auto-opt-frequency">
+                      <SelectValue placeholder="Select frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FREQUENCY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="auto-opt-hour">Preferred Hour (UTC)</Label>
+                  <Select
+                    value={String(config.autoOptimizationHour)}
+                    onValueChange={(value) => handleChange('autoOptimizationHour', Number(value))}
+                  >
+                    <SelectTrigger id="auto-opt-hour">
+                      <SelectValue placeholder="Select UTC hour" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOUR_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Auto-optimization is disabled. Use the "Run Now" button to optimize manually.
+              Auto-optimization is disabled. Use the &quot;Run Now&quot; button to optimize manually.
             </p>
           )}
 

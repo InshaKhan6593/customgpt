@@ -9,6 +9,7 @@ const { auth } = NextAuth(authConfig)
 // Auth.js Edge compatibility allows reading the session without hitting the DB.
 
 const publicRoutes = ['/login', '/auth/error', '/api/auth', '/marketplace', '/pricing', '/api/marketplace', '/api/webhooks', '/api/inngest']
+const publicExactRoutes = ['/']
 const marketplaceFallback = '/marketplace' 
 
 export default async function proxy(request: NextRequest) {
@@ -16,7 +17,7 @@ export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // 1. Allow public routes
-  if (publicRoutes.some(route => path.startsWith(route))) {
+  if (publicExactRoutes.includes(path) || publicRoutes.some(route => path.startsWith(route))) {
     return NextResponse.next()
   }
 

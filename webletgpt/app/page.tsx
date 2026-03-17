@@ -4,9 +4,12 @@ import { NavHeader } from "@/components/nav-header"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Bot, Code, Store, ArrowRight } from "lucide-react"
+import { useSession } from "next-auth/react"
 
 export default function HomePage() {
-  // Logged-out state — no user prop
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+
   return (
     <div className="min-h-svh bg-background">
       <NavHeader />
@@ -21,8 +24,8 @@ export default function HomePage() {
         </p>
         <div className="mt-8 flex items-center gap-4">
           <Button asChild size="lg">
-            <Link href="/login">
-              Get Started
+            <Link href={isLoggedIn ? "/marketplace" : "/login"}>
+              {isLoggedIn ? "Go to Marketplace" : "Get Started"}
               <ArrowRight className="size-4" />
             </Link>
           </Button>

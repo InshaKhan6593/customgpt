@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma"
 import { analyzeWeblet } from "@/lib/rsil/analyzer"
 import { createAbTestVersion } from "@/lib/rsil/ab-test"
 import { generateImprovedPrompt } from "@/lib/rsil/generator"
-import { checkGovernance } from "@/lib/rsil/governance"
 
 const schema = z.object({
   webletId: z.string().min(1),
@@ -31,11 +30,19 @@ export async function POST(req: NextRequest) {
 
     const weblet = await prisma.weblet.findFirst({
       where: { id: webletId, developerId },
-      select: { id: true, name: true, description: true },
+      select: { id: true, name: true, description: true, rsilEnabled: true },
     })
 
     if (!weblet) {
       return NextResponse.json({ error: "Weblet not found" }, { status: 404 })
+    }
+
+    if (!weblet.rsilEnabled) {
+      return NextResponse.json({
+        ok: false,
+        skipped: true,
+        reason: "RSIL not enabled for this weblet",
+      })
     }
 
     const devPlan = await prisma.developerPlan.findUnique({
@@ -49,12 +56,15 @@ export async function POST(req: NextRequest) {
       }, { status: 402 })
     }
 
-    const governance = await checkGovernance(webletId)
-    if (!governance.allowed) {
+    const activeTest = await prisma.webletVersion.findFirst({
+      where: { webletId, status: "TESTING", isAbTest: true },
+    })
+
+    if (activeTest) {
       return NextResponse.json({
         ok: false,
         skipped: true,
-        reason: governance.reason,
+        reason: "A/B test already running",
       })
     }
 

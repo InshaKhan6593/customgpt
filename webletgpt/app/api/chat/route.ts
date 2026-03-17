@@ -277,12 +277,13 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
       }
       if (!finalText?.trim()) finalText = "(No response)"
 
-      // Both user + assistant messages saved here so orphans don't occur on stream failure.
+      // Save user message first so createdAt ordering is guaranteed when reloading.
+      if (userMessageText) {
+        await saveMessage(activeSessionId, "user", userMessageText)
+          .catch(err => console.error("Failed to save user message:", err))
+      }
+
       await Promise.all([
-        userMessageText
-          ? saveMessage(activeSessionId, "user", userMessageText)
-              .catch(err => console.error("Failed to save user message:", err))
-          : Promise.resolve(),
         saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens, messageTraceId)
           .catch(err => console.error("Failed to save assistant message:", err)),
 
