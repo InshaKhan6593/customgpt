@@ -70,6 +70,24 @@ export interface RatingEntry {
   createdAt: string
 }
 
+export interface ScoreMetric {
+  name: string
+  avgValue: number
+  count: number
+  p50?: number
+  p90?: number
+}
+
+export interface ScoreTimeSeries {
+  date: string
+  [scoreName: string]: number | string
+}
+
+export interface MetricsData {
+  dimensions: ScoreMetric[]
+  timeSeries: ScoreTimeSeries[]
+}
+
 export interface WebletOverview {
   id: string
   name: string

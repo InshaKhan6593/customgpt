@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const analysis = await analyzeWeblet(webletId)
+     const analysis = await analyzeWeblet(webletId, 168)
 
     if (analysis.decision === "NONE") {
       return NextResponse.json({

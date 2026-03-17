@@ -56,10 +56,6 @@ export async function fetchTraces({
 
 const LANGFUSE_MAX_LIMIT = 100
 
-/**
- * Fetch scores from Langfuse, automatically paginating when the requested
- * limit exceeds the API maximum of 100 per page.
- */
 export async function fetchScores({
   webletId,
   fromTimestamp,
@@ -69,22 +65,51 @@ export async function fetchScores({
   fromTimestamp?: string
   limit?: number
 }) {
+  if (limit <= 0) {
+    return { data: [], meta: {} }
+  }
+
+  const traceIds = new Set<string>()
+  let tracePage = 1
+
+  while (true) {
+    const traces = await fetchTraces({
+      webletId,
+      fromTimestamp,
+      limit: LANGFUSE_MAX_LIMIT,
+      page: tracePage,
+    })
+
+    for (const trace of traces.data) {
+      if (trace.id) {
+        traceIds.add(trace.id)
+      }
+    }
+
+    if (traces.data.length < LANGFUSE_MAX_LIMIT) break
+    tracePage++
+  }
+
+  if (traceIds.size === 0) {
+    return { data: [], meta: {} }
+  }
+
   const credentials = Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString("base64")
   const allData: Array<{ traceId: string; name: string; value: number; id: string }> = []
   let page = 1
-  let remaining = limit
+  let fetchedRawScores = 0
+  const maxRawScoresToFetch = Math.max(limit * 3, LANGFUSE_MAX_LIMIT)
 
-  while (remaining > 0) {
-    const pageLimit = Math.min(remaining, LANGFUSE_MAX_LIMIT)
+  while (fetchedRawScores < maxRawScoresToFetch && allData.length < limit) {
+    const pageLimit = Math.min(maxRawScoresToFetch - fetchedRawScores, LANGFUSE_MAX_LIMIT)
     const params = new URLSearchParams()
     params.set("limit", String(pageLimit))
     params.set("page", String(page))
-    params.set("traceTags", `webletId:${webletId}`)
     if (fromTimestamp) {
       params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
     }
 
-    const res = await fetch(`${LANGFUSE_BASE}/api/public/scores?${params.toString()}`, {
+    const res = await fetch(`${LANGFUSE_BASE}/api/public/v2/scores?${params.toString()}`, {
       headers: { Authorization: `Basic ${credentials}` },
     })
 
@@ -93,16 +118,165 @@ export async function fetchScores({
     }
 
     const json = await res.json() as { data: Array<{ traceId: string; name: string; value: number; id: string }>; meta: unknown }
-    allData.push(...json.data)
+    fetchedRawScores += json.data.length
+
+    for (const score of json.data) {
+      if (traceIds.has(score.traceId)) {
+        allData.push(score)
+      }
+    }
 
     // Stop if this page returned fewer results than requested (no more pages)
     if (json.data.length < pageLimit) break
 
-    remaining -= json.data.length
     page++
   }
 
-  return { data: allData, meta: {} }
+  return { data: allData.slice(0, limit), meta: {} }
+}
+
+export interface ScoreMetric {
+  name: string
+  avgValue: number
+  count: number
+  p50?: number
+  p90?: number
+}
+
+export interface ScoreTimeSeries {
+  date: string
+  [scoreName: string]: number | string
+}
+
+export async function fetchScoreMetrics({
+  webletId,
+  fromTimestamp,
+  toTimestamp,
+  granularity = 'day',
+}: {
+  webletId: string
+  fromTimestamp: string
+  toTimestamp?: string
+  granularity?: 'hour' | 'day' | 'week' | 'month'
+}): Promise<{ dimensions: ScoreMetric[]; timeSeries: ScoreTimeSeries[] }> {
+  try {
+    const credentials = Buffer.from(`${LANGFUSE_PUBLIC}:${LANGFUSE_SECRET}`).toString('base64')
+    const to = toTimestamp || new Date().toISOString()
+
+    const baseFilters = [
+      {
+        column: 'tags',
+        operator: 'any of',
+        value: [`webletId:${webletId}`],
+        type: 'arrayOptions',
+      },
+    ]
+
+    const dimensionQuery = JSON.stringify({
+      view: 'scores-numeric',
+      dimensions: [{ field: 'name' }],
+      metrics: [
+        { measure: 'value', aggregation: 'avg' },
+        { measure: 'count', aggregation: 'count' },
+        { measure: 'value', aggregation: 'p50' },
+        { measure: 'value', aggregation: 'p90' },
+      ],
+      filters: baseFilters,
+      fromTimestamp,
+      toTimestamp: to,
+    })
+
+    const timeSeriesQuery = JSON.stringify({
+      view: 'scores-numeric',
+      dimensions: [{ field: 'name' }],
+      metrics: [
+        { measure: 'value', aggregation: 'avg' },
+        { measure: 'count', aggregation: 'count' },
+      ],
+      filters: baseFilters,
+      timeDimension: { granularity },
+      fromTimestamp,
+      toTimestamp: to,
+    })
+
+    const headers = { Authorization: `Basic ${credentials}` }
+
+    const fetchMetrics = async (query: string) => {
+      const params = new URLSearchParams({ query })
+      return fetch(`${LANGFUSE_BASE}/api/public/v2/metrics?${params.toString()}`, { headers })
+    }
+
+    let [dimRes, tsRes] = await Promise.all([fetchMetrics(dimensionQuery), fetchMetrics(timeSeriesQuery)])
+
+    if (!dimRes.ok || !tsRes.ok) {
+      const unfilteredDimensionQuery = JSON.stringify({
+        view: 'scores-numeric',
+        dimensions: [{ field: 'name' }],
+        metrics: [
+          { measure: 'value', aggregation: 'avg' },
+          { measure: 'count', aggregation: 'count' },
+          { measure: 'value', aggregation: 'p50' },
+          { measure: 'value', aggregation: 'p90' },
+        ],
+        fromTimestamp,
+        toTimestamp: to,
+      })
+
+      const unfilteredTimeSeriesQuery = JSON.stringify({
+        view: 'scores-numeric',
+        dimensions: [{ field: 'name' }],
+        metrics: [
+          { measure: 'value', aggregation: 'avg' },
+          { measure: 'count', aggregation: 'count' },
+        ],
+        timeDimension: { granularity },
+        fromTimestamp,
+        toTimestamp: to,
+      })
+
+      ;[dimRes, tsRes] = await Promise.all([
+        fetchMetrics(unfilteredDimensionQuery),
+        fetchMetrics(unfilteredTimeSeriesQuery),
+      ])
+    }
+
+    if (!dimRes.ok || !tsRes.ok) {
+      return { dimensions: [], timeSeries: [] }
+    }
+
+    const dimensions: ScoreMetric[] = []
+    const timeSeries: ScoreTimeSeries[] = []
+
+    const dimJson = await dimRes.json() as { rows?: Array<Record<string, unknown>> }
+    for (const row of dimJson.rows || []) {
+      dimensions.push({
+        name: String(row.name || ''),
+        avgValue: Number(row.value_avg ?? 0),
+        count: Number(row.count_count ?? 0),
+        p50: row.value_p50 != null ? Number(row.value_p50) : undefined,
+        p90: row.value_p90 != null ? Number(row.value_p90) : undefined,
+      })
+    }
+
+    const tsJson = await tsRes.json() as { rows?: Array<Record<string, unknown>> }
+    const byDate: Record<string, ScoreTimeSeries> = {}
+    for (const row of tsJson.rows || []) {
+      const date = String(row.time || row.timestampDay || row.timestampMonth || row.timestampWeek || '')
+      if (!date) continue
+
+      if (!byDate[date]) byDate[date] = { date }
+
+      const scoreName = String(row.name || 'unknown')
+      byDate[date][scoreName] = Number(row.value_avg ?? 0)
+      byDate[date][`${scoreName}_count`] = Number(row.count_count ?? 0)
+    }
+
+    timeSeries.push(...Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)))
+
+    return { dimensions, timeSeries }
+  } catch {
+    return { dimensions: [], timeSeries: [] }
+  }
 }
 
 export async function shutdownLangfuse() {

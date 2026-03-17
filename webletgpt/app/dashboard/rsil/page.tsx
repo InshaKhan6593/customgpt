@@ -33,6 +33,7 @@ import { OptimizationLog } from "@/components/rsil/optimization-log"
 import type {
   AnalysisResult,
   GovernanceConfig,
+  MetricsData,
   TestResult,
   WebletOverview,
   WebletVersion,
@@ -45,15 +46,8 @@ type OverviewResponse = {
 
 type ScoresResponse = {
   analysis: AnalysisResult
-  rawScores: Array<{
-    timestamp: string
-    composite: number
-    helpfulness: number
-    correctness: number
-    coherence: number
-    safety: number
-  }>
   recentRatings: RatingEntry[]
+  metrics?: MetricsData
 }
 
 type TestsResponse = {
@@ -82,14 +76,14 @@ export default function RSILDashboardPage() {
   const [configLoading, setConfigLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
-  const [rawScores, setRawScores] = useState<ScoresResponse["rawScores"]>([])
-  const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
+   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
+   const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [testingVersion, setTestingVersion] = useState<WebletVersion | null>(null)
   const [versions, setVersions] = useState<WebletVersion[]>([])
   const [rsilEnabled, setRsilEnabled] = useState(false)
   const [governance, setGovernance] = useState<GovernanceConfig | null>(null)
+  const [metrics, setMetrics] = useState<MetricsData | null>(null)
 
   const selectedWeblet = weblets.find((w) => w.id === selectedWebletId)
 
@@ -115,14 +109,14 @@ export default function RSILDashboardPage() {
     try {
       const res = await fetch(`/api/rsil/scores?webletId=${webletId}&hours=168`)
       if (!res.ok) throw new Error("Failed to load scores")
-      const data: ScoresResponse = await res.json()
-      setAnalysis(data.analysis)
-      setRawScores(data.rawScores || [])
-      setRecentRatings(data.recentRatings || [])
-    } catch {
-      setAnalysis(null)
-      setRawScores([])
-      setRecentRatings([])
+       const data: ScoresResponse = await res.json()
+       setAnalysis(data.analysis)
+       setRecentRatings(data.recentRatings || [])
+       setMetrics(data.metrics || null)
+     } catch {
+       setAnalysis(null)
+       setRecentRatings([])
+       setMetrics(null)
     } finally {
       setScoresLoading(false)
     }
@@ -186,17 +180,17 @@ export default function RSILDashboardPage() {
     fetchConfig(selectedWebletId)
   }, [selectedWebletId, fetchScores, fetchTests, fetchVersions, fetchConfig])
 
-  function handleWebletChange(id: string) {
-    setSelectedWebletId(id)
-    setActiveTab("overview")
-    setAnalysis(null)
-    setRawScores([])
-    setRecentRatings([])
-    setTestResult(null)
-    setTestingVersion(null)
-    setVersions([])
-    setGovernance(null)
-  }
+   function handleWebletChange(id: string) {
+     setSelectedWebletId(id)
+     setActiveTab("overview")
+     setAnalysis(null)
+     setRecentRatings([])
+     setMetrics(null)
+     setTestResult(null)
+     setTestingVersion(null)
+     setVersions([])
+     setGovernance(null)
+   }
 
   async function handleToggleRSIL(enabled: boolean) {
     if (!selectedWebletId) return
@@ -390,13 +384,9 @@ export default function RSILDashboardPage() {
     return null
   }
 
-  const chartData = rawScores.map((s) => ({
-    date: new Date(s.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    composite: s.composite,
-    helpfulness: s.helpfulness,
-    correctness: s.correctness,
-    coherence: s.coherence,
-    safety: s.safety,
+  const chartData = (metrics?.timeSeries ?? []).map((point) => ({
+    ...point,
+    date: new Date(point.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
   }))
 
   return (
@@ -462,8 +452,8 @@ export default function RSILDashboardPage() {
           />
 
           <PerformanceChart
-            data={chartData}
-            dimensions={analysis?.dimensions ?? []}
+            timeSeries={chartData}
+            dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
           />
 
           <OptimizationLog versions={versions} loading={versionsLoading} />
@@ -485,6 +475,7 @@ export default function RSILDashboardPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {analysis.dimensions.map((dim) => {
                     const isWeak = analysis.weakDimensions.includes(dim.name)
+                    const metric = metrics?.dimensions.find((m) => m.name === dim.name)
                     return (
                       <motion.div
                         key={dim.name}
@@ -507,8 +498,18 @@ export default function RSILDashboardPage() {
                               <span className="text-sm text-muted-foreground">/ 10</span>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {dim.sampleSize} samples · weight {dim.weight}
+                              {metric ? metric.count : dim.sampleSize} samples · weight {dim.weight}
                             </p>
+                            {metric && (metric.p50 != null || metric.p90 != null) && (
+                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                {metric.p50 != null && (
+                                  <span>p50: <span className="font-medium text-foreground">{metric.p50.toFixed(1)}</span></span>
+                                )}
+                                {metric.p90 != null && (
+                                  <span>p90: <span className="font-medium text-foreground">{metric.p90.toFixed(1)}</span></span>
+                                )}
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       </motion.div>
@@ -522,8 +523,8 @@ export default function RSILDashboardPage() {
               )}
 
               <PerformanceChart
-                data={chartData}
-                dimensions={analysis?.dimensions ?? []}
+                timeSeries={chartData}
+                dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
               />
 
               <Card>
