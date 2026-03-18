@@ -45,6 +45,7 @@ const chatSchema = z.object({
   })),
   webletId: z.string(),
   sessionId: z.string().optional(),
+  isPreview: z.boolean().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request payload", details: result.error }, { status: 400 })
     }
 
-    const { messages: rawMessages, webletId, sessionId } = result.data
+    const { messages: rawMessages, webletId, sessionId, isPreview: rawIsPreview } = result.data
 
     // Pre-strip _childExecution from UIMessages BEFORE convertToModelMessages.
     // This is the primary fix: we operate on the client-side UIMessage format
@@ -122,14 +123,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: accessCheck.reason }, { status: 402 })
     }
 
-    // Detect preview mode: no sessionId + user is the developer → builder preview chat
-    const isPreview = !sessionId && userId === weblet.developerId
+    // Server-validated preview flag: only honored when the caller IS the developer
+    const isPreview = rawIsPreview === true && userId === weblet.developerId
 
     // ── Round 2: parallel — version, quotas, session (pass pre-fetched data) ─
     const [activeVersion, quotaCheck, chatSession] = await Promise.all([
       getActiveVersion(webletId, userId, weblet.developerId, isPreview),
       checkQuotas(userId, webletId, weblet.developerId),
-      getOrCreateChatSession(webletId, userId, sessionId || null),
+      isPreview
+        ? Promise.resolve({ id: `preview-${Date.now()}` })
+        : getOrCreateChatSession(webletId, userId, sessionId || null),
     ])
 
     if (!activeVersion) {
@@ -294,15 +297,17 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
       }
       if (!finalText?.trim()) finalText = "(No response)"
 
-      // Save user message first so createdAt ordering is guaranteed when reloading.
-      if (userMessageText) {
+      // Skip saving messages for preview — they're ephemeral
+      if (!isPreview && userMessageText) {
         await saveMessage(activeSessionId, "user", userMessageText)
           .catch(err => console.error("Failed to save user message:", err))
       }
 
       await Promise.all([
-        saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens, messageTraceId)
-          .catch(err => console.error("Failed to save assistant message:", err)),
+        (!isPreview
+          ? saveMessage(activeSessionId, "assistant", finalText, usage?.totalTokens, messageTraceId)
+              .catch(err => console.error("Failed to save assistant message:", err))
+          : Promise.resolve()),
 
         (async () => {
           if (!usage?.totalTokens) return
@@ -319,7 +324,7 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
               userId,
               webletId,
               developerId: weblet.developerId,
-              sessionId: activeSessionId,
+              sessionId: isPreview ? null : activeSessionId,
               tokensIn: (usage as any)?.promptTokens || 0,
               tokensOut: (usage as any)?.completionTokens || 0,
               modelId,

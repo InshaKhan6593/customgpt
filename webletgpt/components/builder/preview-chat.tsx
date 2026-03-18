@@ -46,6 +46,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
       api: "/api/chat",
       body: {
         webletId: isNew ? undefined : webletId,
+        isPreview: true,
       },
     }),
     onError: (error) => {
