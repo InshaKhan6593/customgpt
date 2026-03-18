@@ -51,3 +51,38 @@ export interface WebletOverview {
   totalVersions: number
   interactionCount: number
 }
+
+export interface ScoreDistributionBucket {
+  range: string
+  count: number
+  percentage: number
+}
+
+export interface ScoreDistributionData {
+  scoreName: string
+  buckets: ScoreDistributionBucket[]
+  mean: number
+  median: number
+}
+
+export interface VersionComparisonData {
+  versionId: string
+  versionNum: number
+  status: string
+  avgScore: number
+  sampleSize: number
+  dimensions: ScoreDimension[]
+}
+
+export interface PerformanceTrendPoint {
+  date: string
+  composite: number
+  [dimension: string]: number | string
+}
+
+export interface AnalyticsData {
+  versionComparison: VersionComparisonData[]
+  scoreDistribution: ScoreDistributionData[]
+  performanceTrend: PerformanceTrendPoint[]
+  lastUpdated: string
+}
