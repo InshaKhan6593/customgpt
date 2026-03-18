@@ -240,6 +240,48 @@ export async function fetchScoreMetrics({
   }
 }
 
+export async function createLangfuseScore({
+  traceId,
+  name,
+  value,
+  dataType = "NUMERIC",
+  comment,
+  id,
+}: {
+  traceId: string
+  name: string
+  value: number
+  dataType?: "NUMERIC" | "BOOLEAN"
+  comment?: string
+  id?: string
+}): Promise<{ id: string } | null> {
+  try {
+    const body: Record<string, unknown> = { traceId, name, value, dataType }
+    if (comment !== undefined) body.comment = comment
+    if (id !== undefined) body.id = id
+
+    const res = await fetch(`${LANGFUSE_BASE}/api/public/scores`, {
+      method: "POST",
+      headers: {
+        Authorization: getLangfuseAuthHeader(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      console.warn('[langfuse] score creation failed:', res.status)
+      return null
+    }
+
+    const json = (await res.json()) as { id: string }
+    return { id: json.id }
+  } catch (error) {
+    console.warn('[langfuse] score creation failed:', error)
+    return null
+  }
+}
+
 export async function shutdownLangfuse() {
   await langfuse.flush()
 }
