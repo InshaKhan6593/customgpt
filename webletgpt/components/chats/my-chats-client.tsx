@@ -331,8 +331,15 @@ export function MyChatsClient() {
   }
 
   const handleSessionCreated = useCallback((webletId: string, sessionId: string) => {
+    // Use replaceState instead of router.replace to update URL without triggering
+    // Next.js searchParams reactivity. router.replace causes the URL-watching
+    // useEffect to fire loadSession → ChatContainer key change → remount → message loss.
     skipNextUrlEffect.current = true
-    router.replace(`/chats?w=${webletId}&s=${sessionId}`, { scroll: false })
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `/chats?w=${webletId}&s=${sessionId}`
+    )
 
     setWeblets((prev) => prev.map((w) => {
       if (w.weblet.id !== webletId) return w
@@ -346,7 +353,7 @@ export function MyChatsClient() {
       }
       return { ...w, sessions: [newSession, ...w.sessions] }
     }))
-  }, [router])
+  }, [])
 
   const confirmDeleteSession = async () => {
     const { webletId, sessionId } = deleteDialog
