@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { motion } from "framer-motion"
-import { ArrowLeft, Sparkles } from "lucide-react"
+import { ArrowLeft, Sparkles, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Skeleton } from "@/components/ui/skeleton"
@@ -29,6 +29,7 @@ import { PromptComparison } from "@/components/rsil/prompt-comparison"
 import { ABTestStatus } from "@/components/rsil/ab-test-status"
 import { VersionHistory } from "@/components/rsil/version-history"
 import { GovernancePanel } from "@/components/rsil/governance-panel"
+import { AnalyticsTab } from "@/components/rsil/analytics-tab"
 
 import type {
   AnalysisResult,
@@ -450,6 +451,7 @@ export default function RSILDashboardPage() {
           <TabsTrigger value="abtest">A/B Test</TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
           <TabsTrigger value="governance">Governance</TabsTrigger>
+          <TabsTrigger value="analytics"><BarChart3 className="h-4 w-4 mr-1.5" />Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="scores" className="mt-6 space-y-8">
@@ -633,6 +635,12 @@ export default function RSILDashboardPage() {
 
         <TabsContent value="governance" className="mt-6">
           <GovernancePanel webletId={selectedWebletId} />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-6">
+          {selectedWebletId && (
+            <AnalyticsTab webletId={selectedWebletId} />
+          )}
         </TabsContent>
       </Tabs>
     </div>
