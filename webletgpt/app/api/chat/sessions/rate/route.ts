@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
+import { createLangfuseScore } from "@/lib/langfuse/client"
 
 const schema = z.object({
   sessionId: z.string(),
@@ -42,6 +43,32 @@ export async function POST(req: NextRequest) {
       eventData: { sessionId, messageId, score, comment },
     },
   })
+
+  // Bridge to Langfuse score (fire-and-forget — never block response)
+  if (messageId) {
+    void (async () => {
+      try {
+        const message = await prisma.chatMessage.findUnique({
+          where: { id: messageId },
+          select: { langfuseTraceId: true },
+        })
+        if (message?.langfuseTraceId) {
+          await createLangfuseScore({
+            traceId: message.langfuseTraceId,
+            name: 'user-rating',
+            value: score,
+            dataType: 'NUMERIC',
+            comment: comment ?? undefined,
+            id: `user-rating-${messageId}`,
+          })
+        } else {
+          console.warn('[rsil] No traceId for rating — skipping Langfuse score', { messageId })
+        }
+      } catch (err) {
+        console.warn('[rsil] Failed to bridge rating to Langfuse:', err)
+      }
+    })()
+  }
 
   return NextResponse.json({ ok: true })
 }
