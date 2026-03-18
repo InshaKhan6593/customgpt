@@ -43,12 +43,13 @@ export interface AnalysisResult {
  * weight:         relative weight in the composite (will be re-normalized if some signals are absent)
  */
 const SCORE_CONFIGS: Record<string, { max: number; higherIsBetter: boolean; weight: number }> = {
-  'user-rating':   { max: 5, higherIsBetter: true,  weight: 0.50 },
-  'helpfulness':   { max: 1, higherIsBetter: true,  weight: 0.20 },
-  'correctness':   { max: 1, higherIsBetter: true,  weight: 0.15 },
-  'hallucination': { max: 1, higherIsBetter: false, weight: 0.10 },
-  'toxicity':      { max: 1, higherIsBetter: false, weight: 0.03 },
-  'conciseness':   { max: 1, higherIsBetter: true,  weight: 0.02 },
+  'user-rating':       { max: 5, higherIsBetter: true,  weight: 0.30 },
+  'helpfulness':       { max: 1, higherIsBetter: true,  weight: 0.20 },
+  'correctness':       { max: 1, higherIsBetter: true,  weight: 0.15 },
+  'context-relevance': { max: 1, higherIsBetter: true,  weight: 0.15 },
+  'hallucination':     { max: 1, higherIsBetter: false, weight: 0.10 },
+  'toxicity':          { max: 1, higherIsBetter: false, weight: 0.05 },
+  'conciseness':       { max: 1, higherIsBetter: true,  weight: 0.05 },
 }
 
 /** Normalize a raw score value to 0–1 based on its config */
@@ -82,12 +83,106 @@ export async function analyzeWeblet(webletId: string, lookbackHours = 24): Promi
   const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
 
   for (const score of allScores) {
-    const config = SCORE_CONFIGS[score.name]
+    const key = score.name.toLowerCase()
+    const config = SCORE_CONFIGS[key]
     if (!config) continue // ignore unknown score names
 
     const norm = normalize(score.value, config)
-    if (!byDimension[score.name]) byDimension[score.name] = []
-    byDimension[score.name].push({ traceId: score.traceId, normalizedValue: norm })
+    if (!byDimension[key]) byDimension[key] = []
+    byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
+  }
+
+  // Compute per-dimension averages
+  const dimensions: ScoreDimension[] = []
+  let totalWeight = 0
+
+  for (const [name, entries] of Object.entries(byDimension)) {
+    const config = SCORE_CONFIGS[name]
+    const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
+    dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
+    totalWeight += config.weight
+  }
+
+  // Compute weighted composite (re-normalize weights to account for absent dimensions)
+  let compositeScore = 0
+  for (const dim of dimensions) {
+    compositeScore += (dim.avgValue * dim.weight) / totalWeight
+  }
+
+  // Collect trace IDs where any dimension scored poorly (normalized < 0.5)
+  const lowScoredTraceIdSet = new Set<string>()
+  for (const entries of Object.values(byDimension)) {
+    for (const e of entries) {
+      if (e.normalizedValue < 0.5) lowScoredTraceIdSet.add(e.traceId)
+    }
+  }
+
+  const weakDimensions = dimensions
+    .filter(d => d.avgValue < 0.6)
+    .sort((a, b) => a.avgValue - b.avgValue)
+    .map(d => d.name)
+
+  // Map composite (0–1) back to 0–5 for legacy compatibility
+  const avgScore = compositeScore * 5
+
+  let decision: RSILDecision
+  let reason: string
+
+  if (compositeScore >= 0.8) {
+    decision = 'NONE'
+    reason = `Composite score ${(compositeScore * 100).toFixed(0)}% — performing well`
+  } else if (compositeScore >= 0.6) {
+    decision = 'SUGGESTION'
+    reason = `Composite score ${(compositeScore * 100).toFixed(0)}% — weak on: ${weakDimensions.join(', ') || 'general quality'}`
+  } else {
+    decision = 'AUTO_UPDATE'
+    reason = `Composite score ${(compositeScore * 100).toFixed(0)}% — auto-optimize triggered (weak: ${weakDimensions.join(', ') || 'general quality'})`
+  }
+
+  return {
+    decision,
+    compositeScore,
+    avgScore,
+    sampleSize: allScores.length,
+    lowScoredTraceIds: Array.from(lowScoredTraceIdSet),
+    dimensions,
+    weakDimensions,
+    reason,
+  }
+}
+
+export async function analyzeVersion(webletId: string, versionId: string, lookbackHours = 24): Promise<AnalysisResult> {
+  const fromTimestamp = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
+
+  // Fetch all scores (user + LLM-as-a-Judge) — filter by webletId and versionId tags server-side
+  const data = await fetchScores({ webletId, versionId, fromTimestamp, limit: 500 })
+  const allScores: Array<{ traceId: string; name: string; value: number }> =
+    (data?.data || []).filter((s: any) => typeof s.value === 'number')
+
+  if (allScores.length === 0) {
+    return {
+      decision: 'NONE',
+      compositeScore: 1,
+      avgScore: 5,
+      sampleSize: 0,
+      lowScoredTraceIds: [],
+      dimensions: [],
+      weakDimensions: [],
+      reason: 'No scores collected yet',
+    }
+  }
+
+  // Group scores by dimension name
+  const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
+
+  for (const score of allScores) {
+    const key = score.name.toLowerCase()
+    const config = SCORE_CONFIGS[key]
+    if (!config) continue // ignore unknown score names
+
+    const norm = normalize(score.value, config)
+    if (!byDimension[key]) byDimension[key] = []
+    byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
   }
 
   // Compute per-dimension averages
