@@ -122,9 +122,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: accessCheck.reason }, { status: 402 })
     }
 
+    // Detect preview mode: no sessionId + user is the developer → builder preview chat
+    const isPreview = !sessionId && userId === weblet.developerId
+
     // ── Round 2: parallel — version, quotas, session (pass pre-fetched data) ─
     const [activeVersion, quotaCheck, chatSession] = await Promise.all([
-      getActiveVersion(webletId, userId, weblet.developerId),
+      getActiveVersion(webletId, userId, weblet.developerId, isPreview),
       checkQuotas(userId, webletId, weblet.developerId),
       getOrCreateChatSession(webletId, userId, sessionId || null),
     ])

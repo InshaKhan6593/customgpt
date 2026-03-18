@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { shouldServeVariant } from '@/lib/rsil/ab-test'
 
-export async function getActiveVersion(webletId: string, userId?: string, developerId?: string) {
+export async function getActiveVersion(webletId: string, userId?: string, developerId?: string, isPreview?: boolean) {
   try {
     const versions = await prisma.webletVersion.findMany({
       where: {
@@ -15,11 +15,12 @@ export async function getActiveVersion(webletId: string, userId?: string, develo
     const testingVersion = versions.find(v => v.status === 'TESTING')
 
     if (testingVersion && userId && testingVersion.isAbTest) {
-      // Developer override: weblet owner always sees the TESTING variant
-      if (developerId && userId === developerId) {
-        console.log(`[engine] Developer override: serving TESTING version for weblet ${webletId}`)
+      // Developer override: only in preview mode — developer always sees TESTING in builder preview
+      if (isPreview && developerId && userId === developerId) {
+        console.log(`[engine] Developer preview override: serving TESTING version for weblet ${webletId}`)
         return testingVersion
       }
+      // Everyone (including developer in regular chat) gets hash-bucketed by abTestTrafficPct
       const inVariantBucket = shouldServeVariant(userId, webletId, testingVersion.abTestTrafficPct)
       if (inVariantBucket) {
         return testingVersion
