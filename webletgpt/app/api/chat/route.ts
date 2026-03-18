@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
 
     // ── Round 2: parallel — version, quotas, session (pass pre-fetched data) ─
     const [activeVersion, quotaCheck, chatSession] = await Promise.all([
-      getActiveVersion(webletId, userId),
+      getActiveVersion(webletId, userId, weblet.developerId),
       checkQuotas(userId, webletId, weblet.developerId),
       getOrCreateChatSession(webletId, userId, sessionId || null),
     ])
