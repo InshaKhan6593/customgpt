@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { motion } from "framer-motion"
 import {
   RotateCcw,
@@ -21,11 +21,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 
 interface VersionHistoryProps {
@@ -135,111 +130,107 @@ export function VersionHistory({
                       : "—"
 
                     return (
-                      <Collapsible
-                        key={version.id}
-                        asChild
-                        open={isExpanded}
-                        onOpenChange={() => toggleRow(version.id)}
-                      >
-                        <>
-                          <TableRow 
-                            className={cn(
-                              "hover:bg-muted/20 group cursor-pointer",
-                              isActive && "border-l-2 border-l-green-500"
-                            )}
-                            onClick={() => toggleRow(version.id)}
-                          >
-                            <TableCell className="py-2.5 px-2">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 p-0" asChild>
-                                <CollapsibleTrigger>
-                                  {isExpanded ? (
-                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                  )}
-                                </CollapsibleTrigger>
-                              </Button>
-                            </TableCell>
-                            <TableCell className="py-2.5 font-mono font-medium text-sm">
-                              V{version.versionNum}
-                            </TableCell>
-                            <TableCell className="py-2.5">
-                              <Badge variant="outline" className={statusBadgeClass}>
-                                {version.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-2.5 font-medium text-sm">
-                              {version.avgScore !== null ? (
-                                <span
-                                  className={cn(
-                                    version.avgScore > 0.7 && "text-green-500",
-                                    version.avgScore >= 0.5 && version.avgScore <= 0.7 && "text-yellow-500",
-                                    version.avgScore < 0.5 && "text-red-500"
-                                  )}
-                                >
-                                  {version.avgScore.toFixed(2)}
-                                </span>
+                      <React.Fragment key={version.id}>
+                        <TableRow 
+                          className={cn(
+                            "hover:bg-muted/20 group cursor-pointer",
+                            isActive && "border-l-2 border-l-green-500"
+                          )}
+                          onClick={() => toggleRow(version.id)}
+                        >
+                          <TableCell className="py-2.5 px-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 p-0"
+                              onClick={(e) => { e.stopPropagation(); toggleRow(version.id) }}
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="h-4 w-4 text-muted-foreground" />
                               ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
                               )}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-sm text-muted-foreground font-mono">
-                              {modelDisplay}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                              {formatRelativeTime(version.createdAt)}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-right">
-                              <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                {isActive && (
+                            </Button>
+                          </TableCell>
+                          <TableCell className="py-2.5 font-mono font-medium text-sm">
+                            V{version.versionNum}
+                          </TableCell>
+                          <TableCell className="py-2.5">
+                            <Badge variant="outline" className={statusBadgeClass}>
+                              {version.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2.5 font-medium text-sm">
+                            {version.avgScore !== null ? (
+                              <span
+                                className={cn(
+                                  version.avgScore > 0.7 && "text-green-500",
+                                  version.avgScore >= 0.5 && version.avgScore <= 0.7 && "text-yellow-500",
+                                  version.avgScore < 0.5 && "text-red-500"
+                                )}
+                              >
+                                {version.avgScore.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2.5 text-sm text-muted-foreground font-mono">
+                            {modelDisplay}
+                          </TableCell>
+                          <TableCell className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                            {formatRelativeTime(version.createdAt)}
+                          </TableCell>
+                          <TableCell className="py-2.5 text-right">
+                            <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                              {isActive && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => onRollback(webletId)}
+                                  className="h-8 text-xs"
+                                >
+                                  <RotateCcw className="mr-1 h-3 w-3" /> Rollback
+                                </Button>
+                              )}
+                              {version.status === "DRAFT" && (
+                                <>
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => onRollback(webletId)}
+                                    onClick={() => onStartTest?.(version.id)}
                                     className="h-8 text-xs"
                                   >
-                                    <RotateCcw className="mr-1 h-3 w-3" /> Rollback
+                                    <FlaskConical className="mr-1 h-3 w-3" /> Test
                                   </Button>
-                                )}
-                                {version.status === "DRAFT" && (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => onStartTest?.(version.id)}
-                                      className="h-8 text-xs"
-                                    >
-                                      <FlaskConical className="mr-1 h-3 w-3" /> Test
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => onDeploy?.(version.id)}
-                                      className="h-8 text-xs"
-                                    >
-                                      <Rocket className="mr-1 h-3 w-3" /> Deploy
-                                    </Button>
-                                  </>
-                                )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => onDeploy?.(version.id)}
+                                    className="h-8 text-xs"
+                                  >
+                                    <Rocket className="mr-1 h-3 w-3" /> Deploy
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={7} className="p-0 border-b">
+                              <div className="px-4 pb-4 pt-2 bg-muted/10">
+                                <p className="text-xs text-muted-foreground mb-2 font-medium">
+                                  {version.commitMsg || "No changelog"}
+                                </p>
+                                <pre className="bg-muted/30 rounded-lg p-4 text-xs font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto border">
+                                  {version.prompt}
+                                </pre>
                               </div>
                             </TableCell>
                           </TableRow>
-                          <CollapsibleContent asChild>
-                            <TableRow className="hover:bg-transparent">
-                              <TableCell colSpan={7} className="p-0 border-b">
-                                <div className="px-4 pb-4 pt-2 bg-muted/10">
-                                  <p className="text-xs text-muted-foreground mb-2 font-medium">
-                                    {version.commitMsg || "No changelog"}
-                                  </p>
-                                  <pre className="bg-muted/30 rounded-lg p-4 text-xs font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto border">
-                                    {version.prompt}
-                                  </pre>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          </CollapsibleContent>
-                        </>
-                      </Collapsible>
+                        )}
+                      </React.Fragment>
                     )
                   })}
                 </TableBody>

@@ -113,12 +113,24 @@ export default function RSILDashboardPage() {
     setScoresLoading(true)
     try {
       const res = await fetch(`/api/rsil/scores?webletId=${webletId}&hours=168`)
-      if (!res.ok) throw new Error("Failed to load scores")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Unknown error" }))
+        if (res.status === 500) {
+          toast.warning("Scoring service is temporarily unreachable. Score data may be incomplete.")
+        } else {
+          toast.error(errData.error || "Failed to load scores")
+        }
+        setAnalysis(null)
+        setRecentRatings([])
+        setMetrics(null)
+        return
+      }
       const data: ScoresResponse = await res.json()
       setAnalysis(data.analysis)
       setRecentRatings(data.recentRatings || [])
       setMetrics(data.metrics || null)
     } catch {
+      toast.warning("Could not reach the scoring service. Score data is unavailable.")
       setAnalysis(null)
       setRecentRatings([])
       setMetrics(null)
@@ -202,13 +214,23 @@ export default function RSILDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webletId: selectedWebletId }),
       })
-      if (!res.ok) throw new Error("Failed to optimize")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Unknown error" }))
+        if (res.status === 409) {
+          toast.error("An A/B test is already running. Cancel or conclude it from the A/B Test tab before optimizing.")
+        } else if (res.status === 404) {
+          toast.error(errData.error || "Weblet or active version not found.")
+        } else {
+          toast.error(errData.error || "Failed to optimize prompt. Please try again.")
+        }
+        return
+      }
       const data = await res.json()
       setDraftVersion(data.draftVersion)
       setCurrentVersionPrompt(data.currentVersion?.prompt || currentVersionPrompt)
       toast.success("New prompt drafted")
     } catch {
-      toast.error("Failed to optimize prompt")
+      toast.error("Could not reach the server. Check your connection and try again.")
     } finally {
       setOptimizing(false)
     }

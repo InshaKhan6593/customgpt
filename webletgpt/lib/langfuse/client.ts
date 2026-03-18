@@ -39,52 +39,57 @@ export async function fetchScores({
     return { data: [], meta: {} }
   }
 
-  const allData: Array<{ traceId: string; name: string; value: number; id: string }> = []
-  let currentPage = 1
+  try {
+    const allData: Array<{ traceId: string; name: string; value: number; id: string }> = []
+    let currentPage = 1
 
-  while (allData.length < limit) {
-    const pageLimit = Math.min(limit - allData.length, LANGFUSE_MAX_LIMIT)
-    const params = new URLSearchParams()
-    params.set("limit", String(pageLimit))
-    params.set("page", String(currentPage))
-    const tags = [`webletId:${webletId}`]
-    if (versionId) tags.push(`versionId:${versionId}`)
-    params.set("traceTags", tags.join(','))
-    if (fromTimestamp) {
-      params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
-    }
-
-    const res = await fetch(`${LANGFUSE_BASE}/api/public/v2/scores?${params.toString()}`, {
-      headers: { Authorization: getLangfuseAuthHeader() },
-    })
-
-    if (!res.ok) {
-      console.error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
-      break
-    }
-
-    const json = (await res.json()) as {
-      data: Array<{ traceId: string; name: string; value: unknown; id: string }>
-      meta: unknown
-    }
-
-    for (const score of json.data) {
-      if (typeof score.value === "number") {
-        allData.push({
-          traceId: score.traceId,
-          name: score.name,
-          value: score.value,
-          id: score.id,
-        })
+    while (allData.length < limit) {
+      const pageLimit = Math.min(limit - allData.length, LANGFUSE_MAX_LIMIT)
+      const params = new URLSearchParams()
+      params.set("limit", String(pageLimit))
+      params.set("page", String(currentPage))
+      const tags = [`webletId:${webletId}`]
+      if (versionId) tags.push(`versionId:${versionId}`)
+      params.set("traceTags", tags.join(','))
+      if (fromTimestamp) {
+        params.set("fromTimestamp", new Date(fromTimestamp).toISOString())
       }
+
+      const res = await fetch(`${LANGFUSE_BASE}/api/public/v2/scores?${params.toString()}`, {
+        headers: { Authorization: getLangfuseAuthHeader() },
+      })
+
+      if (!res.ok) {
+        console.error(`Langfuse scores API returned ${res.status}: ${await res.text()}`)
+        break
+      }
+
+      const json = (await res.json()) as {
+        data: Array<{ traceId: string; name: string; value: unknown; id: string }>
+        meta: unknown
+      }
+
+      for (const score of json.data) {
+        if (typeof score.value === "number") {
+          allData.push({
+            traceId: score.traceId,
+            name: score.name,
+            value: score.value,
+            id: score.id,
+          })
+        }
+      }
+
+      if (json.data.length < pageLimit) break
+
+      currentPage++
     }
 
-    if (json.data.length < pageLimit) break
-
-    currentPage++
+    return { data: allData, meta: {} }
+  } catch (error) {
+    console.error('[langfuse] fetchScores failed (Langfuse unreachable):', error)
+    return { data: [], meta: {} }
   }
-
-  return { data: allData, meta: {} }
 }
 
 export interface ScoreMetric {
