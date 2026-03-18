@@ -88,10 +88,33 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const updated = await prisma.weblet.update({
-      where: { id: webletId },
-      data: { rsilGovernance: validationResult.data },
-      select: { id: true, rsilGovernance: true },
+    const validatedData = validationResult.data as Record<string, unknown>
+    const newTrafficPct = typeof validatedData.abTestTrafficPct === 'number' 
+      ? validatedData.abTestTrafficPct 
+      : undefined
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const webletUpdate = await tx.weblet.update({
+        where: { id: webletId },
+        data: { rsilGovernance: validationResult.data },
+        select: { id: true, rsilGovernance: true },
+      })
+
+      // Live-sync: update running TESTING version's traffic split to match governance
+      if (newTrafficPct !== undefined) {
+        await tx.webletVersion.updateMany({
+          where: {
+            webletId,
+            status: 'TESTING',
+            isAbTest: true,
+          },
+          data: {
+            abTestTrafficPct: newTrafficPct,
+          },
+        })
+      }
+
+      return webletUpdate
     })
 
     const governance = getGovernance({ rsilGovernance: updated.rsilGovernance })
