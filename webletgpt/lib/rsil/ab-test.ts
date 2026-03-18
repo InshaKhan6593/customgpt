@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { fetchScores } from '@/lib/langfuse/client'
 
 /**
  * Standard normal cumulative distribution function (CDF)
@@ -232,35 +233,37 @@ export async function getABTestStatus(
     return null
   }
 
-  /**
-   * Estimate sample size based on time elapsed and traffic percentage
-   * Since there's no direct version→session linkage in the schema,
-   * we estimate based on test duration and assumed 10 sessions/hour
-   */
-  const estimateSampleSize = (startedAt: Date | null, trafficPct: number): number => {
-    if (!startedAt) return 0
-    const hoursElapsed = (Date.now() - startedAt.getTime()) / (60 * 60 * 1000)
-    const BASE_SESSIONS_PER_HOUR = 10
-    return Math.floor(hoursElapsed * BASE_SESSIONS_PER_HOUR * (trafficPct / 100))
-  }
+  const fromTimestamp = variantVersion.abTestStartedAt?.toISOString()
 
-  const controlTotal = estimateSampleSize(
-    variantVersion.abTestStartedAt,
-    100 - variantVersion.abTestTrafficPct
-  )
-  const variantTotal = estimateSampleSize(
-    variantVersion.abTestStartedAt,
-    variantVersion.abTestTrafficPct
-  )
+  let controlScores = { total: 0, good: 0 }
+  let variantScores = { total: 0, good: 0 }
 
-  const controlScores = {
-    total: controlTotal,
-    good: Math.floor(controlTotal * (controlVersion.avgScore ?? 0)),
-  }
+  try {
+    const [controlData, variantData] = await Promise.all([
+      fetchScores({
+        webletId,
+        versionId: controlVersion.id,
+        limit: 500,
+        ...(fromTimestamp ? { fromTimestamp } : {}),
+      }),
+      fetchScores({
+        webletId,
+        versionId: variantVersion.id,
+        limit: 500,
+        ...(fromTimestamp ? { fromTimestamp } : {}),
+      }),
+    ])
 
-  const variantScores = {
-    total: variantTotal,
-    good: Math.floor(variantTotal * (variantVersion.avgScore ?? 0)),
+    const computeScores = (data: Array<{ name: string; value: number }>) => {
+      const total = data.length
+      const good = data.filter((s) => s.value >= (s.name === 'user-rating' ? 3 : 0.5)).length
+      return { total, good }
+    }
+
+    controlScores = computeScores(controlData.data)
+    variantScores = computeScores(variantData.data)
+  } catch (error) {
+    console.warn('[rsil] Failed to fetch Langfuse scores for A/B test:', error)
   }
 
   const significance =
