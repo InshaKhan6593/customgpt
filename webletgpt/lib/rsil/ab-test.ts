@@ -245,7 +245,7 @@ export async function getABTestStatus(
   }
 
   const controlTotal = estimateSampleSize(
-    controlVersion.abTestStartedAt,
+    variantVersion.abTestStartedAt,
     100 - variantVersion.abTestTrafficPct
   )
   const variantTotal = estimateSampleSize(

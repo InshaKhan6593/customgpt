@@ -78,8 +78,7 @@ export async function POST(req: NextRequest) {
         await promoteVersion(
           webletId,
           versionId,
-          governance.deploymentStrategy,
-          governance.canaryStages
+          "instant" // Always instant after A/B test conclusion — winner is already validated
         )
         return NextResponse.json({ success: true, versionId })
       }

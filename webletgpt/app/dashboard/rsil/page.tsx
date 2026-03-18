@@ -143,8 +143,8 @@ export default function RSILDashboardPage() {
       const res = await fetch(`/api/weblets/${webletId}/versions`)
       if (!res.ok) throw new Error("Failed to load versions")
       const data = await res.json()
-      setVersions(data.versions || [])
-      const active = (data.versions || []).find((v: { status: string; prompt: string }) => v.status === "ACTIVE")
+       setVersions(Array.isArray(data) ? data : [])
+       const active = (Array.isArray(data) ? data : []).find((v: { status: string; prompt: string }) => v.status === "ACTIVE")
       if (active) setCurrentVersionPrompt(active.prompt)
     } catch {
       setVersions([])
