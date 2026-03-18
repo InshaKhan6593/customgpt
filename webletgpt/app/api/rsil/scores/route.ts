@@ -40,13 +40,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Weblet not found' }, { status: 404 })
     }
 
-     const fromTimestamp = subHours(new Date(), hours).toISOString()
-     const analysis = await analyzeWeblet(webletId, hours)
-     const metrics = await fetchScoreMetrics({
+    const fromTimestamp = subHours(new Date(), hours).toISOString()
+    const analysis = await analyzeWeblet(webletId, hours)
+    const metrics = await fetchScoreMetrics({
       webletId,
       fromTimestamp,
       granularity: hours <= 24 ? 'hour' : hours <= 168 ? 'day' : 'week',
-    }).catch(() => ({ dimensions: [], timeSeries: [] }))
+    })
     const recentRatings = await prisma.analyticsEvent.findMany({
       where: {
         webletId,
@@ -57,11 +57,11 @@ export async function GET(req: NextRequest) {
       take: 50,
     })
 
-     return NextResponse.json({
-       analysis,
-       recentRatings,
-       metrics,
-     })
+    return NextResponse.json({
+      analysis,
+      recentRatings,
+      metrics,
+    })
   } catch (error) {
     console.error('RSIL scores error:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

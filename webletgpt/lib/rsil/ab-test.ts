@@ -232,17 +232,35 @@ export async function getABTestStatus(
     return null
   }
 
-  const controlTotal = 0
-  const variantTotal = 0
+  /**
+   * Estimate sample size based on time elapsed and traffic percentage
+   * Since there's no direct version→session linkage in the schema,
+   * we estimate based on test duration and assumed 10 sessions/hour
+   */
+  const estimateSampleSize = (startedAt: Date | null, trafficPct: number): number => {
+    if (!startedAt) return 0
+    const hoursElapsed = (Date.now() - startedAt.getTime()) / (60 * 60 * 1000)
+    const BASE_SESSIONS_PER_HOUR = 10
+    return Math.floor(hoursElapsed * BASE_SESSIONS_PER_HOUR * (trafficPct / 100))
+  }
+
+  const controlTotal = estimateSampleSize(
+    controlVersion.abTestStartedAt,
+    100 - variantVersion.abTestTrafficPct
+  )
+  const variantTotal = estimateSampleSize(
+    variantVersion.abTestStartedAt,
+    variantVersion.abTestTrafficPct
+  )
 
   const controlScores = {
     total: controlTotal,
-    good: Math.floor(controlTotal * ((controlVersion.avgScore ?? 0) / 5)),
+    good: Math.floor(controlTotal * (controlVersion.avgScore ?? 0)),
   }
 
   const variantScores = {
     total: variantTotal,
-    good: Math.floor(variantTotal * ((variantVersion.avgScore ?? 0) / 5)),
+    good: Math.floor(variantTotal * (variantVersion.avgScore ?? 0)),
   }
 
   const significance =

@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Sparkles } from "lucide-react"
+import { ArrowLeft, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -18,29 +17,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 import { WebletSelector } from "@/components/rsil/weblet-selector"
-import { RSILOverview } from "@/components/rsil/rsil-overview"
+import { RSILAggregateDashboard } from "@/components/rsil/rsil-aggregate-dashboard"
 import { PerformanceChart } from "@/components/rsil/performance-chart"
-import { AbTestStatus } from "@/components/rsil/ab-test-status"
-import { VersionHistory } from "@/components/rsil/version-history"
-import { GovernanceConfigForm } from "@/components/rsil/governance-config"
-import { OptimizeToggle } from "@/components/rsil/optimize-toggle"
 import { RsilEmptyState } from "@/components/rsil/rsil-empty-state"
-import { OptimizationLog } from "@/components/rsil/optimization-log"
-import { PromptScoreTable } from "@/components/rsil/prompt-score-table"
+
+import { PromptComparison } from "@/components/rsil/prompt-comparison"
+import { ABTestStatus } from "@/components/rsil/ab-test-status"
+import { VersionHistory } from "@/components/rsil/version-history"
+import { GovernancePanel } from "@/components/rsil/governance-panel"
 
 import type {
   AnalysisResult,
-  GovernanceConfig,
   MetricsData,
-  TestResult,
   WebletOverview,
-  WebletVersion,
   RatingEntry,
-  PromptVersionScore,
 } from "@/components/rsil/types"
+import type { AggregateData } from "@/components/rsil/rsil-aggregate-dashboard"
 
 type OverviewResponse = {
   weblets: WebletOverview[]
@@ -52,44 +48,52 @@ type ScoresResponse = {
   metrics?: MetricsData
 }
 
-type TestsResponse = {
-  evaluation: TestResult | null
-  testingVersion: WebletVersion | null
-}
-
-type ConfigResponse = {
-  rsilEnabled: boolean
-  governance: GovernanceConfig
-}
-
-type VersionsResponse = {
-  versions: WebletVersion[]
-}
-
 export default function RSILDashboardPage() {
   const [weblets, setWeblets] = useState<WebletOverview[]>([])
   const [selectedWebletId, setSelectedWebletId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState("overview")
 
   const [overviewLoading, setOverviewLoading] = useState(true)
   const [scoresLoading, setScoresLoading] = useState(false)
-  const [testsLoading, setTestsLoading] = useState(false)
-  const [versionsLoading, setVersionsLoading] = useState(false)
-  const [configLoading, setConfigLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
-  const [promptScoresLoading, setPromptScoresLoading] = useState(false)
 
-   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
-   const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
-   const [promptVersionScores, setPromptVersionScores] = useState<PromptVersionScore[]>([])
-  const [testResult, setTestResult] = useState<TestResult | null>(null)
-  const [testingVersion, setTestingVersion] = useState<WebletVersion | null>(null)
-  const [versions, setVersions] = useState<WebletVersion[]>([])
+  const [aggregateData, setAggregateData] = useState<AggregateData | null>(null)
+  const [aggregateLoading, setAggregateLoading] = useState(true)
+
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
+  const [recentRatings, setRecentRatings] = useState<RatingEntry[]>([])
   const [rsilEnabled, setRsilEnabled] = useState(false)
-  const [governance, setGovernance] = useState<GovernanceConfig | null>(null)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
 
-  const selectedWeblet = weblets.find((w) => w.id === selectedWebletId)
+  const [activeTab, setActiveTab] = useState("scores")
+  
+  const [draftVersion, setDraftVersion] = useState<{ id: string; prompt: string; changelog: string } | null>(null)
+  const [currentVersionPrompt, setCurrentVersionPrompt] = useState("")
+  const [optimizing, setOptimizing] = useState(false)
+  const [versions, setVersions] = useState<Array<{
+    id: string
+    versionNum: number
+    status: string
+    avgScore: number | null
+    model: string
+    prompt: string
+    commitMsg: string | null
+    createdAt: string | Date
+    isAbTest: boolean
+  }>>([])
+
+  const fetchAggregate = useCallback(async () => {
+    setAggregateLoading(true)
+    try {
+      const res = await fetch("/api/rsil/aggregate")
+      if (!res.ok) throw new Error("Failed to load aggregate data")
+      const data: AggregateData = await res.json()
+      setAggregateData(data)
+    } catch {
+      toast.error("Failed to load RSIL aggregate data")
+    } finally {
+      setAggregateLoading(false)
+    }
+  }, [])
 
   const fetchOverview = useCallback(async () => {
     setOverviewLoading(true)
@@ -98,119 +102,75 @@ export default function RSILDashboardPage() {
       if (!res.ok) throw new Error("Failed to load RSIL overview")
       const data: OverviewResponse = await res.json()
       setWeblets(data.weblets)
-      if (data.weblets.length > 0 && !selectedWebletId) {
-        setSelectedWebletId(data.weblets[0].id)
-      }
     } catch {
       toast.error("Failed to load RSIL data")
     } finally {
       setOverviewLoading(false)
     }
-  }, [selectedWebletId])
+  }, [])
 
   const fetchScores = useCallback(async (webletId: string) => {
     setScoresLoading(true)
     try {
       const res = await fetch(`/api/rsil/scores?webletId=${webletId}&hours=168`)
       if (!res.ok) throw new Error("Failed to load scores")
-       const data: ScoresResponse = await res.json()
-       setAnalysis(data.analysis)
-       setRecentRatings(data.recentRatings || [])
-       setMetrics(data.metrics || null)
-     } catch {
-       setAnalysis(null)
-       setRecentRatings([])
-       setMetrics(null)
+      const data: ScoresResponse = await res.json()
+      setAnalysis(data.analysis)
+      setRecentRatings(data.recentRatings || [])
+      setMetrics(data.metrics || null)
+    } catch {
+      setAnalysis(null)
+      setRecentRatings([])
+      setMetrics(null)
     } finally {
       setScoresLoading(false)
     }
   }, [])
 
-  const fetchPromptScores = useCallback(async (webletId: string) => {
-    setPromptScoresLoading(true)
+  const fetchConfig = useCallback(async (webletId: string) => {
     try {
-      const res = await fetch(`/api/rsil/prompt-scores?webletId=${webletId}&hours=168`)
-      if (!res.ok) throw new Error("Failed to load prompt scores")
+      const res = await fetch(`/api/rsil/config?webletId=${webletId}`)
+      if (!res.ok) throw new Error("Failed to load config")
       const data = await res.json()
-      setPromptVersionScores(data.promptVersionScores || [])
+      setRsilEnabled(data.rsilEnabled)
     } catch {
-      setPromptVersionScores([])
-    } finally {
-      setPromptScoresLoading(false)
-    }
-  }, [])
-
-  const fetchTests = useCallback(async (webletId: string) => {
-    setTestsLoading(true)
-    try {
-      const res = await fetch(`/api/rsil/tests?webletId=${webletId}`)
-      if (!res.ok) throw new Error("Failed to load tests")
-      const data: TestsResponse = await res.json()
-      setTestResult(data.evaluation)
-      setTestingVersion(data.testingVersion)
-    } catch {
-      setTestResult(null)
-      setTestingVersion(null)
-    } finally {
-      setTestsLoading(false)
+      setRsilEnabled(false)
     }
   }, [])
 
   const fetchVersions = useCallback(async (webletId: string) => {
-    setVersionsLoading(true)
     try {
-      const res = await fetch(`/api/rsil/versions?webletId=${webletId}`)
+      const res = await fetch(`/api/weblets/${webletId}/versions`)
       if (!res.ok) throw new Error("Failed to load versions")
-      const data: VersionsResponse = await res.json()
+      const data = await res.json()
       setVersions(data.versions || [])
+      const active = (data.versions || []).find((v: { status: string; prompt: string }) => v.status === "ACTIVE")
+      if (active) setCurrentVersionPrompt(active.prompt)
     } catch {
       setVersions([])
-    } finally {
-      setVersionsLoading(false)
-    }
-  }, [])
-
-  const fetchConfig = useCallback(async (webletId: string) => {
-    setConfigLoading(true)
-    try {
-      const res = await fetch(`/api/rsil/config?webletId=${webletId}`)
-      if (!res.ok) throw new Error("Failed to load config")
-      const data: ConfigResponse = await res.json()
-      setRsilEnabled(data.rsilEnabled)
-      setGovernance(data.governance)
-    } catch {
-      setRsilEnabled(false)
-      setGovernance(null)
-    } finally {
-      setConfigLoading(false)
     }
   }, [])
 
   useEffect(() => {
     fetchOverview()
-  }, [fetchOverview])
+    fetchAggregate()
+  }, [fetchOverview, fetchAggregate])
 
   useEffect(() => {
     if (!selectedWebletId) return
     fetchScores(selectedWebletId)
-    fetchPromptScores(selectedWebletId)
-    fetchTests(selectedWebletId)
-    fetchVersions(selectedWebletId)
     fetchConfig(selectedWebletId)
-  }, [selectedWebletId, fetchScores, fetchPromptScores, fetchTests, fetchVersions, fetchConfig])
+    fetchVersions(selectedWebletId)
+  }, [selectedWebletId, fetchScores, fetchConfig, fetchVersions])
 
-   function handleWebletChange(id: string) {
-     setSelectedWebletId(id)
-     setActiveTab("overview")
-     setAnalysis(null)
-     setRecentRatings([])
-     setPromptVersionScores([])
-     setMetrics(null)
-     setTestResult(null)
-     setTestingVersion(null)
-     setVersions([])
-     setGovernance(null)
-   }
+  function handleWebletChange(id: string) {
+    setSelectedWebletId(id)
+    setAnalysis(null)
+    setRecentRatings([])
+    setMetrics(null)
+    setActiveTab("scores")
+    setDraftVersion(null)
+  }
 
   async function handleToggleRSIL(enabled: boolean) {
     if (!selectedWebletId) return
@@ -225,6 +185,7 @@ export default function RSILDashboardPage() {
       setRsilEnabled(enabled)
       toast.success(enabled ? "RSIL enabled" : "RSIL disabled")
       fetchOverview()
+      fetchAggregate()
     } catch {
       toast.error("Failed to toggle RSIL")
     } finally {
@@ -232,136 +193,120 @@ export default function RSILDashboardPage() {
     }
   }
 
-  async function handleRunOptimization() {
+  async function handleOptimize() {
     if (!selectedWebletId) return
-    setActionLoading(true)
+    setOptimizing(true)
     try {
-      const res = await fetch("/api/rsil/run", {
+      const res = await fetch("/api/rsil/optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webletId: selectedWebletId }),
       })
-      if (!res.ok) throw new Error("Failed to run")
+      if (!res.ok) throw new Error("Failed to optimize")
       const data = await res.json()
-      if (data.skipped) {
-        toast.warning(data.reason || "Optimization skipped — governance check failed")
-      } else if (data.action === "ab_test_started") {
-        toast.success("Optimization started — A/B test created")
-        setTimeout(() => {
-          if (selectedWebletId) {
-            fetchScores(selectedWebletId)
-            fetchTests(selectedWebletId)
-            fetchVersions(selectedWebletId)
-          }
-        }, 3000)
-      } else if (data.action === "suggestion") {
-        toast.info(data.analysis?.reason || "Suggestion generated — review in Scores tab")
-      } else if (data.action === "none") {
-        toast.info(data.analysis?.reason || "Not enough score data yet — keep collecting user feedback")
-      } else {
-        toast.info("Optimization completed — no changes needed")
-      }
+      setDraftVersion(data.draftVersion)
+      setCurrentVersionPrompt(data.currentVersion?.prompt || currentVersionPrompt)
+      toast.success("New prompt drafted")
     } catch {
-      toast.error("Failed to start optimization")
+      toast.error("Failed to optimize prompt")
     } finally {
-      setActionLoading(false)
+      setOptimizing(false)
     }
   }
 
-  async function handlePromoteTest() {
+  async function handleStartTest(versionId: string) {
     if (!selectedWebletId) return
-    setActionLoading(true)
     try {
-      const res = await fetch("/api/rsil/tests", {
+      const res = await fetch("/api/rsil/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId: selectedWebletId, action: "promote" }),
+        body: JSON.stringify({ webletId: selectedWebletId, versionId, action: "test" }),
       })
-      if (!res.ok) throw new Error("Failed to promote")
-      toast.success("Variant promoted successfully")
-      fetchTests(selectedWebletId)
-      fetchVersions(selectedWebletId)
-      fetchScores(selectedWebletId)
-      fetchOverview()
+      if (!res.ok) throw new Error("Failed to start A/B test")
+      toast.success("A/B test started successfully")
+      await fetchVersions(selectedWebletId)
+      setActiveTab("abtest")
     } catch {
-      toast.error("Failed to promote variant")
-    } finally {
-      setActionLoading(false)
+      toast.error("Failed to start A/B test")
     }
   }
 
-  async function handleEndTest() {
+  async function handleDeploy(versionId: string) {
     if (!selectedWebletId) return
-    setActionLoading(true)
     try {
-      const res = await fetch("/api/rsil/tests", {
+      const res = await fetch("/api/rsil/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId: selectedWebletId, action: "end" }),
+        body: JSON.stringify({ webletId: selectedWebletId, versionId, action: "deploy" }),
       })
-      if (!res.ok) throw new Error("Failed to end test")
-      toast.success("Test ended, control version kept")
-      fetchTests(selectedWebletId)
-      fetchVersions(selectedWebletId)
-      fetchOverview()
+      if (!res.ok) throw new Error("Failed to deploy version")
+      toast.success("Version deployed successfully")
+      await fetchVersions(selectedWebletId)
+      setActiveTab("versions")
     } catch {
-      toast.error("Failed to end test")
-    } finally {
-      setActionLoading(false)
+      toast.error("Failed to deploy version")
     }
   }
 
-  async function handleSaveGovernance(config: GovernanceConfig) {
+  async function handleConcludeTest(winnerId: string) {
     if (!selectedWebletId) return
-    setActionLoading(true)
     try {
-      const res = await fetch("/api/rsil/config", {
-        method: "PUT",
+      const res = await fetch("/api/rsil/deploy", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId: selectedWebletId, governance: config }),
+        body: JSON.stringify({ webletId: selectedWebletId, versionId: winnerId, action: "conclude" }),
       })
-      if (!res.ok) throw new Error("Failed to save")
-      setGovernance(config)
-      toast.success("Governance settings saved")
+      if (!res.ok) throw new Error("Failed to conclude test")
+      toast.success("A/B test concluded successfully")
+      await fetchVersions(selectedWebletId)
+      setActiveTab("versions")
     } catch {
-      toast.error("Failed to save governance settings")
-    } finally {
-      setActionLoading(false)
+      toast.error("Failed to conclude A/B test")
     }
   }
 
-  async function handleRollback(versionId: string) {
+  async function handleCancelTest() {
     if (!selectedWebletId) return
-    setActionLoading(true)
+    try {
+      const res = await fetch("/api/rsil/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webletId: selectedWebletId, action: "cancel" }),
+      })
+      if (!res.ok) throw new Error("Failed to cancel test")
+      toast.success("A/B test cancelled")
+      await fetchVersions(selectedWebletId)
+      setActiveTab("versions")
+    } catch {
+      toast.error("Failed to cancel A/B test")
+    }
+  }
+
+  async function handleRollback(webletId: string) {
     try {
       const res = await fetch("/api/rsil/rollback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId: selectedWebletId, targetVersionId: versionId }),
+        body: JSON.stringify({ webletId }),
       })
       if (!res.ok) throw new Error("Failed to rollback")
-      toast.success("Rollback successful")
-      fetchVersions(selectedWebletId)
-      fetchScores(selectedWebletId)
-      fetchOverview()
+      toast.success("Rolled back to previous version")
+      await fetchVersions(webletId)
     } catch {
-      toast.error("Failed to rollback version")
-    } finally {
-      setActionLoading(false)
+      toast.error("Failed to rollback")
     }
   }
 
-  if (overviewLoading) {
+  if (overviewLoading && aggregateLoading) {
     return (
       <div className="flex flex-col gap-6">
         <div>
           <Skeleton className="h-7 w-64" />
           <Skeleton className="h-4 w-96 mt-2" />
         </div>
-        <Skeleton className="h-10 w-72" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
           ))}
         </div>
         <Skeleton className="h-80 rounded-xl" />
@@ -369,7 +314,7 @@ export default function RSILDashboardPage() {
     )
   }
 
-  if (weblets.length === 0) {
+  if (!overviewLoading && weblets.length === 0 && !aggregateLoading && !aggregateData?.perWebletScores.length) {
     return (
       <div className="flex flex-col gap-6">
         <div>
@@ -378,7 +323,7 @@ export default function RSILDashboardPage() {
             RSIL — Self-Improving AI
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Reinforcement from System &amp; Instructions Learning
+            Real-time Langfuse metrics for RSIL-enabled weblets
           </p>
         </div>
         <RsilEmptyState />
@@ -386,11 +331,33 @@ export default function RSILDashboardPage() {
     )
   }
 
-  const currentVersionId = selectedWeblet?.latestVersion?.id ?? ""
-  const currentVersionNum = selectedWeblet?.latestVersion?.versionNum ?? 1
-  const hasActiveTest = !!selectedWeblet?.activeTest
-  const totalVersions = selectedWeblet?.totalVersions ?? 0
-  const controlVersion = versions.find((v) => v.status === "ACTIVE" && v.id === currentVersionId) ?? null
+  if (!selectedWebletId) {
+    return (
+      <div className="flex flex-col gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Sparkles className="size-6" />
+            RSIL — Self-Improving AI
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Real-time Langfuse metrics for RSIL-enabled weblets
+          </p>
+        </motion.div>
+
+        <RSILAggregateDashboard
+          data={aggregateData}
+          loading={aggregateLoading}
+          onSelectWeblet={(id) => {
+            handleWebletChange(id)
+          }}
+        />
+      </div>
+    )
+  }
 
   function getEventDataValue(eventData: Record<string, unknown> | null, keys: string[]) {
     if (!eventData) return null
@@ -417,14 +384,16 @@ export default function RSILDashboardPage() {
         transition={{ duration: 0.3 }}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Sparkles className="size-6" />
-              RSIL — Self-Improving AI
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Reinforcement from System &amp; Instructions Learning
-            </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedWebletId(null)}
+              className="gap-1.5"
+            >
+              <ArrowLeft className="size-4" />
+              Back to Overview
+            </Button>
           </div>
           <div className="flex items-center gap-3">
             <WebletSelector
@@ -432,55 +401,40 @@ export default function RSILDashboardPage() {
               selectedId={selectedWebletId}
               onSelect={handleWebletChange}
             />
-            {rsilEnabled ? (
-              <Badge variant="default" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-500">
-                RSIL ON
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">
-                RSIL OFF
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={rsilEnabled}
+                onCheckedChange={handleToggleRSIL}
+                disabled={actionLoading}
+              />
+              {rsilEnabled ? (
+                <Badge variant="default" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-500">
+                  RSIL ON
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">
+                  RSIL OFF
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
 
-      <OptimizeToggle
-        rsilEnabled={rsilEnabled}
-        onToggle={handleToggleRSIL}
-        onRunNow={handleRunOptimization}
-        isActionLoading={actionLoading}
-      />
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs defaultValue="scores" value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="scores">Scores</TabsTrigger>
-          <TabsTrigger value="tests">A/B Tests</TabsTrigger>
+          <TabsTrigger value="optimization">Optimization</TabsTrigger>
+          <TabsTrigger value="abtest">A/B Test</TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="governance">Governance</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-4 space-y-6">
-          <RSILOverview
-            analysis={analysis}
-            latestVersion={selectedWeblet?.latestVersion ?? null}
-            totalVersions={totalVersions}
-            hasActiveTest={hasActiveTest}
-            interactionCount={selectedWeblet?.interactionCount ?? 0}
-            loading={scoresLoading}
-          />
-
+        <TabsContent value="scores" className="mt-6 space-y-8">
           <PerformanceChart
             timeSeries={chartData}
             dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
           />
-
-          <OptimizationLog versions={versions} loading={versionsLoading} />
-        </TabsContent>
-
-        <TabsContent value="scores" className="mt-4 space-y-6">
-          <PromptScoreTable scores={promptVersionScores} loading={promptScoresLoading} />
 
           {scoresLoading ? (
             <div className="space-y-4">
@@ -492,208 +446,171 @@ export default function RSILDashboardPage() {
               </div>
             </div>
           ) : (
-            <>
-              {analysis?.dimensions && analysis.dimensions.length > 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {analysis.dimensions.map((dim) => {
-                    const isWeak = analysis.weakDimensions.includes(dim.name)
-                    const metric = metrics?.dimensions.find((m) => m.name === dim.name)
-                    return (
-                      <motion.div
-                        key={dim.name}
-                        initial={{ opacity: 0, scale: 0.97 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.25 }}
-                      >
-                        <Card className={cn(isWeak && "border-amber-500/30 bg-amber-500/5")}>
-                          <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground capitalize">{dim.name}</CardTitle>
-                            {isWeak && (
-                              <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-xs">
-                                Needs Improvement
-                              </Badge>
-                            )}
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-2xl font-bold text-foreground">{dim.avgValue.toFixed(1)}</span>
-                              <span className="text-sm text-muted-foreground">/ 10</span>
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Dimensions</h3>
+                {analysis?.dimensions && analysis.dimensions.length > 0 ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {analysis.dimensions.map((dim) => {
+                      const isWeak = analysis.weakDimensions.includes(dim.name)
+                      const metric = metrics?.dimensions.find((m) => m.name === dim.name)
+                      return (
+                        <motion.div
+                          key={dim.name}
+                          initial={{ opacity: 0, scale: 0.97 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.25 }}
+                        >
+                          <div className={cn(
+                            "rounded-xl border bg-card/50 overflow-hidden",
+                            isWeak && "border-amber-500/30 bg-amber-500/5"
+                          )}>
+                            <div className="p-4 flex flex-row items-center justify-between pb-2">
+                              <span className="text-sm font-medium text-muted-foreground capitalize">{dim.name}</span>
+                              {isWeak && (
+                                <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-[10px] uppercase tracking-wider h-5 px-1.5 font-medium">
+                                  Improve
+                                </Badge>
+                              )}
                             </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {metric ? metric.count : dim.sampleSize} samples · weight {dim.weight}
-                            </p>
-                            {metric && (metric.p50 != null || metric.p90 != null) && (
-                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                                {metric.p50 != null && (
-                                  <span>p50: <span className="font-medium text-foreground">{metric.p50.toFixed(1)}</span></span>
-                                )}
-                                {metric.p90 != null && (
-                                  <span>p90: <span className="font-medium text-foreground">{metric.p90.toFixed(1)}</span></span>
-                                )}
+                            <div className="p-4 pt-0">
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-semibold tracking-tight text-foreground">{(dim.avgValue * 10).toFixed(1)}</span>
+                                <span className="text-sm text-muted-foreground font-medium">/ 10</span>
                               </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </motion.div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-                  No dimension scores available yet.
-                </div>
-              )}
-
-              <PerformanceChart
-                timeSeries={chartData}
-                dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
-              />
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">Recent Ratings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {recentRatings.length === 0 ? (
-                    <div className="py-8 text-sm text-muted-foreground text-center">
-                      No individual ratings in this time range yet.
-                    </div>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Score</TableHead>
-                            <TableHead>Trace ID</TableHead>
-                            <TableHead>Feedback</TableHead>
-                            <TableHead className="text-right">Timestamp</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {recentRatings.map((entry) => {
-                            const numericScore = getEventDataValue(entry.eventData, ["score", "rating", "value"])
-                            const traceId = getEventDataValue(entry.eventData, ["traceId", "langfuseTraceId", "trace_id", "sessionTraceId"])
-                            const feedback = getEventDataValue(entry.eventData, ["feedback", "comment", "reason", "notes"])
-
-                            return (
-                              <TableRow key={entry.id}>
-                                <TableCell>
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      "uppercase tracking-wide",
-                                      entry.eventType === "thumbs_up" && "text-emerald-500 border-emerald-500/30",
-                                      entry.eventType === "thumbs_down" && "text-rose-500 border-rose-500/30"
-                                    )}
-                                  >
-                                    {entry.eventType}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {typeof numericScore === "number"
-                                    ? numericScore
-                                    : entry.eventType === "thumbs_up"
-                                      ? "👍"
-                                      : entry.eventType === "thumbs_down"
-                                        ? "👎"
-                                        : "-"}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground max-w-[180px] truncate">
-                                  {typeof traceId === "string" ? traceId : "-"}
-                                </TableCell>
-                                <TableCell className="max-w-[280px] truncate text-sm text-muted-foreground">
-                                  {typeof feedback === "string" ? feedback : "-"}
-                                </TableCell>
-                                <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
-                                  {new Date(entry.createdAt).toLocaleString(undefined, {
-                                    month: "short",
-                                    day: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </TabsContent>
-
-        <TabsContent value="tests" className="mt-4 space-y-6">
-          {testsLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-64 rounded-xl" />
-            </div>
-          ) : (
-            <>
-              <AbTestStatus
-                testResult={testResult}
-                controlVersion={controlVersion}
-                testingVersion={testingVersion}
-                currentVersionNum={currentVersionNum}
-                onPromote={handlePromoteTest}
-                onEnd={handleEndTest}
-                onRunOptimization={handleRunOptimization}
-                isActionLoading={actionLoading}
-              />
-
-              {versions.filter((v) => v.isAbTest && v.abTestEndedAt).length > 0 && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Test History</h3>
-                    <VersionHistory
-                      versions={versions.filter((v) => v.isAbTest)}
-                      currentVersionId={currentVersionId}
-                      onRollback={handleRollback}
-                      isActionLoading={actionLoading}
-                    />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {metric ? metric.count : dim.sampleSize} samples
+                              </p>
+                              {metric && (metric.p50 != null || metric.p90 != null) && (
+                                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground/80 border-t pt-2.5">
+                                  {metric.p50 != null && (
+                                    <span>p50: <span className="font-medium text-muted-foreground">{metric.p50.toFixed(2)}</span></span>
+                                  )}
+                                  {metric.p90 != null && (
+                                    <span>p90: <span className="font-medium text-muted-foreground">{metric.p90.toFixed(2)}</span></span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )
+                    })}
                   </div>
-                </>
-              )}
-            </>
+                ) : (
+                  <div className="flex items-center justify-center py-12 text-muted-foreground text-sm border rounded-md border-dashed">
+                    No dimension scores available yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Recent Ratings</h3>
+                {recentRatings.length === 0 ? (
+                  <div className="py-8 text-sm text-muted-foreground text-center border rounded-md border-dashed">
+                    No individual ratings in this time range yet.
+                  </div>
+                ) : (
+                  <div className="rounded-md border bg-card/50 overflow-hidden shadow-sm">
+                    <Table>
+                      <TableHeader className="bg-muted/30">
+                        <TableRow>
+                          <TableHead className="h-9">Type</TableHead>
+                          <TableHead className="h-9">Score</TableHead>
+                          <TableHead className="h-9">Trace ID</TableHead>
+                          <TableHead className="h-9">Feedback</TableHead>
+                          <TableHead className="h-9 text-right">Timestamp</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentRatings.map((entry) => {
+                          const numericScore = getEventDataValue(entry.eventData, ["score", "rating", "value"])
+                          const traceId = getEventDataValue(entry.eventData, ["traceId", "langfuseTraceId", "trace_id", "sessionTraceId"])
+                          const feedback = getEventDataValue(entry.eventData, ["feedback", "comment", "reason", "notes"])
+
+                          return (
+                            <TableRow key={entry.id} className="hover:bg-muted/20">
+                              <TableCell className="py-2.5">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "uppercase tracking-wide text-[10px] font-medium h-5",
+                                    entry.eventType === "thumbs_up" && "text-emerald-500 border-emerald-500/30 bg-emerald-500/5",
+                                    entry.eventType === "thumbs_down" && "text-rose-500 border-rose-500/30 bg-rose-500/5"
+                                  )}
+                                >
+                                  {entry.eventType}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2.5 font-medium text-sm">
+                                {typeof numericScore === "number"
+                                  ? numericScore
+                                  : entry.eventType === "thumbs_up"
+                                    ? "\uD83D\uDC4D"
+                                    : entry.eventType === "thumbs_down"
+                                      ? "\uD83D\uDC4E"
+                                      : "-"}
+                              </TableCell>
+                              <TableCell className="py-2.5 font-mono text-xs text-muted-foreground max-w-[180px] truncate">
+                                {typeof traceId === "string" ? traceId : "-"}
+                              </TableCell>
+                              <TableCell className="py-2.5 max-w-[280px] truncate text-sm text-muted-foreground">
+                                {typeof feedback === "string" ? feedback : "-"}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-right text-xs text-muted-foreground whitespace-nowrap">
+                                {new Date(entry.createdAt).toLocaleString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </TabsContent>
 
-        <TabsContent value="versions" className="mt-4 space-y-4">
-          {versionsLoading ? (
-            <div className="space-y-2">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-md" />
-              ))}
-            </div>
-          ) : (
-            <VersionHistory
-              versions={versions}
-              currentVersionId={currentVersionId}
-              onRollback={handleRollback}
-              isActionLoading={actionLoading}
-            />
-          )}
+        <TabsContent value="optimization" className="mt-6">
+          <PromptComparison
+            currentPrompt={currentVersionPrompt}
+            proposedPrompt={draftVersion?.prompt || ""}
+            changelog={draftVersion?.changelog || ""}
+            draftVersionId={draftVersion?.id || ""}
+            webletId={selectedWebletId}
+            loading={optimizing}
+            onOptimize={handleOptimize}
+            onStartTest={handleStartTest}
+            onDeploy={handleDeploy}
+          />
         </TabsContent>
 
-        <TabsContent value="settings" className="mt-4 space-y-6">
-          {configLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full rounded-xl" />
-              <Skeleton className="h-96 rounded-xl" />
-            </div>
-          ) : (
-            <>
-              <GovernanceConfigForm
-                initialConfig={governance}
-                onSave={handleSaveGovernance}
-                isSaving={actionLoading}
-              />
-            </>
-          )}
+        <TabsContent value="abtest" className="mt-6">
+          <ABTestStatus
+            webletId={selectedWebletId}
+            onConclude={handleConcludeTest}
+            onCancel={handleCancelTest}
+          />
+        </TabsContent>
+
+        <TabsContent value="versions" className="mt-6">
+          <VersionHistory
+            versions={versions}
+            webletId={selectedWebletId}
+            onRollback={handleRollback}
+            onStartTest={handleStartTest}
+            onDeploy={handleDeploy}
+          />
+        </TabsContent>
+
+        <TabsContent value="governance" className="mt-6">
+          <GovernancePanel webletId={selectedWebletId} />
         </TabsContent>
       </Tabs>
     </div>

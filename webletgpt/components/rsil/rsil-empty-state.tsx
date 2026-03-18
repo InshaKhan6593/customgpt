@@ -1,29 +1,25 @@
-"use client"
-
-import { Bot, Plus, Sparkles } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
+"use client";
+import { motion } from "framer-motion";
+import { BarChart3 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export function RsilEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-5 py-24 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full bg-muted">
-        <Sparkles className="size-8 text-muted-foreground" />
-      </div>
-      <div>
-        <h2 className="text-lg font-semibold">
-          No RSIL-enabled Weblets
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
-          Reinforcement from System & Instructions Learning (RSIL) automatically improves your Weblets based on user interactions.
-        </p>
-      </div>
-      <Link href="/dashboard/weblets">
-        <Button variant="secondary">
-          <Bot className="size-4 mr-2" />
-          Go to My Weblets
-        </Button>
-      </Link>
-    </div>
-  )
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col items-center justify-center py-16 px-8 text-center"
+    >
+      <BarChart3 className="h-16 w-16 text-muted-foreground/30" />
+      <h3 className="mt-6 text-xl font-semibold text-foreground">No RSIL Data Yet</h3>
+      <p className="mt-2 text-muted-foreground max-w-md">
+        Enable RSIL on a weblet to start tracking prompt performance and running optimizations
+      </p>
+      <Button variant="outline" className="mt-6" asChild>
+        <Link href="/dashboard/weblets">Go to Weblets</Link>
+      </Button>
+    </motion.div>
+  );
 }

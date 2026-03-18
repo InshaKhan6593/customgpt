@@ -1,0 +1,730 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - navigation "Sidebar for langfuse" [ref=e46]:
+      - search [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+        - generic [ref=e11]:
+          - generic [ref=e12]: Open Search
+          - text: Search
+        - generic [ref=e13]:
+          - generic [ref=e14]: "Keyboard Shortcut:"
+          - generic [ref=e15]:
+            - generic [ref=e16]: CTRL
+            - text: ⌃ k
+      - list [ref=e17]:
+        - listitem [ref=e47]:
+          - button "Authentication" [ref=e48] [cursor=pointer]:
+            - generic [ref=e49]: Authentication
+        - listitem [ref=e50]:
+          - button "Exports" [ref=e51]:
+            - generic [ref=e52]: Exports
+        - listitem [ref=e53]:
+          - button "AnnotationQueues Close Group" [expanded] [ref=e55] [cursor=pointer]:
+            - generic [ref=e56]: AnnotationQueues
+            - generic [ref=e57]:
+              - img [ref=e58]
+              - generic [ref=e61]: Close Group
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - 'button "/api/public/annotation-queues HTTP Method: GET" [ref=e64] [cursor=pointer]':
+                - generic [ref=e69]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                - generic [ref=e70]:
+                  - generic [ref=e71]: "HTTP Method:"
+                  - text: GET
+            - listitem [ref=e72]:
+              - 'button "/api/public/annotation-queues HTTP Method: POST" [ref=e73] [cursor=pointer]':
+                - generic [ref=e78]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                - generic [ref=e79]:
+                  - generic [ref=e80]: "HTTP Method:"
+                  - text: POST
+            - listitem [ref=e81]:
+              - 'button "/api/public/annotation-queues/{queueId} HTTP Method: GET" [ref=e82] [cursor=pointer]':
+                - generic [ref=e87]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                - generic [ref=e88]:
+                  - generic [ref=e89]: "HTTP Method:"
+                  - text: GET
+            - listitem [ref=e90]:
+              - 'button "/api/public/annotation-queues/{queueId}/items HTTP Method: GET" [ref=e91] [cursor=pointer]':
+                - generic [ref=e96]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /items
+                - generic [ref=e97]:
+                  - generic [ref=e98]: "HTTP Method:"
+                  - text: GET
+            - listitem [ref=e99]:
+              - 'button "/api/public/annotation-queues/{queueId}/items HTTP Method: POST" [ref=e100] [cursor=pointer]':
+                - generic [ref=e105]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /items
+                - generic [ref=e106]:
+                  - generic [ref=e107]: "HTTP Method:"
+                  - text: POST
+            - listitem [ref=e108]:
+              - 'button "/api/public/annotation-queues/{queueId}/items/{itemId} HTTP Method: GET" [ref=e109] [cursor=pointer]':
+                - generic [ref=e114]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /items
+                  - text: "/{itemId}"
+                - generic [ref=e115]:
+                  - generic [ref=e116]: "HTTP Method:"
+                  - text: GET
+            - listitem [ref=e117]:
+              - 'button "/api/public/annotation-queues/{queueId}/items/{itemId} HTTP Method: PATCH" [ref=e118] [cursor=pointer]':
+                - generic [ref=e123]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /items
+                  - text: "/{itemId}"
+                - generic [ref=e124]:
+                  - generic [ref=e125]: "HTTP Method:"
+                  - text: PATCH
+            - listitem [ref=e126]:
+              - 'button "/api/public/annotation-queues/{queueId}/items/{itemId} HTTP Method: DEL" [ref=e127] [cursor=pointer]':
+                - generic [ref=e132]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /items
+                  - text: "/{itemId}"
+                - generic [ref=e133]:
+                  - generic [ref=e134]: "HTTP Method:"
+                  - text: DEL
+            - listitem [ref=e135]:
+              - 'button "/api/public/annotation-queues/{queueId}/assignments HTTP Method: POST" [ref=e136] [cursor=pointer]':
+                - generic [ref=e141]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /assignments
+                - generic [ref=e142]:
+                  - generic [ref=e143]: "HTTP Method:"
+                  - text: POST
+            - listitem [ref=e144]:
+              - 'button "/api/public/annotation-queues/{queueId}/assignments HTTP Method: DEL" [ref=e145] [cursor=pointer]':
+                - generic [ref=e150]:
+                  - text: /api
+                  - text: /public
+                  - text: /annotation
+                  - text: "-queues"
+                  - text: "/{queueId}"
+                  - text: /assignments
+                - generic [ref=e151]:
+                  - generic [ref=e152]: "HTTP Method:"
+                  - text: DEL
+        - listitem [ref=e153]:
+          - button "BlobStorageIntegrations Open Group" [ref=e155] [cursor=pointer]:
+            - generic [ref=e156]: BlobStorageIntegrations
+            - generic [ref=e157]:
+              - img [ref=e158]
+              - generic [ref=e161]: Open Group
+        - listitem [ref=e162]:
+          - button "Comments Open Group" [ref=e164] [cursor=pointer]:
+            - generic [ref=e165]: Comments
+            - generic [ref=e166]:
+              - img [ref=e167]
+              - generic [ref=e170]: Open Group
+        - listitem [ref=e171]:
+          - button "DatasetItems Open Group" [ref=e173] [cursor=pointer]:
+            - generic [ref=e174]: DatasetItems
+            - generic [ref=e175]:
+              - img [ref=e176]
+              - generic [ref=e179]: Open Group
+        - listitem [ref=e180]:
+          - button "DatasetRunItems Open Group" [ref=e182] [cursor=pointer]:
+            - generic [ref=e183]: DatasetRunItems
+            - generic [ref=e184]:
+              - img [ref=e185]
+              - generic [ref=e188]: Open Group
+        - listitem [ref=e189]:
+          - button "Datasets Open Group" [ref=e191] [cursor=pointer]:
+            - generic [ref=e192]: Datasets
+            - generic [ref=e193]:
+              - img [ref=e194]
+              - generic [ref=e197]: Open Group
+        - listitem [ref=e198]:
+          - button "Health Open Group" [ref=e200] [cursor=pointer]:
+            - generic [ref=e201]: Health
+            - generic [ref=e202]:
+              - img [ref=e203]
+              - generic [ref=e206]: Open Group
+        - listitem [ref=e207]:
+          - button "Ingestion Open Group" [ref=e209] [cursor=pointer]:
+            - generic [ref=e210]: Ingestion
+            - generic [ref=e211]:
+              - img [ref=e212]
+              - generic [ref=e215]: Open Group
+        - listitem [ref=e216]:
+          - button "LegacyMetricsV1 Open Group" [ref=e218] [cursor=pointer]:
+            - generic [ref=e219]: LegacyMetricsV1
+            - generic [ref=e220]:
+              - img [ref=e221]
+              - generic [ref=e224]: Open Group
+        - listitem [ref=e225]:
+          - button "LegacyObservationsV1 Open Group" [ref=e227] [cursor=pointer]:
+            - generic [ref=e228]: LegacyObservationsV1
+            - generic [ref=e229]:
+              - img [ref=e230]
+              - generic [ref=e233]: Open Group
+        - listitem [ref=e234]:
+          - button "LegacyScoreV1 Open Group" [ref=e236] [cursor=pointer]:
+            - generic [ref=e237]: LegacyScoreV1
+            - generic [ref=e238]:
+              - img [ref=e239]
+              - generic [ref=e242]: Open Group
+        - listitem [ref=e243]:
+          - button "LlmConnections Open Group" [ref=e245] [cursor=pointer]:
+            - generic [ref=e246]: LlmConnections
+            - generic [ref=e247]:
+              - img [ref=e248]
+              - generic [ref=e251]: Open Group
+        - listitem [ref=e252]:
+          - button "Media Open Group" [ref=e254] [cursor=pointer]:
+            - generic [ref=e255]: Media
+            - generic [ref=e256]:
+              - img [ref=e257]
+              - generic [ref=e260]: Open Group
+        - listitem [ref=e261]:
+          - button "Metrics Open Group" [ref=e263] [cursor=pointer]:
+            - generic [ref=e264]: Metrics
+            - generic [ref=e265]:
+              - img [ref=e266]
+              - generic [ref=e269]: Open Group
+        - listitem [ref=e270]:
+          - button "Models Open Group" [ref=e272] [cursor=pointer]:
+            - generic [ref=e273]: Models
+            - generic [ref=e274]:
+              - img [ref=e275]
+              - generic [ref=e278]: Open Group
+        - listitem [ref=e279]:
+          - button "Observations Open Group" [ref=e281] [cursor=pointer]:
+            - generic [ref=e282]: Observations
+            - generic [ref=e283]:
+              - img [ref=e284]
+              - generic [ref=e287]: Open Group
+        - listitem [ref=e288]:
+          - button "Opentelemetry Open Group" [ref=e290] [cursor=pointer]:
+            - generic [ref=e291]: Opentelemetry
+            - generic [ref=e292]:
+              - img [ref=e293]
+              - generic [ref=e296]: Open Group
+        - listitem [ref=e297]:
+          - button "Organizations Open Group" [ref=e299] [cursor=pointer]:
+            - generic [ref=e300]: Organizations
+            - generic [ref=e301]:
+              - img [ref=e302]
+              - generic [ref=e305]: Open Group
+        - listitem [ref=e306]:
+          - button "Projects Open Group" [ref=e308] [cursor=pointer]:
+            - generic [ref=e309]: Projects
+            - generic [ref=e310]:
+              - img [ref=e311]
+              - generic [ref=e314]: Open Group
+        - listitem [ref=e315]:
+          - button "PromptVersion Open Group" [ref=e317] [cursor=pointer]:
+            - generic [ref=e318]: PromptVersion
+            - generic [ref=e319]:
+              - img [ref=e320]
+              - generic [ref=e323]: Open Group
+        - listitem [ref=e324]:
+          - button "Prompts Open Group" [ref=e326] [cursor=pointer]:
+            - generic [ref=e327]: Prompts
+            - generic [ref=e328]:
+              - img [ref=e329]
+              - generic [ref=e332]: Open Group
+        - listitem [ref=e333]:
+          - button "Scim Open Group" [ref=e335] [cursor=pointer]:
+            - generic [ref=e336]: Scim
+            - generic [ref=e337]:
+              - img [ref=e338]
+              - generic [ref=e341]: Open Group
+        - listitem [ref=e342]:
+          - button "ScoreConfigs Open Group" [ref=e344] [cursor=pointer]:
+            - generic [ref=e345]: ScoreConfigs
+            - generic [ref=e346]:
+              - img [ref=e347]
+              - generic [ref=e350]: Open Group
+        - listitem [ref=e351]:
+          - button "Scores Open Group" [ref=e353] [cursor=pointer]:
+            - generic [ref=e354]: Scores
+            - generic [ref=e355]:
+              - img [ref=e356]
+              - generic [ref=e359]: Open Group
+        - listitem [ref=e360]:
+          - button "Sessions Open Group" [ref=e362] [cursor=pointer]:
+            - generic [ref=e363]: Sessions
+            - generic [ref=e364]:
+              - img [ref=e365]
+              - generic [ref=e368]: Open Group
+        - listitem [ref=e369]:
+          - button "Trace Open Group" [ref=e371] [cursor=pointer]:
+            - generic [ref=e372]: Trace
+            - generic [ref=e373]:
+              - img [ref=e374]
+              - generic [ref=e377]: Open Group
+      - generic [ref=e20]:
+        - link "Powered by Scalar" [ref=e22] [cursor=pointer]:
+          - /url: https://www.scalar.com
+        - button "Set dark mode" [ref=e23] [cursor=pointer]:
+          - generic "Set dark mode" [ref=e26]
+    - main "Open API Documentation for langfuse" [ref=e378]:
+      - generic [ref=e34]:
+        - region "Introduction" [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e380]: OAS 3.0.1
+            - heading "langfuse" [level=1] [ref=e383]
+            - generic [ref=e385]:
+              - generic [ref=e386]:
+                - generic [ref=e387]:
+                  - button "Download OpenAPI Document" [ref=e388] [cursor=pointer]:
+                    - generic [ref=e389]: Download OpenAPI Document
+                  - button "Download OpenAPI Document" [ref=e390] [cursor=pointer]:
+                    - generic [ref=e391]: Download OpenAPI Document
+                - generic [ref=e392]:
+                  - heading "Authentication" [level=2] [ref=e395]
+                  - generic [ref=e397]:
+                    - paragraph [ref=e398]:
+                      - text: Authenticate with the API using
+                      - link "Basic Auth" [ref=e399] [cursor=pointer]:
+                        - /url: https://en.wikipedia.org/wiki/Basic_access_authentication
+                      - text: ", get API keys in the project settings:"
+                    - list [ref=e400]:
+                      - listitem [ref=e401]: "username: Langfuse Public Key"
+                      - listitem [ref=e402]: "password: Langfuse Secret Key"
+                  - heading "Exports" [level=2] [ref=e405]
+                  - list [ref=e408]:
+                    - listitem [ref=e409]:
+                      - text: "OpenAPI spec:"
+                      - link "https://cloud.langfuse.com/generated/api/openapi.yml" [ref=e410] [cursor=pointer]:
+                        - /url: https://cloud.langfuse.com/generated/api/openapi.yml
+              - generic [ref=e413]:
+                - generic [ref=e414]:
+                  - generic [ref=e415]: Server
+                  - 'button "Server: https://cloud.langfuse.com" [ref=e418] [cursor=pointer]':
+                    - generic [ref=e419]: "Server:"
+                    - generic [ref=e420]: https://cloud.langfuse.com
+                    - img [ref=e421]
+                  - paragraph [ref=e425]: Langfuse Cloud (EU data region)
+                - region "Authentication" [ref=e428]:
+                  - generic [ref=e429]:
+                    - button "Authentication" [disabled] [expanded] [ref=e430]:
+                      - heading "Authentication" [level=2] [ref=e431]:
+                        - generic [ref=e434]: Authentication
+                    - button "Select Auth Type" [ref=e437] [cursor=pointer]:
+                      - generic [ref=e438]: Select
+                      - text: Auth Type
+                      - img [ref=e439]
+                  - generic [ref=e444]: No authentication selected
+                - generic [ref=e446]:
+                  - generic [ref=e447]: Client Libraries
+                  - tablist "Client Libraries" [ref=e448]:
+                    - generic [ref=e449]:
+                      - tab "Shell" [selected] [ref=e450] [cursor=pointer]:
+                        - img [ref=e452]
+                        - generic [ref=e454]: Shell
+                      - tab "Ruby" [ref=e455] [cursor=pointer]:
+                        - img [ref=e457]
+                        - generic [ref=e459]: Ruby
+                      - tab "Node.js" [ref=e460] [cursor=pointer]:
+                        - img [ref=e462]
+                        - generic [ref=e465]: Node.js
+                      - tab "PHP" [ref=e466] [cursor=pointer]:
+                        - img [ref=e468]
+                        - generic [ref=e470]: PHP
+                      - tab "Python" [ref=e471] [cursor=pointer]:
+                        - img [ref=e473]
+                        - generic [ref=e475]: Python
+                      - button "More Select from all clients" [ref=e477] [cursor=pointer]:
+                        - generic [ref=e481]: More
+                        - generic [ref=e482]: Select from all clients
+                  - tabpanel "Shell" [ref=e484]: Shell Curl
+        - region "AnnotationQueues" [ref=e486]:
+          - generic [ref=e489]:
+            - heading "AnnotationQueues" [level=2] [ref=e491]
+            - button "Copy link" [ref=e492] [cursor=pointer]:
+              - img [ref=e493]
+              - generic [ref=e496]: Copy link
+          - group "AnnotationQueues Operations" [ref=e501]:
+            - generic [ref=e503]:
+              - generic [ref=e504]: AnnotationQueues
+              - text: Operations
+            - list "AnnotationQueues endpoints" [ref=e506]:
+              - listitem [ref=e507]:
+                - generic [ref=e508] [cursor=pointer]:
+                  - generic [ref=e509]: get
+                  - generic [ref=e510]: /api/public/annotation-queues
+              - listitem [ref=e511]:
+                - generic [ref=e512] [cursor=pointer]:
+                  - generic [ref=e513]: post
+                  - generic [ref=e514]: /api/public/annotation-queues
+              - listitem [ref=e515]:
+                - generic [ref=e516] [cursor=pointer]:
+                  - generic [ref=e517]: get
+                  - generic [ref=e518]: "/api/public/annotation-queues/{queueId}"
+              - listitem [ref=e519]:
+                - generic [ref=e520] [cursor=pointer]:
+                  - generic [ref=e521]: get
+                  - generic [ref=e522]: "/api/public/annotation-queues/{queueId}/items"
+              - listitem [ref=e523]:
+                - generic [ref=e524] [cursor=pointer]:
+                  - generic [ref=e525]: post
+                  - generic [ref=e526]: "/api/public/annotation-queues/{queueId}/items"
+              - listitem [ref=e527]:
+                - generic [ref=e528] [cursor=pointer]:
+                  - generic [ref=e529]: get
+                  - generic [ref=e530]: "/api/public/annotation-queues/{queueId}/items/{itemId}"
+              - listitem [ref=e531]:
+                - generic [ref=e532] [cursor=pointer]:
+                  - generic [ref=e533]: patch
+                  - generic [ref=e534]: "/api/public/annotation-queues/{queueId}/items/{itemId}"
+              - listitem [ref=e535]:
+                - generic [ref=e536] [cursor=pointer]:
+                  - generic [ref=e537]: delete
+                  - generic [ref=e538]: "/api/public/annotation-queues/{queueId}/items/{itemId}"
+              - listitem [ref=e539]:
+                - generic [ref=e540] [cursor=pointer]:
+                  - generic [ref=e541]: post
+                  - generic [ref=e542]: "/api/public/annotation-queues/{queueId}/assignments"
+              - listitem [ref=e543]:
+                - generic [ref=e544] [cursor=pointer]:
+                  - generic [ref=e545]: delete
+                  - generic [ref=e546]: "/api/public/annotation-queues/{queueId}/assignments"
+          - generic [ref=e547]:
+            - region "/api/public/annotation-queues" [ref=e549]:
+              - generic [ref=e550]:
+                - generic [ref=e554]:
+                  - heading "/api/public/annotation-queues" [level=3] [ref=e556]
+                  - button "Copy link" [ref=e557] [cursor=pointer]:
+                    - img [ref=e558]
+                    - generic [ref=e561]: Copy link
+                - generic [ref=e562]:
+                  - generic [ref=e564]:
+                    - group "Operation Description" [ref=e565]:
+                      - paragraph [ref=e566]: Get all annotation queues
+                    - generic [ref=e567]:
+                      - generic [ref=e568]: Query Parameters
+                      - list "Query Parameters" [ref=e569]:
+                        - listitem [ref=e570]:
+                          - generic [ref=e572]:
+                            - generic [ref=e573]:
+                              - generic [ref=e575]:
+                                - text: page
+                                - button "Copy link to page" [ref=e576] [cursor=pointer]:
+                                  - img [ref=e577]
+                                  - generic [ref=e580]:
+                                    - text: Copy link to
+                                    - text: page
+                              - generic [ref=e582]:
+                                - generic [ref=e583]: "Type:"
+                                - text: integer | null
+                            - paragraph [ref=e586]: page number, starts at 1
+                        - listitem [ref=e587]:
+                          - generic [ref=e589]:
+                            - generic [ref=e590]:
+                              - generic [ref=e592]:
+                                - text: limit
+                                - button "Copy link to limit" [ref=e593] [cursor=pointer]:
+                                  - img [ref=e594]
+                                  - generic [ref=e597]:
+                                    - text: Copy link to
+                                    - text: limit
+                              - generic [ref=e599]:
+                                - generic [ref=e600]: "Type:"
+                                - text: integer | null
+                            - paragraph [ref=e603]: limit of items per page
+                    - generic [ref=e604]:
+                      - generic [ref=e605]: Responses
+                      - list "Responses" [ref=e606]:
+                        - listitem [ref=e607]:
+                          - button "200 application/json" [ref=e608] [cursor=pointer]:
+                            - generic [ref=e609]:
+                              - img [ref=e610]
+                              - generic [ref=e613]: "200"
+                            - generic [ref=e617]: application/json
+                        - listitem [ref=e618]:
+                          - button "400 application/json" [ref=e619] [cursor=pointer]:
+                            - generic [ref=e620]:
+                              - img [ref=e621]
+                              - generic [ref=e624]: "400"
+                            - generic [ref=e628]: application/json
+                        - listitem [ref=e629]:
+                          - button "401 application/json" [ref=e630] [cursor=pointer]:
+                            - generic [ref=e631]:
+                              - img [ref=e632]
+                              - generic [ref=e635]: "401"
+                            - generic [ref=e639]: application/json
+                        - listitem [ref=e640]:
+                          - button "403 application/json" [ref=e641] [cursor=pointer]:
+                            - generic [ref=e642]:
+                              - img [ref=e643]
+                              - generic [ref=e646]: "403"
+                            - generic [ref=e650]: application/json
+                        - listitem [ref=e651]:
+                          - button "404 application/json" [ref=e652] [cursor=pointer]:
+                            - generic [ref=e653]:
+                              - img [ref=e654]
+                              - generic [ref=e657]: "404"
+                            - generic [ref=e661]: application/json
+                        - listitem [ref=e662]:
+                          - button "405 application/json" [ref=e663] [cursor=pointer]:
+                            - generic [ref=e664]:
+                              - img [ref=e665]
+                              - generic [ref=e668]: "405"
+                            - generic [ref=e672]: application/json
+                  - generic [ref=e674]:
+                    - group "Request Example for get/api/public/annotation-queues" [ref=e675]:
+                      - generic [ref=e676]:
+                        - generic [ref=e677]:
+                          - generic [ref=e678]: Request Example for
+                          - generic [ref=e679]: get
+                          - generic [ref=e680]: /api/public/annotation-queues
+                        - button "Shell Curl" [ref=e683] [cursor=pointer]:
+                          - text: Shell Curl
+                          - img [ref=e684]
+                      - generic [ref=e689]:
+                        - code [ref=e692]:
+                          - generic [ref=e693]: curl https://cloud.langfuse.com/api/public/annotation-queues \
+                          - generic [ref=e694]: "--header 'Authorization: Basic username:password'"
+                        - button [ref=e695] [cursor=pointer]:
+                          - img [ref=e696]
+                      - button "Test Request (get /api/public/annotation-queues)" [ref=e706] [cursor=pointer]:
+                        - img [ref=e707]
+                        - generic [ref=e710]: Test Request
+                        - generic [ref=e711]: (get /api/public/annotation-queues)
+                    - 'region "Status: 200 Status: 400 Status: 401 Status: 403 Status: 404 Status: 405" [ref=e712]':
+                      - generic [ref=e713]:
+                        - tablist [ref=e715]:
+                          - 'tab "Status: 200" [selected] [ref=e716] [cursor=pointer]':
+                            - generic [ref=e717]:
+                              - generic [ref=e718]: "Status:"
+                              - text: "200"
+                          - 'tab "Status: 400" [ref=e719] [cursor=pointer]':
+                            - generic [ref=e720]:
+                              - generic [ref=e721]: "Status:"
+                              - text: "400"
+                          - 'tab "Status: 401" [ref=e722] [cursor=pointer]':
+                            - generic [ref=e723]:
+                              - generic [ref=e724]: "Status:"
+                              - text: "401"
+                          - 'tab "Status: 403" [ref=e725] [cursor=pointer]':
+                            - generic [ref=e726]:
+                              - generic [ref=e727]: "Status:"
+                              - text: "403"
+                          - 'tab "Status: 404" [ref=e728] [cursor=pointer]':
+                            - generic [ref=e729]:
+                              - generic [ref=e730]: "Status:"
+                              - text: "404"
+                          - 'tab "Status: 405" [ref=e731] [cursor=pointer]':
+                            - generic [ref=e732]:
+                              - generic [ref=e733]: "Status:"
+                              - text: "405"
+                        - generic [ref=e735] [cursor=pointer]:
+                          - text: Show Schema
+                          - checkbox "Show Schema"
+                      - generic [ref=e738]:
+                        - code [ref=e741]:
+                          - text: "{ \"data\": [ { \"id\": \"string\", \"name\": \"string\", \"description\":"
+                          - generic [ref=e742]: "null"
+                          - text: ", \"scoreConfigIds\": [ \"string\" ], \"createdAt\": \"2026-03-17T22:20:19.603Z\", \"updatedAt\": \"2026-03-17T22:20:19.603Z\" } ], \"meta\": { \"page\": 1, \"limit\": 1, \"totalItems\": 1, \"totalPages\": 1 } }"
+                        - button [ref=e743] [cursor=pointer]:
+                          - img [ref=e744]
+            - region "/api/public/annotation-queues" [ref=e753]:
+              - generic [ref=e754]:
+                - generic [ref=e758]:
+                  - heading "/api/public/annotation-queues" [level=3] [ref=e760]
+                  - button "Copy link" [ref=e761] [cursor=pointer]:
+                    - img [ref=e762]
+                    - generic [ref=e765]: Copy link
+                - generic [ref=e766]:
+                  - generic [ref=e768]:
+                    - group "Operation Description" [ref=e769]:
+                      - paragraph [ref=e770]: Create an annotation queue
+                    - group "Request Body" [ref=e771]:
+                      - generic [ref=e772]:
+                        - generic [ref=e773]: Body
+                        - generic [ref=e774]:
+                          - generic [ref=e775]: required
+                          - generic [ref=e777]: application/json
+                      - list [ref=e781]:
+                        - listitem [ref=e782]:
+                          - generic [ref=e783]:
+                            - generic [ref=e785]:
+                              - text: name
+                              - button "Copy link to name" [ref=e786] [cursor=pointer]:
+                                - img [ref=e787]
+                                - generic [ref=e790]:
+                                  - text: Copy link to
+                                  - text: name
+                            - generic [ref=e792]:
+                              - generic [ref=e793]: "Type:"
+                              - text: string
+                            - generic [ref=e794]: required
+                        - listitem [ref=e795]:
+                          - generic [ref=e796]:
+                            - generic [ref=e798]:
+                              - text: score
+                              - text: Config
+                              - text: Ids
+                              - button "Copy link to scoreConfigIds" [ref=e799] [cursor=pointer]:
+                                - img [ref=e800]
+                                - generic [ref=e803]:
+                                  - text: Copy link to
+                                  - text: score
+                                  - text: Config
+                                  - text: Ids
+                            - generic [ref=e805]:
+                              - generic [ref=e806]: "Type:"
+                              - text: array string[]
+                            - generic [ref=e807]: required
+                        - listitem [ref=e808]:
+                          - generic [ref=e809]:
+                            - generic [ref=e811]:
+                              - text: description
+                              - button "Copy link to description" [ref=e812] [cursor=pointer]:
+                                - img [ref=e813]
+                                - generic [ref=e816]:
+                                  - text: Copy link to
+                                  - text: description
+                            - generic [ref=e818]:
+                              - generic [ref=e819]: "Type:"
+                              - text: string | null
+                    - generic [ref=e820]:
+                      - generic [ref=e821]: Responses
+                      - list "Responses" [ref=e822]:
+                        - listitem [ref=e823]:
+                          - button "200 application/json" [ref=e824] [cursor=pointer]:
+                            - generic [ref=e825]:
+                              - img [ref=e826]
+                              - generic [ref=e829]: "200"
+                            - generic [ref=e833]: application/json
+                        - listitem [ref=e834]:
+                          - button "400 application/json" [ref=e835] [cursor=pointer]:
+                            - generic [ref=e836]:
+                              - img [ref=e837]
+                              - generic [ref=e840]: "400"
+                            - generic [ref=e844]: application/json
+                        - listitem [ref=e845]:
+                          - button "401 application/json" [ref=e846] [cursor=pointer]:
+                            - generic [ref=e847]:
+                              - img [ref=e848]
+                              - generic [ref=e851]: "401"
+                            - generic [ref=e855]: application/json
+                        - listitem [ref=e856]:
+                          - button "403 application/json" [ref=e857] [cursor=pointer]:
+                            - generic [ref=e858]:
+                              - img [ref=e859]
+                              - generic [ref=e862]: "403"
+                            - generic [ref=e866]: application/json
+                        - listitem [ref=e867]:
+                          - button "404 application/json" [ref=e868] [cursor=pointer]:
+                            - generic [ref=e869]:
+                              - img [ref=e870]
+                              - generic [ref=e873]: "404"
+                            - generic [ref=e877]: application/json
+                        - listitem [ref=e878]:
+                          - button "405 application/json" [ref=e879] [cursor=pointer]:
+                            - generic [ref=e880]:
+                              - img [ref=e881]
+                              - generic [ref=e884]: "405"
+                            - generic [ref=e888]: application/json
+                  - generic [ref=e890]:
+                    - group "Request Example for post/api/public/annotation-queues" [ref=e891]:
+                      - generic [ref=e892]:
+                        - generic [ref=e893]:
+                          - generic [ref=e894]: Request Example for
+                          - generic [ref=e895]: post
+                          - generic [ref=e896]: /api/public/annotation-queues
+                        - button "Shell Curl" [ref=e899] [cursor=pointer]:
+                          - text: Shell Curl
+                          - img [ref=e900]
+                      - generic [ref=e905]:
+                        - code [ref=e908]:
+                          - generic [ref=e909]: curl https://cloud.langfuse.com/api/public/annotation-queues \
+                          - generic [ref=e910]:
+                            - generic [ref=e911]: "--request POST"
+                            - text: \
+                          - generic [ref=e912]: "--header 'Content-Type: application/json' \\"
+                          - generic [ref=e913]: "--header 'Authorization: Basic username:password' \\"
+                          - generic [ref=e914]: "--data '{"
+                          - generic [ref=e915]: "\"name\": \"\","
+                          - generic [ref=e916]: "\"description\": null,"
+                          - generic [ref=e917]: "\"scoreConfigIds\": ["
+                          - generic [ref=e918]: "\"\""
+                          - generic [ref=e919]: "]"
+                          - generic [ref=e920]: "}'"
+                        - button [ref=e921] [cursor=pointer]:
+                          - img [ref=e922]
+                      - button "Test Request (post /api/public/annotation-queues)" [ref=e932] [cursor=pointer]:
+                        - img [ref=e933]
+                        - generic [ref=e936]: Test Request
+                        - generic [ref=e937]: (post /api/public/annotation-queues)
+                    - 'region "Status: 200 Status: 400 Status: 401 Status: 403 Status: 404 Status: 405" [ref=e938]':
+                      - generic [ref=e939]:
+                        - tablist [ref=e941]:
+                          - 'tab "Status: 200" [selected] [ref=e942] [cursor=pointer]':
+                            - generic [ref=e943]:
+                              - generic [ref=e944]: "Status:"
+                              - text: "200"
+                          - 'tab "Status: 400" [ref=e945] [cursor=pointer]':
+                            - generic [ref=e946]:
+                              - generic [ref=e947]: "Status:"
+                              - text: "400"
+                          - 'tab "Status: 401" [ref=e948] [cursor=pointer]':
+                            - generic [ref=e949]:
+                              - generic [ref=e950]: "Status:"
+                              - text: "401"
+                          - 'tab "Status: 403" [ref=e951] [cursor=pointer]':
+                            - generic [ref=e952]:
+                              - generic [ref=e953]: "Status:"
+                              - text: "403"
+                          - 'tab "Status: 404" [ref=e954] [cursor=pointer]':
+                            - generic [ref=e955]:
+                              - generic [ref=e956]: "Status:"
+                              - text: "404"
+                          - 'tab "Status: 405" [ref=e957] [cursor=pointer]':
+                            - generic [ref=e958]:
+                              - generic [ref=e959]: "Status:"
+                              - text: "405"
+                        - generic [ref=e961] [cursor=pointer]:
+                          - text: Show Schema
+                          - checkbox "Show Schema"
+                      - generic [ref=e964]:
+                        - code [ref=e967]:
+                          - text: "{ \"id\": \"string\", \"name\": \"string\", \"description\":"
+                          - generic [ref=e968]: "null"
+                          - text: ", \"scoreConfigIds\": [ \"string\" ], \"createdAt\": \"2026-03-17T22:20:19.603Z\", \"updatedAt\": \"2026-03-17T22:20:19.603Z\" }"
+                        - button [ref=e969] [cursor=pointer]:
+                          - img [ref=e970]
+  - region "Notifications alt+T":
+    - list

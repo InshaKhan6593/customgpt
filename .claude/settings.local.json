@@ -1,16 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git mv segments/segment-10-payouts.md segments/segment-10-payouts.md.tmp)",
-      "Bash(git mv segments/segment-11-multi-agent.md segments/segment-10-multi-agent.md)",
-      "Bash(git mv segments/segment-12-composability-mcp.md segments/segment-11-composability-mcp.md)",
-      "Bash(git mv segments/segment-13-orchestration-workflows.md segments/segment-12-orchestration-workflows.md)",
-      "Bash(git mv segments/segment-15-observability-evals.md segments/segment-13-observability-evals.md)",
-      "Bash(git mv segments/segment-10-payouts.md.tmp segments/segment-15-payouts.md)",
-      "Bash(npx next build --no-lint)",
-      "Bash(xargs grep -l \"flow\\\\|workflow\\\\|orchestrat\")",
-      "Bash(npx prisma db push)",
-      "Bash(npx prisma generate)"
+      "mcp__langfuse__listPrompts",
+      "WebFetch(domain:langfuse.com)",
+      "Bash(find:*)",
+      "Bash(cd:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:status.openrouter.ai)",
+      "WebFetch(domain:openrouter.ai)",
+      "WebFetch(domain:community.openrouter.ai)",
+      "WebFetch(domain:portkey.ai)",
+      "WebFetch(domain:docs.unify.ai)",
+      "WebFetch(domain:braintrust.dev)",
+      "Bash(grep:*)"
     ]
   }
 }

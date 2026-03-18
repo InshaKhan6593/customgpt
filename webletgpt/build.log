@@ -1,0 +1,106 @@
+
+> my-project@0.1.0 build
+> next build
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 17.8s
+  Running TypeScript ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/51) ...
+  Generating static pages using 11 workers (12/51) 
+  Generating static pages using 11 workers (25/51) 
+  Generating static pages using 11 workers (38/51) 
+✓ Generating static pages using 11 workers (51/51) in 694.2ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /[slug]
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/billing/checkout
+├ ƒ /api/billing/confirm-plan
+├ ƒ /api/billing/plans
+├ ƒ /api/billing/usage
+├ ƒ /api/builder/[id]
+├ ƒ /api/chat
+├ ƒ /api/chat/feedback
+├ ƒ /api/chat/sessions
+├ ƒ /api/chat/sessions/[id]
+├ ƒ /api/chat/sessions/rate
+├ ƒ /api/dashboard/metrics
+├ ƒ /api/dashboard/overview
+├ ƒ /api/dashboard/weblet/[id]
+├ ƒ /api/dashboard/weblets/[id]
+├ ƒ /api/flows
+├ ƒ /api/flows/[id]
+├ ƒ /api/flows/[id]/execute
+├ ƒ /api/flows/auto-suggest
+├ ƒ /api/flows/realtime-token
+├ ƒ /api/flows/run/[sessionId]/hitl
+├ ƒ /api/image/[id]
+├ ƒ /api/inngest
+├ ƒ /api/marketplace/weblets
+├ ƒ /api/marketplace/weblets/[id]
+├ ƒ /api/mcp/catalog
+├ ƒ /api/mcp/discover
+├ ƒ /api/mcp/oauth/authorize
+├ ƒ /api/mcp/oauth/callback
+├ ƒ /api/payouts
+├ ƒ /api/profile
+├ ƒ /api/rsil/ab-test
+├ ƒ /api/rsil/aggregate
+├ ƒ /api/rsil/config
+├ ƒ /api/rsil/deploy
+├ ƒ /api/rsil/governance
+├ ƒ /api/rsil/optimize
+├ ƒ /api/rsil/overview
+├ ƒ /api/rsil/rollback
+├ ƒ /api/rsil/scores
+├ ƒ /api/stripe/create-checkout
+├ ƒ /api/stripe/customer-portal
+├ ƒ /api/subscriptions
+├ ƒ /api/subscriptions/[id]
+├ ƒ /api/upgrade-role
+├ ƒ /api/user-weblets
+├ ƒ /api/user-weblets/[id]
+├ ƒ /api/webhooks/stripe
+├ ƒ /api/weblets
+├ ƒ /api/weblets/[id]
+├ ƒ /api/weblets/[id]/analytics
+├ ƒ /api/weblets/[id]/compositions
+├ ƒ /api/weblets/[id]/knowledge
+├ ƒ /api/weblets/[id]/knowledge/[fileId]
+├ ƒ /api/weblets/[id]/mcp
+├ ƒ /api/weblets/[id]/mcp/user-token
+├ ƒ /api/weblets/[id]/versions
+├ ƒ /api/weblets/search
+├ ○ /auth/error
+├ ○ /become-developer
+├ ○ /billing
+├ ƒ /chat/[webletId]
+├ ƒ /chat/[webletId]/[sessionId]
+├ ○ /chats
+├ ○ /dashboard
+├ ○ /dashboard/billing
+├ ○ /dashboard/builder
+├ ƒ /dashboard/builder/[id]
+├ ○ /dashboard/rsil
+├ ƒ /dashboard/weblet/[id]
+├ ○ /dashboard/weblets
+├ ○ /flows
+├ ƒ /flows/builder/[id]
+├ ○ /login
+├ ƒ /marketplace
+├ ○ /profile
+└ ○ /settings
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

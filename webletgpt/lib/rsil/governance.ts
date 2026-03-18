@@ -52,7 +52,7 @@ export interface RSILGovernance {
  * Zod schema for RSILGovernance.
  * Validates ranges, types, and inter-field constraints.
  */
-export const rsilGovernanceSchema = z.object({
+export const RSILGovernanceSchema = z.object({
   enabled: z.boolean().default(false),
   optimizationFrequency: z
     .enum(['daily', 'weekly', 'manual'])
@@ -162,5 +162,5 @@ export function getGovernance(weblet: {
  * @returns Zod SafeParseResult with typed data or validation errors
  */
 export function validateGovernance(input: unknown) {
-  return rsilGovernanceSchema.partial().safeParse(input)
+  return RSILGovernanceSchema.partial().safeParse(input)
 }

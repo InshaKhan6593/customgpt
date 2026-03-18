@@ -1,5 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 import { getLanguageModel } from '@/lib/ai/openrouter'
 import { prisma } from '@/lib/prisma'
@@ -101,7 +102,7 @@ export async function generateImprovedPrompt(params: {
         webletId: params.webletId,
         tracesSampled: tracesEstimated,
         tracesEvaluated: tracesEstimated,
-        dimensions: params.dimensions as any,
+        dimensions: params.dimensions as unknown as Prisma.InputJsonValue,
         compositeScore: params.compositeScore,
         judgeModel: GENERATOR_MODEL,
         status: 'COMPLETED',

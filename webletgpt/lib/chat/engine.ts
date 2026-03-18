@@ -32,7 +32,8 @@ export async function getActiveVersion(webletId: string, userId?: string) {
       where: { webletId },
       orderBy: { createdAt: 'desc' },
     })
-  } catch {
+  } catch (error) {
+    console.error('[engine] getActiveVersion fallback error:', error)
     return await prisma.webletVersion.findFirst({
       where: { webletId },
       orderBy: { createdAt: 'desc' },

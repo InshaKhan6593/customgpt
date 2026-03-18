@@ -486,6 +486,31 @@ model UserWeblet {
   @@index([userId])
 }
 
+// ── RSIL Batch Evaluation Runs ──
+model EvaluationRun {
+  id              String     @id @default(cuid())
+  webletId        String
+  tracesSampled   Int
+  tracesEvaluated Int
+  dimensions      Json       // { helpfulness: { avg, count, min, max }, ... }
+  compositeScore  Float
+  judgeModel      String
+  creditsUsed     Int        @default(0)
+  status          EvalStatus @default(RUNNING)
+  errorMessage    String?
+  triggeredBy     String?    // userId who triggered, or "cron" for scheduled
+  createdAt       DateTime   @default(now())
+  completedAt     DateTime?
+
+  @@index([webletId, createdAt])
+}
+
+enum EvalStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 enum MCPAuthType {
   NONE
   API_KEY

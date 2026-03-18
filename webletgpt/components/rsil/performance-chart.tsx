@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ChartContainer,
@@ -9,16 +9,16 @@ import {
   ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
+  type ChartConfig
 } from "@/components/ui/chart"
-import type { ChartConfig } from "@/components/ui/chart"
 import type { ScoreTimeSeries } from "./types"
 
 const CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ]
 
 interface PerformanceChartProps {
@@ -38,7 +38,6 @@ function detectScoreKeys(
 ): string[] {
   if (dimensionNames.length > 0) return dimensionNames
 
-  // Auto-detect from timeSeries keys (exclude date and _count suffixes)
   const keySet = new Set<string>()
   for (const point of timeSeries) {
     for (const key of Object.keys(point)) {
@@ -61,84 +60,97 @@ function buildChartConfig(scoreKeys: string[]): ChartConfig {
   return config
 }
 
-function detectYDomain(
-  timeSeries: Array<ScoreTimeSeries & { date: string }>,
-  scoreKeys: string[]
-): [number, number] {
-  let max = 0
-  for (const point of timeSeries) {
-    for (const key of scoreKeys) {
-      const val = point[key]
-      if (typeof val === "number" && val > max) max = val
-    }
-  }
-  // If all values <= 1, assume 0-1 scale; otherwise 0-10
-  return max <= 1 ? [0, 1] : [0, 10]
-}
-
 export function PerformanceChart({ timeSeries, dimensionNames }: PerformanceChartProps) {
-  if (!timeSeries || timeSeries.length === 0) {
-    return (
-      <Card className="h-[400px] flex items-center justify-center">
-        <div className="text-center space-y-2 px-6">
-          <p className="text-sm font-medium text-muted-foreground">
-            No performance data available yet
-          </p>
-          <p className="text-xs text-muted-foreground/70">
-            Score trends will appear here once Langfuse receives user ratings and evaluation scores.
-          </p>
-        </div>
-      </Card>
-    )
-  }
+  const scoreKeys = React.useMemo(() => {
+    if (!timeSeries || timeSeries.length === 0) return []
+    return detectScoreKeys(timeSeries, dimensionNames)
+  }, [timeSeries, dimensionNames])
 
-  const scoreKeys = detectScoreKeys(timeSeries, dimensionNames)
-  const chartConfig = buildChartConfig(scoreKeys)
-  const yDomain = detectYDomain(timeSeries, scoreKeys)
+  const chartConfig = React.useMemo(() => buildChartConfig(scoreKeys), [scoreKeys])
+
+  const [visibleDimensions, setVisibleDimensions] = React.useState<Set<string>>(() => new Set(scoreKeys))
+
+  React.useEffect(() => {
+    if (scoreKeys.length > 0 && visibleDimensions.size === 0) {
+      setVisibleDimensions(new Set(scoreKeys))
+    }
+  }, [scoreKeys, visibleDimensions.size])
+
+  const toggleDimension = React.useCallback((dim: string) => {
+    setVisibleDimensions(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(dim)) {
+        newSet.delete(dim)
+      } else {
+        newSet.add(dim)
+      }
+      return newSet
+    })
+  }, [])
+
+  const isEmpty = !timeSeries || timeSeries.length === 0
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Performance Trends</CardTitle>
-        <CardDescription>Score dimensions over time</CardDescription>
+    <Card className="border-border/50 shadow-sm">
+      <CardHeader className="px-5 pt-5 pb-2">
+        <CardTitle className="text-base font-semibold">Performance Over Time</CardTitle>
+        <CardDescription className="text-xs">Score dimensions over time</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[300px] w-full">
-          <LineChart data={timeSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.5} />
-            <XAxis
-              dataKey="date"
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              fontSize={12}
-              tick={{ fill: "var(--color-muted-foreground)" }}
-            />
-            <YAxis
-              domain={yDomain}
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              fontSize={12}
-              tick={{ fill: "var(--color-muted-foreground)" }}
-            />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <ChartLegend content={<ChartLegendContent />} />
-
-            {scoreKeys.map((key, i) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                strokeWidth={i === 0 ? 3 : 2}
-                strokeDasharray={i === 0 ? undefined : "5 5"}
-                dot={false}
-                activeDot={{ r: 5 }}
+      <CardContent className="px-2 pb-5 sm:px-5">
+        {isEmpty ? (
+          <div className="flex items-center justify-center h-[300px] text-sm text-muted-foreground border-dashed border-border/50 rounded-md bg-transparent">
+            Score data will appear here after your weblet receives conversations
+          </div>
+        ) : (
+          <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <AreaChart data={timeSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tickMargin={10}
+                fontSize={12}
+                tick={{ fill: "var(--muted-foreground)" }}
               />
-            ))}
-          </LineChart>
-        </ChartContainer>
+              <YAxis
+                domain={[0, 1]}
+                tickFormatter={(v) => v.toFixed(1)}
+                axisLine={false}
+                tickLine={false}
+                tickMargin={10}
+                fontSize={12}
+                tick={{ fill: "var(--muted-foreground)" }}
+              />
+              <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+              <ChartLegend 
+                content={
+                  <ChartLegendContent 
+                    onClick={(payload) => {
+                      if (payload && 'dataKey' in payload && typeof payload.dataKey === 'string') {
+                        toggleDimension(payload.dataKey)
+                      }
+                    }} 
+                  />
+                } 
+              />
+              {scoreKeys.map((key, i) => (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={chartConfig[key].color}
+                  fill={chartConfig[key].color}
+                  fillOpacity={0.1}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 5 }}
+                  hide={!visibleDimensions.has(key)}
+                />
+              ))}
+            </AreaChart>
+          </ChartContainer>
+        )}
       </CardContent>
     </Card>
   )

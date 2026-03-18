@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { pushScore } from "@/lib/langfuse/client"
 import { z } from "zod"
 
 const schema = z.object({
@@ -28,48 +27,19 @@ export async function POST(req: NextRequest) {
   // Verify session belongs to this user
   const chatSession = await prisma.chatSession.findFirst({
     where: { id: sessionId, userId: session.user.id },
-    select: { id: true, langfuseTraceId: true, webletId: true },
+    select: { id: true, webletId: true },
   })
 
   if (!chatSession) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
-  let langfuseTraceId = chatSession.langfuseTraceId
-
-  if (messageId) {
-    const chatMessage = await prisma.chatMessage.findFirst({
-      where: {
-        id: messageId,
-        chatSessionId: sessionId,
-        chatSession: {
-          userId: session.user.id,
-        },
-      },
-      select: { langfuseTraceId: true },
-    })
-
-    langfuseTraceId = chatMessage?.langfuseTraceId ?? langfuseTraceId
-  }
-
-  // Push to Langfuse if we have a trace ID
-  if (langfuseTraceId) {
-    await pushScore({
-      traceId: langfuseTraceId,
-      name: "user-rating",
-      value: score,
-      comment,
-      id: `${langfuseTraceId}-user-rating`,
-      dataType: "NUMERIC",
-    }).catch(err => console.error("Langfuse score push failed:", err))
-  }
-
-  // Also log to local analytics
+  // Log to local analytics (DB record of user rating)
   await prisma.analyticsEvent.create({
     data: {
       webletId: chatSession.webletId,
       eventType: "user_rating",
-      eventData: { sessionId, messageId, score, comment, langfuseTraceId },
+      eventData: { sessionId, messageId, score, comment },
     },
   })
 

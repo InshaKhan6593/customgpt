@@ -2,28 +2,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { getGovernance, type GovernanceConfig } from "@/lib/rsil/governance"
 
 const getQuerySchema = z.object({
   webletId: z.string().min(1),
 })
 
-const governanceSchema: z.ZodType<GovernanceConfig> = z.object({
-  minInteractionsBeforeOptimize: z.number().int().min(1),
-  cooldownHours: z.number().int().min(0),
-  maxUpdatesPerDay: z.number().int().min(1),
-  minTestDurationHours: z.number().int().min(1),
-  requireCreatorApproval: z.boolean(),
-  performanceFloor: z.number().min(0).max(5),
-  autoOptimizationEnabled: z.boolean(),
-  autoOptimizationFrequency: z.enum(['every_6h', 'every_12h', 'daily', 'weekly']),
-  autoOptimizationHour: z.number().int().min(0).max(23),
-})
-
 const putSchema = z.object({
   webletId: z.string().min(1),
-  rsilEnabled: z.boolean().optional(),
-  governance: governanceSchema.optional(),
+  rsilEnabled: z.boolean(),
 })
 
 export async function GET(req: NextRequest) {
@@ -47,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     const weblet = await prisma.weblet.findFirst({
       where: { id: webletId, developerId },
-      select: { id: true, rsilEnabled: true, rsilGovernance: true },
+      select: { id: true, rsilEnabled: true },
     })
 
     if (!weblet) {
@@ -57,7 +43,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       webletId: weblet.id,
       rsilEnabled: weblet.rsilEnabled,
-      governance: getGovernance(weblet.rsilGovernance),
     })
   } catch (error) {
     console.error("RSIL config GET error:", error)
@@ -81,7 +66,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
-    const { webletId, rsilEnabled, governance } = parsed.data
+    const { webletId, rsilEnabled } = parsed.data
 
     const weblet = await prisma.weblet.findFirst({
       where: { id: webletId, developerId },
@@ -92,23 +77,15 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Weblet not found" }, { status: 404 })
     }
 
-    if (rsilEnabled === undefined && governance === undefined) {
-      return NextResponse.json({ error: "No update fields provided" }, { status: 400 })
-    }
-
     const updated = await prisma.weblet.update({
       where: { id: webletId },
-      data: {
-        ...(rsilEnabled !== undefined ? { rsilEnabled } : {}),
-        ...(governance !== undefined ? { rsilGovernance: governance } : {}),
-      },
-      select: { id: true, rsilEnabled: true, rsilGovernance: true },
+      data: { rsilEnabled },
+      select: { id: true, rsilEnabled: true },
     })
 
     return NextResponse.json({
       webletId: updated.id,
       rsilEnabled: updated.rsilEnabled,
-      governance: getGovernance(updated.rsilGovernance),
     })
   } catch (error) {
     console.error("RSIL config PUT error:", error)

@@ -1,8 +1,9 @@
 import { inngest } from '@/lib/inngest/client'
 import { prisma } from '@/lib/prisma'
 import { analyzeVersion } from '@/lib/rsil/analyzer'
-import { rollbackVersion, checkPerformanceFloor, startABTest } from '@/lib/rsil/deployer'
+import { rollbackVersion, checkPerformanceFloor, startABTest, concludeABTest, promoteVersion } from '@/lib/rsil/deployer'
 import { generateImprovedPrompt } from '@/lib/rsil/generator'
+import { getABTestStatus } from '@/lib/rsil/ab-test'
 import { getGovernance } from '@/lib/rsil/governance'
 
 const OPTIMIZATION_THRESHOLD = 0.7
@@ -49,14 +50,12 @@ export const rsilOptimizationCron = inngest.createFunction(
 
       if (!governance.enabled) {
         skippedCount += 1
-        console.log(`[RSIL][Optimize] Skip ${weblet.id}: governance.disabled`)
         continue
       }
 
       const frequencyHours = getFrequencyHours(governance.optimizationFrequency)
       if (frequencyHours === null) {
         skippedCount += 1
-        console.log(`[RSIL][Optimize] Skip ${weblet.id}: optimizationFrequency=manual`)
         continue
       }
 
@@ -76,9 +75,6 @@ export const rsilOptimizationCron = inngest.createFunction(
         const sinceLastVersionHours = getHoursAgo(latestVersion.createdAt, now)
         if (sinceLastVersionHours < frequencyHours) {
           skippedCount += 1
-          console.log(
-            `[RSIL][Optimize] Skip ${weblet.id}: frequency gate (${governance.optimizationFrequency}) not met`
-          )
           continue
         }
       }
@@ -97,8 +93,35 @@ export const rsilOptimizationCron = inngest.createFunction(
       })
 
       if (activeTest) {
+        // Check if this A/B test is ready to conclude
+        const testStatus = await step.run(`check-ab-test-status-${weblet.id}`, async () => {
+          return getABTestStatus(weblet.id, {
+            minTestDurationHours: governance.minTestDurationHours,
+            minScoresPerVersion: governance.minScoresPerVersion,
+          })
+        })
+
+        if (testStatus?.canConclude && testStatus.significance?.winner && testStatus.significance.winner !== 'none') {
+          const winnerVersionId =
+            testStatus.significance.winner === 'variant'
+              ? testStatus.variantVersion.id
+              : testStatus.controlVersion.id
+
+          await step.run(`conclude-ab-test-${weblet.id}`, async () => {
+            return concludeABTest(weblet.id, winnerVersionId)
+          })
+
+          await step.run(`promote-winner-${weblet.id}`, async () => {
+            return promoteVersion(
+              weblet.id,
+              winnerVersionId,
+              governance.deploymentStrategy,
+              governance.canaryStages
+            )
+          })
+        }
+
         skippedCount += 1
-        console.log(`[RSIL][Optimize] Skip ${weblet.id}: TESTING version exists (${activeTest.id})`)
         continue
       }
 
@@ -122,7 +145,6 @@ export const rsilOptimizationCron = inngest.createFunction(
 
       if (!activeVersion) {
         skippedCount += 1
-        console.log(`[RSIL][Optimize] Skip ${weblet.id}: no ACTIVE version`)
         continue
       }
 
@@ -130,9 +152,6 @@ export const rsilOptimizationCron = inngest.createFunction(
       const hoursSincePromotion = getHoursAgo(promotedAt, now)
       if (hoursSincePromotion < governance.cooldownHours) {
         skippedCount += 1
-        console.log(
-          `[RSIL][Optimize] Skip ${weblet.id}: cooldown ${governance.cooldownHours}h (elapsed ${hoursSincePromotion.toFixed(1)}h)`
-        )
         continue
       }
 
@@ -142,9 +161,6 @@ export const rsilOptimizationCron = inngest.createFunction(
 
       if (analysis.compositeScore >= OPTIMIZATION_THRESHOLD) {
         skippedCount += 1
-        console.log(
-          `[RSIL][Optimize] Skip ${weblet.id}: composite score ${analysis.compositeScore.toFixed(3)} >= ${OPTIMIZATION_THRESHOLD}`
-        )
         continue
       }
 
@@ -185,11 +201,6 @@ export const rsilOptimizationCron = inngest.createFunction(
         })
       })
 
-      console.log(
-        `[RSIL][Optimize] Draft created for ${weblet.id}: ${draftVersion.id} ` +
-          `(approval=${governance.requireApproval}, traffic=${governance.abTestTrafficPct}%, strategy=${governance.deploymentStrategy})`
-      )
-
       if (!governance.requireApproval) {
         await step.run(`start-ab-test-${weblet.id}`, async () => {
           return startABTest({
@@ -198,10 +209,6 @@ export const rsilOptimizationCron = inngest.createFunction(
             trafficPct: governance.abTestTrafficPct,
           })
         })
-
-        console.log(
-          `[RSIL][Optimize] Auto-started A/B for ${weblet.id} with ${governance.abTestTrafficPct}% traffic`
-        )
       }
 
       optimizedCount += 1
@@ -240,7 +247,6 @@ export const rsilMonitoringCron = inngest.createFunction(
       const governance = getGovernance({ rsilGovernance: weblet.rsilGovernance })
 
       if (!governance.enabled) {
-        console.log(`[RSIL][Monitor] Skip ${weblet.id}: governance.disabled`)
         continue
       }
 
@@ -261,7 +267,6 @@ export const rsilMonitoringCron = inngest.createFunction(
       })
 
       if (!activeVersion) {
-        console.log(`[RSIL][Monitor] Skip ${weblet.id}: no ACTIVE version`)
         continue
       }
 
@@ -269,9 +274,6 @@ export const rsilMonitoringCron = inngest.createFunction(
       const hoursSincePromotion = getHoursAgo(promotedAt, now)
 
       if (hoursSincePromotion > governance.monitoringWindowHours) {
-        console.log(
-          `[RSIL][Monitor] Skip ${weblet.id}: outside monitoring window (${hoursSincePromotion.toFixed(1)}h > ${governance.monitoringWindowHours}h)`
-        )
         continue
       }
 
@@ -282,9 +284,6 @@ export const rsilMonitoringCron = inngest.createFunction(
       })
 
       if (!floorCheck.belowFloor) {
-        console.log(
-          `[RSIL][Monitor] OK ${weblet.id}: score=${floorCheck.currentScore.toFixed(3)} floor=${governance.performanceFloor}`
-        )
         continue
       }
 
@@ -293,10 +292,6 @@ export const rsilMonitoringCron = inngest.createFunction(
       })
 
       rollbackCount += 1
-      console.log(
-        `[RSIL][Monitor] Rolled back ${weblet.id}: ${rollback.rolledBack.id} -> restored ${rollback.restoredTo.id} ` +
-          `(score=${floorCheck.currentScore.toFixed(3)}, floor=${governance.performanceFloor})`
-      )
     }
 
     return {
