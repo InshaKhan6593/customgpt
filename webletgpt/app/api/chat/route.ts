@@ -16,6 +16,8 @@ import { logUsage } from '@/lib/billing/usage-logger'
 import { getToolsFromOpenAPI } from '@/lib/tools/openapi'
 import { getMCPTools, closeMCPClients } from '@/lib/mcp/client'
 import { createChildWebletTools } from '@/lib/composition/child-tool-factory'
+import { getLangfusePromptName } from '@/lib/langfuse/prompts'
+import { propagateAttributes } from '@langfuse/tracing'
 import { z } from 'zod'
 
 // Module-level constant — avoids re-creating the string on every request
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
         where: { id: webletId },
         select: {
           capabilities: true, category: true, developerId: true,
-          accessType: true, monthlyPrice: true,
+          accessType: true, monthlyPrice: true, rsilEnabled: true,
           mcpServers: {
             where: { isActive: true },
             select: {
@@ -209,35 +211,47 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
     let capturedFinish: FinishData | null = null
     const messageTraceId = generateId()
 
-    const response = streamText({
-      model,
-      system: systemPrompt,
-      messages: compactedMessages as any[],
-      tools,
-      maxRetries: 2,   // 3 total attempts (AI SDK default) — allows recovery from transient OpenRouter 500s
-      stopWhen: stopWhenAny(stepCountIs(15), toolLoopDetected(3), noProgressDetected(6)),
-      experimental_telemetry: {
-        isEnabled: true,
-        functionId: `weblet-${webletId}`,
-        metadata: {
-          "langfuse.trace.id": messageTraceId,
-          "langfuse.trace.name": `weblet-${webletId}`,
-          "langfuse.user.id": userId,
-          "langfuse.session.id": activeSessionId,
-          "langfuse.trace.tags": [`webletId:${webletId}`, `versionId:${activeVersion.id}`],
-          ...(userMessageText ? { "langfuse.trace.input": userMessageText } : {}),
-          "langfuse.trace.metadata.webletId": webletId,
-          "langfuse.trace.metadata.modelId": modelId,
-          "langfuse.trace.metadata.versionId": activeVersion.id,
-          "langfuse.trace.metadata.versionNum": String(activeVersion.versionNum),
-          "langfuse.trace.metadata.developerId": weblet.developerId,
-          "langfuse.trace.metadata.mode": "DIRECT_CHAT",
+    const traceTags = [
+      `webletId:${webletId}`,
+      `versionId:${activeVersion.id}`,
+      `versionNum:${String(activeVersion.versionNum)}`,
+      ...(weblet.rsilEnabled ? ['rsil-enabled'] : []),
+    ]
+
+    const response = propagateAttributes(
+      { tags: traceTags, userId, sessionId: activeSessionId },
+      () => streamText({
+        model,
+        system: systemPrompt,
+        messages: compactedMessages as any[],
+        tools,
+        maxRetries: 2,   // 3 total attempts (AI SDK default) — allows recovery from transient OpenRouter 500s
+        stopWhen: stopWhenAny(stepCountIs(15), toolLoopDetected(3), noProgressDetected(6)),
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: `weblet-${webletId}`,
+          metadata: {
+            "langfuse.trace.id": messageTraceId,
+            "langfuse.trace.name": `weblet-${webletId}`,
+            "langfuse.user.id": userId,
+            "langfuse.session.id": activeSessionId,
+            "langfuse.trace.tags": traceTags,
+            ...(userMessageText ? { "langfuse.trace.input": userMessageText } : {}),
+            "langfuse.trace.metadata.webletId": webletId,
+            "langfuse.trace.metadata.modelId": modelId,
+            "langfuse.trace.metadata.versionId": activeVersion.id,
+            "langfuse.trace.metadata.versionNum": String(activeVersion.versionNum),
+            "langfuse.trace.metadata.promptName": getLangfusePromptName(webletId),
+            "langfuse.trace.metadata.promptVersion": String(activeVersion.versionNum),
+            "langfuse.trace.metadata.developerId": weblet.developerId,
+            "langfuse.trace.metadata.mode": "DIRECT_CHAT",
+          },
         },
-      },
-      onFinish(data) {
-        capturedFinish = data
-      },
-    })
+        onFinish(data) {
+          capturedFinish = data
+        },
+      })
+    )
 
     // ── Post-response cleanup via after() ─────────────────────────────────────
     // Runs AFTER the full response has been streamed to the client.
