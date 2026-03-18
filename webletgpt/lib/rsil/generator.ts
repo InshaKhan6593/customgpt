@@ -1,97 +1,123 @@
-/**
- * RSIL Generator — uses GPT-4o to generate an improved prompt version
- * based on weak traces from Langfuse.
- */
+import { generateObject } from 'ai'
+import { z } from 'zod'
 
-import { generateText } from 'ai'
 import { getLanguageModel } from '@/lib/ai/openrouter'
-import { fetchTraces } from '@/lib/langfuse/client'
-import { logUsage } from '@/lib/billing/usage-logger'
-import { RSIL_CREDIT_COST } from '@/lib/billing/pricing'
+import { prisma } from '@/lib/prisma'
+import type { AnalysisResult, ScoreDimension } from '@/lib/rsil/analyzer'
 
-const DIMENSION_HINTS: Record<string, string> = {
-  'user-rating':   'Users rated these conversations poorly — address overall response quality and satisfaction.',
-  'helpfulness':   'LLM judge flagged LOW HELPFULNESS — responses are not solving user problems effectively.',
-  'correctness':   'LLM judge flagged LOW CORRECTNESS — responses contain factual errors or wrong answers.',
-  'hallucination': 'LLM judge flagged HIGH HALLUCINATION — the AI is making up facts not grounded in context.',
-  'toxicity':      'LLM judge flagged HIGH TOXICITY — responses contain inappropriate or harmful content.',
-  'conciseness':   'LLM judge flagged LOW CONCISENESS — responses are too verbose or padded with unnecessary content.',
+const GENERATOR_MODEL = 'openai/gpt-4o'
+
+const outputSchema = z.object({
+  improvedPrompt: z.string().describe('The improved system prompt'),
+  changelog: z.string().describe('Human-readable summary of changes made and why'),
+})
+
+const DIMENSION_MEANINGS: Record<string, string> = {
+  'user-rating': 'Overall end-user satisfaction with the response quality.',
+  helpfulness: 'How useful and action-oriented the response is for the user.',
+  correctness: 'Factual and logical accuracy of statements and recommendations.',
+  'context-relevance': 'How well the response adheres to user context and constraints.',
+  hallucination: 'Tendency to invent unsupported facts; lower hallucination is better.',
+  toxicity: 'Safety and respectful tone; lower toxicity is better.',
+  conciseness: 'Ability to be clear and concise without losing essential detail.',
 }
 
-export async function generateImprovedPrompt({
-  currentPrompt,
-  webletId,
-  lowScoredTraceIds,
-  weakDimensions = [],
-  webletName,
-  webletDescription,
-  developerId,
-}: {
-  currentPrompt: string
-  webletId: string
-  lowScoredTraceIds: string[]
-  weakDimensions?: string[]
-  webletName: string
-  webletDescription?: string | null
-  developerId: string
-}): Promise<string> {
-  const tracesData = await fetchTraces({ webletId, limit: 10 })
-  const traces = tracesData?.data || []
+export interface GenerationResult {
+  improvedPrompt: string
+  changelog: string
+  model: string
+  tokensUsed: number
+}
 
-  const lowTraces = traces.filter(t => lowScoredTraceIds.includes(t.id)).slice(0, 5)
-
-  const examplesText = lowTraces.length > 0
-    ? lowTraces.map((t, i) => {
-        const input = typeof t.input === "string" ? t.input : "(unknown)"
-        const output = typeof t.output === "string" ? t.output.slice(0, 300) : ""
-        return `Example ${i + 1}:\nUser: ${input}\nAssistant: ${output}`
-      }).join('\n\n')
-    : 'No specific examples available — optimize based on common failure patterns.'
-
-  const dimensionGuidance = weakDimensions.length > 0
-    ? '\n\nSPECIFIC WEAKNESSES IDENTIFIED BY LLM EVALUATORS:\n' +
-      weakDimensions.map(d => `• ${DIMENSION_HINTS[d] || `Low score on "${d}" — address this specifically.`}`).join('\n')
-    : ''
-
-  const model = getLanguageModel('openai/gpt-4o')
-
-  const { text, usage } = await generateText({
-    model,
-    system: `You are a ruthless AI performance critic and prompt engineer. Your job is to rewrite system prompts to fix specific weaknesses. Be direct, specific, and harsh. Make the prompt significantly better.`,
-    prompt: `You are optimizing a weblet called "${webletName}" (${webletDescription || 'an AI assistant'}).
-
-CURRENT SYSTEM PROMPT:
-${currentPrompt}
-${dimensionGuidance}
-
-WEAK CONVERSATIONS (low-scored by users and/or LLM evaluators):
-${examplesText}
-
-Rewrite the system prompt to fix these weaknesses. Rules:
-1. Keep the core purpose and persona identical
-2. Directly address each identified weakness from the evaluator feedback above
-3. Add specific examples where the AI was vague
-4. Add guardrails where the AI went off-topic or hallucinated
-5. Improve tone/persona where it felt wrong
-6. Add clarifying instructions for the most common failure patterns
-
-Return ONLY the new system prompt text, no explanation.`,
-  })
-
-  try {
-    await logUsage({
-      userId: developerId,
-      webletId,
-      developerId,
-      tokensIn: usage?.inputTokens ?? 0,
-      tokensOut: usage?.outputTokens ?? 0,
-      modelId: 'openai/gpt-4o',
-      toolCalls: { base: RSIL_CREDIT_COST },
-      source: 'RSIL',
-    })
-  } catch (err) {
-    console.error('[RSIL] Failed to log usage:', err)
+function formatDimensionScores(dimensions: AnalysisResult['dimensions']): string {
+  if (dimensions.length === 0) {
+    return '- No dimension scores available.'
   }
 
-  return text.trim()
+  return dimensions
+    .map((dimension) => {
+      const meaning = DIMENSION_MEANINGS[dimension.name] ?? 'General quality signal.'
+      const percent = (dimension.avgValue * 100).toFixed(1)
+      return `- ${dimension.name}: ${percent}% (samples=${dimension.sampleSize}, weight=${dimension.weight}) — ${meaning}`
+    })
+    .join('\n')
+}
+
+function formatWeakDimensions(weakDimensions: string[]): string {
+  if (weakDimensions.length === 0) {
+    return '- No weak dimensions identified.'
+  }
+
+  return weakDimensions
+    .map((dimension) => `- ${dimension}: ${DIMENSION_MEANINGS[dimension] ?? 'General quality signal.'}`)
+    .join('\n')
+}
+
+export async function generateImprovedPrompt(params: {
+  webletId: string
+  currentPrompt: string
+  weakDimensions: string[]
+  compositeScore: number
+  dimensions: ScoreDimension[]
+}): Promise<GenerationResult> {
+  try {
+    const model = getLanguageModel(GENERATOR_MODEL)
+
+    const weakDimensionsSummary = formatWeakDimensions(params.weakDimensions)
+    const dimensionScoreSummary = formatDimensionScores(params.dimensions)
+
+    const result = await generateObject({
+      model,
+      schema: outputSchema,
+      system: [
+        'You are an expert AI prompt engineer specializing in improving system prompts.',
+        "PRESERVE the weblet's core identity, persona, and purpose completely. Only improve the identified weak areas.",
+        'Do NOT change the weblet\'s name, role description, or fundamental purpose.',
+        'Add specific examples for low-scoring dimensions. Add guardrails for identified failure modes.',
+        'Use the weak dimensions context below and their meanings to target improvements precisely:',
+        weakDimensionsSummary,
+      ].join('\n\n'),
+      prompt: [
+        'Improve the following system prompt while preserving its core behavior.',
+        `Current composite score: ${(params.compositeScore * 100).toFixed(1)}%`,
+        'Weak dimensions:',
+        weakDimensionsSummary,
+        'Per-dimension scores and meanings:',
+        dimensionScoreSummary,
+        'Current prompt (preserve persona/identity/purpose):',
+        '<<<CURRENT_PROMPT_START>>>',
+        params.currentPrompt,
+        '<<<CURRENT_PROMPT_END>>>',
+      ].join('\n\n'),
+    })
+
+    const totalTokens = result.usage?.totalTokens ?? 0
+    const tracesEstimated = params.dimensions.length > 0
+      ? Math.max(...params.dimensions.map((dimension) => dimension.sampleSize))
+      : 0
+
+    await prisma.evaluationRun.create({
+      data: {
+        webletId: params.webletId,
+        tracesSampled: tracesEstimated,
+        tracesEvaluated: tracesEstimated,
+        dimensions: params.dimensions as any,
+        compositeScore: params.compositeScore,
+        judgeModel: GENERATOR_MODEL,
+        status: 'COMPLETED',
+        creditsUsed: Math.ceil(totalTokens / 1000),
+        completedAt: new Date(),
+      },
+    })
+
+    return {
+      improvedPrompt: result.object.improvedPrompt,
+      changelog: result.object.changelog,
+      model: GENERATOR_MODEL,
+      tokensUsed: totalTokens,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error('Prompt generation failed: ' + message)
+  }
 }
