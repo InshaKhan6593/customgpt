@@ -70,14 +70,19 @@ export function ChatContainer({
           if (newSessionId) {
             sessionIdRef.current = newSessionId
             setSessionId(newSessionId)
-            onSessionCreated?.(newSessionId)
-            window.history.replaceState(
-              window.history.state,
-              "",
-              `/chat/${weblet.id}/${newSessionId}`
-            )
-            // Notify sidebar to refetch sessions (replaceState doesn't trigger usePathname)
-            window.dispatchEvent(new CustomEvent("chat-session-created", { detail: { sessionId: newSessionId } }))
+            if (onSessionCreated) {
+              // Parent owns URL management (e.g. /chats page)
+              onSessionCreated(newSessionId)
+            } else {
+              // Self-managed URL (e.g. /chat/{webletId} page)
+              window.history.replaceState(
+                window.history.state,
+                "",
+                `/chat/${weblet.id}/${newSessionId}`
+              )
+              // Notify sidebar to refetch sessions (replaceState doesn't trigger usePathname)
+              window.dispatchEvent(new CustomEvent("chat-session-created", { detail: { sessionId: newSessionId } }))
+            }
           }
         }
         return response
