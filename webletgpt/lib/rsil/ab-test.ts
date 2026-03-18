@@ -56,6 +56,29 @@ export interface SignificanceResult {
   confidenceLevel: number
 }
 
+export interface ABTestStatus {
+  controlVersion: {
+    id: string
+    versionNum: number
+    abTestTrafficPct: number
+    abTestStartedAt: Date | null
+  }
+  variantVersion: {
+    id: string
+    versionNum: number
+    abTestTrafficPct: number
+    abTestStartedAt: Date | null
+  }
+  trafficPct: number
+  startedAt: Date
+  controlScores: { good: number; total: number }
+  variantScores: { good: number; total: number }
+  significance: SignificanceResult | null
+  canConclude: boolean
+  minDurationMet: boolean
+  minSamplesMet: boolean
+}
+
 /**
  * Calculate statistical significance of an A/B test
  * Uses two-proportion z-test
@@ -152,6 +175,110 @@ export function hashBucket(userId: string, webletId: string): number {
 
   // Convert to 0-100
   return Math.abs(hash % 101)
+}
+
+export function bucketUser(userId: string, webletId: string): number {
+  return hashBucket(userId, webletId)
+}
+
+export function shouldServeVariant(userId: string, webletId: string, trafficPct: number): boolean {
+  if (trafficPct <= 0) return false
+  if (trafficPct >= 100) return true
+
+  const bucket = bucketUser(userId, webletId)
+  return bucket < trafficPct
+}
+
+export async function getABTestStatus(
+  webletId: string,
+  opts?: { minTestDurationHours?: number; minScoresPerVersion?: number }
+): Promise<ABTestStatus | null> {
+  const minTestDurationHours = opts?.minTestDurationHours ?? 24
+  const minScoresPerVersion = opts?.minScoresPerVersion ?? 30
+
+  const [controlVersion, variantVersion] = await Promise.all([
+    prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'ACTIVE',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        versionNum: true,
+        abTestTrafficPct: true,
+        abTestStartedAt: true,
+        avgScore: true,
+      },
+    }),
+    prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'TESTING',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        versionNum: true,
+        abTestTrafficPct: true,
+        abTestStartedAt: true,
+        createdAt: true,
+        avgScore: true,
+      },
+    }),
+  ])
+
+  if (!controlVersion || !variantVersion) {
+    return null
+  }
+
+  const controlTotal = 0
+  const variantTotal = 0
+
+  const controlScores = {
+    total: controlTotal,
+    good: Math.floor(controlTotal * ((controlVersion.avgScore ?? 0) / 5)),
+  }
+
+  const variantScores = {
+    total: variantTotal,
+    good: Math.floor(variantTotal * ((variantVersion.avgScore ?? 0) / 5)),
+  }
+
+  const significance =
+    controlScores.total > 0 && variantScores.total > 0
+      ? calculateSignificance(controlScores, variantScores)
+      : null
+
+  const startedAt = variantVersion.abTestStartedAt ?? variantVersion.createdAt
+  const minDurationMs = minTestDurationHours * 60 * 60 * 1000
+  const minDurationMet = Date.now() - startedAt.getTime() >= minDurationMs
+  const minSamplesMet =
+    controlScores.total >= minScoresPerVersion && variantScores.total >= minScoresPerVersion
+  const canConclude = minDurationMet && minSamplesMet && significance?.significant === true
+
+  return {
+    controlVersion: {
+      id: controlVersion.id,
+      versionNum: controlVersion.versionNum,
+      abTestTrafficPct: controlVersion.abTestTrafficPct,
+      abTestStartedAt: controlVersion.abTestStartedAt,
+    },
+    variantVersion: {
+      id: variantVersion.id,
+      versionNum: variantVersion.versionNum,
+      abTestTrafficPct: variantVersion.abTestTrafficPct,
+      abTestStartedAt: variantVersion.abTestStartedAt,
+    },
+    trafficPct: variantVersion.abTestTrafficPct,
+    startedAt,
+    controlScores,
+    variantScores,
+    significance,
+    canConclude,
+    minDurationMet,
+    minSamplesMet,
+  }
 }
 
 /**

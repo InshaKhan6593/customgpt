@@ -1,35 +1,41 @@
-import { prisma } from "@/lib/prisma"
-import { getVersionForUser } from "@/lib/rsil/ab-test"
+import { prisma } from '@/lib/prisma'
+import { shouldServeVariant } from '@/lib/rsil/ab-test'
 
 export async function getActiveVersion(webletId: string, userId?: string) {
-  // If userId provided, check for A/B test routing
-  if (userId) {
-    try {
-      const version = await getVersionForUser(webletId, userId)
-      if (version) return version
-    } catch {
-      // Fall through to default behavior if A/B test routing fails
-    }
-  }
+  try {
+    const versions = await prisma.webletVersion.findMany({
+      where: {
+        webletId,
+        status: { in: ['ACTIVE', 'TESTING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
 
-  const weblet = await prisma.weblet.findUnique({
-    where: { id: webletId },
-    include: {
-      versions: {
-        where: { status: 'ACTIVE' },
-        orderBy: { createdAt: 'desc' },
-        take: 1
+    const activeVersion = versions.find(v => v.status === 'ACTIVE')
+    const testingVersion = versions.find(v => v.status === 'TESTING')
+
+    if (testingVersion && userId && testingVersion.isAbTest) {
+      const inVariantBucket = shouldServeVariant(userId, webletId, testingVersion.abTestTrafficPct)
+      if (inVariantBucket) {
+        return testingVersion
+      }
+      if (activeVersion) {
+        return activeVersion
       }
     }
-  })
 
-  if (!weblet || weblet.versions.length === 0) {
-    const fallback = await prisma.webletVersion.findFirst({
+    if (activeVersion) {
+      return activeVersion
+    }
+
+    return await prisma.webletVersion.findFirst({
       where: { webletId },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     })
-    return fallback
+  } catch {
+    return await prisma.webletVersion.findFirst({
+      where: { webletId },
+      orderBy: { createdAt: 'desc' },
+    })
   }
-
-  return weblet.versions[0]
 }
