@@ -1,112 +1,166 @@
 /**
- * RSIL Governance — checks rules before triggering optimization.
+ * RSIL Governance — Type system, Zod schema, and defaults for RSIL configuration.
+ *
+ * Governs A/B test parameters, approval requirements, deployment strategies,
+ * and safety thresholds for automated prompt optimization.
  */
 
-import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
 
-export const AUTO_OPTIMIZATION_FREQUENCIES = ['every_6h', 'every_12h', 'daily', 'weekly'] as const
-export type AutoOptimizationFrequency = (typeof AUTO_OPTIMIZATION_FREQUENCIES)[number]
+export interface RSILGovernance {
+  /** Enable or disable RSIL automation for this weblet */
+  enabled: boolean
 
-const DEFAULT_GOVERNANCE = {
-  minInteractionsBeforeOptimize: 100,
-  cooldownHours: 6,
-  maxUpdatesPerDay: 3,
+  /** How frequently to run optimization: daily, weekly, or manual trigger */
+  optimizationFrequency: 'daily' | 'weekly' | 'manual'
+
+  /** Require user approval before A/B test starts (recommended: true) */
+  requireApproval: boolean
+
+  /** Percentage of traffic sent to candidate version during A/B test (1-99) */
+  abTestTrafficPct: number
+
+  /** Minimum hours before a test can conclude (prevents premature decisions) */
+  minTestDurationHours: number
+
+  /** Minimum score samples per version required before comparison (e.g., 50 conversations) */
+  minScoresPerVersion: number
+
+  /** Statistical significance threshold (p-value) for declaring winner; 0.05 = 95% confidence */
+  significanceThreshold: number
+
+  /** Deployment strategy: instant rollout or canary with staged traffic increases */
+  deploymentStrategy: 'instant' | 'canary'
+
+  /** Traffic percentages for canary stages (e.g., [10, 50, 100]) */
+  canaryStages: number[]
+
+  /** Hours to monitor after promotion before declaring success (auto-rollback window) */
+  monitoringWindowHours: number
+
+  /** Auto-rollback if performance drops below this floor (0-1 normalized score) */
+  performanceFloor: number
+
+  /** Maximum concurrent A/B tests to run simultaneously (prevents resource exhaustion) */
+  maxConcurrentTests: number
+
+  /** Hours to wait between optimization runs (prevents test churn) */
+  cooldownHours: number
+}
+
+/**
+ * Zod schema for RSILGovernance.
+ * Validates ranges, types, and inter-field constraints.
+ */
+export const rsilGovernanceSchema = z.object({
+  enabled: z.boolean().default(false),
+  optimizationFrequency: z
+    .enum(['daily', 'weekly', 'manual'])
+    .default('weekly'),
+  requireApproval: z.boolean().default(true),
+  abTestTrafficPct: z
+    .number()
+    .int()
+    .min(1)
+    .max(99)
+    .default(50),
+  minTestDurationHours: z
+    .number()
+    .int()
+    .min(1)
+    .default(48),
+  minScoresPerVersion: z
+    .number()
+    .int()
+    .min(1)
+    .default(50),
+  significanceThreshold: z
+    .number()
+    .min(0.01)
+    .max(0.5)
+    .default(0.05),
+  deploymentStrategy: z
+    .enum(['instant', 'canary'])
+    .default('canary'),
+  canaryStages: z
+    .array(z.number().int().min(1).max(100))
+    .default([10, 50, 100]),
+  monitoringWindowHours: z
+    .number()
+    .int()
+    .min(1)
+    .default(48),
+  performanceFloor: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.6),
+  maxConcurrentTests: z
+    .number()
+    .int()
+    .min(1)
+    .default(1),
+  cooldownHours: z
+    .number()
+    .int()
+    .min(0)
+    .default(6),
+})
+
+/**
+ * Default RSIL governance configuration.
+ * Enables conservative A/B testing with user approval required.
+ * Suitable for production weblets that prioritize safety over speed.
+ */
+export const DEFAULT_GOVERNANCE: RSILGovernance = {
+  enabled: false,
+  optimizationFrequency: 'weekly',
+  requireApproval: true,
+  abTestTrafficPct: 50,
   minTestDurationHours: 48,
-  requireCreatorApproval: false,
-  performanceFloor: 3.0,
-  autoOptimizationEnabled: false,
-  autoOptimizationFrequency: 'daily' as AutoOptimizationFrequency,
-  autoOptimizationHour: 0,
+  minScoresPerVersion: 50,
+  significanceThreshold: 0.05,
+  deploymentStrategy: 'canary',
+  canaryStages: [10, 50, 100],
+  monitoringWindowHours: 48,
+  performanceFloor: 0.6,
+  maxConcurrentTests: 1,
+  cooldownHours: 6,
 }
 
-export type GovernanceConfig = typeof DEFAULT_GOVERNANCE
+/**
+ * Parse and validate a governance object from a Weblet's rsilGovernance JSON field.
+ * If the field is null/undefined/invalid, returns DEFAULT_GOVERNANCE.
+ * Otherwise merges parsed partial config with defaults.
+ *
+ * @param weblet - Object with rsilGovernance field (typically a Weblet from DB)
+ * @returns Typed and merged RSILGovernance object
+ */
+export function getGovernance(weblet: {
+  rsilGovernance: unknown
+}): RSILGovernance {
+  if (!weblet.rsilGovernance) {
+    return DEFAULT_GOVERNANCE
+  }
 
-export function getGovernance(raw: any): GovernanceConfig {
-  if (!raw || typeof raw !== 'object') return DEFAULT_GOVERNANCE
-  return { ...DEFAULT_GOVERNANCE, ...raw }
-}
+  const result = validateGovernance(weblet.rsilGovernance)
+  if (!result.success) {
+    return DEFAULT_GOVERNANCE
+  }
 
-export function shouldRunAutoOptimization(governance: GovernanceConfig): boolean {
-  if (!governance.autoOptimizationEnabled) return false
-
-  const now = new Date()
-  const currentHour = now.getUTCHours()
-  const targetHour = governance.autoOptimizationHour
-
-  switch (governance.autoOptimizationFrequency) {
-    case 'every_6h':
-      return currentHour % 6 === targetHour % 6
-    case 'every_12h':
-      return currentHour % 12 === targetHour % 12
-    case 'daily':
-      return currentHour === targetHour
-    case 'weekly':
-      return now.getUTCDay() === 1 && currentHour === targetHour
-    default:
-      return false
+  return {
+    ...DEFAULT_GOVERNANCE,
+    ...result.data,
   }
 }
 
-export async function checkGovernance(webletId: string): Promise<{ allowed: boolean; reason: string }> {
-  const weblet = await prisma.weblet.findUnique({
-    where: { id: webletId },
-    select: { rsilEnabled: true, rsilGovernance: true },
-  })
-
-  if (!weblet?.rsilEnabled) {
-    return { allowed: false, reason: 'RSIL not enabled for this weblet' }
-  }
-
-  const governance = getGovernance(weblet.rsilGovernance)
-
-  // Check if there's already an active A/B test
-  const activeTest = await prisma.webletVersion.findFirst({
-    where: { webletId, status: 'TESTING', isAbTest: true },
-  })
-
-  if (activeTest) {
-    return { allowed: false, reason: 'A/B test already running' }
-  }
-
-  // Check cooldown (time since last optimization)
-  const recentOptimization = await prisma.webletVersion.findFirst({
-    where: {
-      webletId,
-      isAbTest: true,
-      abTestEndedAt: { not: null },
-    },
-    orderBy: { abTestEndedAt: 'desc' },
-  })
-
-  if (recentOptimization?.abTestEndedAt) {
-    const hoursSince = (Date.now() - recentOptimization.abTestEndedAt.getTime()) / (1000 * 60 * 60)
-    if (hoursSince < governance.cooldownHours) {
-      return { allowed: false, reason: `Cooldown active (${governance.cooldownHours}h required)` }
-    }
-  }
-
-  // Check max updates per day
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const updatesToday = await prisma.webletVersion.count({
-    where: {
-      webletId,
-      isAbTest: true,
-      createdAt: { gte: today },
-    },
-  })
-
-  if (updatesToday >= governance.maxUpdatesPerDay) {
-    return { allowed: false, reason: `Max ${governance.maxUpdatesPerDay} updates per day reached` }
-  }
-
-  const interactionCount = await prisma.chatMessage.count({
-    where: { chatSession: { webletId } },
-  })
-
-  if (interactionCount < governance.minInteractionsBeforeOptimize) {
-    return { allowed: false, reason: `Not enough interactions yet (${interactionCount}/${governance.minInteractionsBeforeOptimize})` }
-  }
-
-  return { allowed: true, reason: 'OK' }
+/**
+ * Validate governance input against the Zod schema.
+ * Uses partial() to allow partial updates (not all fields required).
+ *
+ * @param input - Unknown input (typically from JSON parsing)
+ * @returns Zod SafeParseResult with typed data or validation errors
+ */
+export function validateGovernance(input: unknown) {
+  return rsilGovernanceSchema.partial().safeParse(input)
 }
