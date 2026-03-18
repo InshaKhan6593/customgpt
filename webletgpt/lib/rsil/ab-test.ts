@@ -1,80 +1,219 @@
 /**
- * RSIL A/B Test — deterministic hash-based traffic splitting.
- * Same user always gets same version, preventing cognitive dissonance.
+ * A/B Testing Utilities for RSIL
+ *
+ * Statistical functions for significance testing and user bucketing.
+ * - normalCDF: Standard normal cumulative distribution function
+ * - calculateSignificance: Z-test for proportions
+ * - hashBucket: Deterministic user bucketing
+ * - startABTest: Promote draft version to TESTING status
  */
 
-import { createHash } from 'crypto'
 import { prisma } from '@/lib/prisma'
 
-/** Deterministically assign a user to control (false) or variant (true) */
-export function isInTestGroup(userId: string, webletId: string, trafficPct: number): boolean {
-  const hash = createHash('md5').update(`${userId}:${webletId}`).digest('hex')
-  const bucket = parseInt(hash.slice(0, 8), 16) % 100
-  return bucket < trafficPct
+/**
+ * Standard normal cumulative distribution function (CDF)
+ * Uses Abramowitz & Stegun rational approximation
+ * Accurate to 7.5 decimal places
+ *
+ * @param z - Z-score
+ * @returns Cumulative probability P(Z ≤ z)
+ */
+export function normalCDF(z: number): number {
+  // Constants for rational approximation
+  const a1 = 0.254829592
+  const a2 = -0.284496736
+  const a3 = 1.421413741
+  const a4 = -1.453152027
+  const a5 = 1.061405429
+  const p = 0.3275911
+
+  // Save the sign of z
+  const sign = z >= 0 ? 1 : -1
+  z = Math.abs(z) / Math.sqrt(2)
+
+  // Abramowitz and Stegun formula
+  const t = 1 / (1 + p * z)
+  const y =
+    1 -
+    (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-z * z))
+
+  return 0.5 * (1 + sign * y)
 }
 
-/** Get the version to use for a user — respects A/B test if one is running */
-export async function getVersionForUser(webletId: string, userId: string) {
-  // Check if there's an active A/B test (TESTING version)
-  const testingVersion = await prisma.webletVersion.findFirst({
-    where: { webletId, status: 'TESTING', isAbTest: true },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  if (!testingVersion) {
-    // No A/B test — return active version
-    return prisma.webletVersion.findFirst({
-      where: { webletId, status: 'ACTIVE' },
-      orderBy: { createdAt: 'desc' },
-    })
-  }
-
-  // A/B test is running — deterministically route user
-  const inTestGroup = isInTestGroup(userId, webletId, testingVersion.abTestTrafficPct)
-
-  if (inTestGroup) {
-    return testingVersion
-  }
-
-  return prisma.webletVersion.findFirst({
-    where: { webletId, status: 'ACTIVE' },
-    orderBy: { createdAt: 'desc' },
-  })
+/**
+ * Result of statistical significance test
+ */
+export interface SignificanceResult {
+  /** Whether the difference is statistically significant at p < 0.05 */
+  significant: boolean
+  /** Z-score of the test */
+  zScore: number
+  /** P-value (two-tailed) */
+  pValue: number
+  /** Winner: control, variant, or neither */
+  winner: 'control' | 'variant' | 'none'
+  /** Confidence level (fixed at 0.95 for p=0.05) */
+  confidenceLevel: number
 }
 
-/** Create a new TESTING version for A/B testing */
-export async function createAbTestVersion({
+/**
+ * Calculate statistical significance of an A/B test
+ * Uses two-proportion z-test
+ *
+ * "Good" outcome = composite interaction score >= 0.6
+ *
+ * @param control - { good: number of good interactions, total: total interactions }
+ * @param variant - Same structure
+ * @returns Significance result with winner determination
+ */
+export function calculateSignificance(
+  control: { good: number; total: number },
+  variant: { good: number; total: number }
+): SignificanceResult {
+  // Handle edge cases
+  if (control.total === 0 || variant.total === 0) {
+    return {
+      significant: false,
+      zScore: 0,
+      pValue: 1,
+      winner: 'none',
+      confidenceLevel: 0.95,
+    }
+  }
+
+  // Calculate proportions
+  const p1 = control.good / control.total
+  const p2 = variant.good / variant.total
+
+  // Calculate pooled proportion
+  const p = (control.good + variant.good) / (control.total + variant.total)
+
+  // Calculate standard error
+  const se = Math.sqrt(p * (1 - p) * (1 / control.total + 1 / variant.total))
+
+  // Handle zero standard error
+  if (se === 0) {
+    return {
+      significant: false,
+      zScore: 0,
+      pValue: 1,
+      winner: 'none',
+      confidenceLevel: 0.95,
+    }
+  }
+
+  // Calculate z-score
+  const zScore = (p2 - p1) / se
+
+  // Calculate p-value (two-tailed)
+  const pValue = 2 * (1 - normalCDF(Math.abs(zScore)))
+
+  // Determine significance and winner
+  const significant = pValue < 0.05
+
+  let winner: 'control' | 'variant' | 'none' = 'none'
+  if (significant) {
+    if (p2 > p1) {
+      winner = 'variant'
+    } else if (p1 > p2) {
+      winner = 'control'
+    }
+  }
+
+  return {
+    significant,
+    zScore,
+    pValue,
+    winner,
+    confidenceLevel: 0.95,
+  }
+}
+
+/**
+ * Deterministic hash-based user bucketing (0-100)
+ * Same userId + webletId always produces same bucket
+ *
+ * Uses FNV-1a hash algorithm
+ *
+ * @param userId - User identifier
+ * @param webletId - Weblet identifier
+ * @returns Bucket number 0-100
+ */
+export function hashBucket(userId: string, webletId: string): number {
+  const input = `${userId}:${webletId}`
+
+  // FNV-1a hash
+  let hash = 2166136261 // FNV offset basis (32-bit)
+
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = (hash + (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)) >>> 0
+  }
+
+  // Convert to 0-100
+  return Math.abs(hash % 101)
+}
+
+/**
+ * Start an A/B test by promoting a DRAFT version to TESTING status
+ *
+ * @param params - { webletId, draftVersionId, trafficPct, userId }
+ * @throws If version not found, already in A/B test, or DB error
+ */
+export async function startABTest({
   webletId,
-  newPrompt,
-  baseVersionId,
-  trafficPct = 50,
+  draftVersionId,
+  trafficPct,
+  userId,
 }: {
   webletId: string
-  newPrompt: string
-  baseVersionId: string
-  trafficPct?: number
-}) {
-  const baseVersion = await prisma.webletVersion.findUnique({ where: { id: baseVersionId } })
-  if (!baseVersion) throw new Error('Base version not found')
+  draftVersionId: string
+  trafficPct: number
+  userId: string
+}): Promise<void> {
+  try {
+    // Fetch the draft version
+    const draftVersion = await prisma.webletVersion.findUnique({
+      where: { id: draftVersionId },
+    })
 
-  const latestVersion = await prisma.webletVersion.findFirst({
-    where: { webletId },
-    orderBy: { versionNum: 'desc' },
-  })
+    if (!draftVersion) {
+      throw new Error(`Draft version ${draftVersionId} not found`)
+    }
 
-  const newVersionNum = (latestVersion?.versionNum || 0) + 1
+    if (draftVersion.webletId !== webletId) {
+      throw new Error(`Version ${draftVersionId} does not belong to weblet ${webletId}`)
+    }
 
-  return prisma.webletVersion.create({
-    data: {
-      webletId,
-      versionNum: newVersionNum,
-      prompt: newPrompt,
-      status: 'TESTING',
-      model: baseVersion.model,
-      commitMsg: 'RSIL auto-generated variant',
-      isAbTest: true,
-      abTestTrafficPct: trafficPct,
-      abTestStartedAt: new Date(),
-    },
-  })
+    if (draftVersion.status !== 'DRAFT') {
+      throw new Error(`Version ${draftVersionId} is not in DRAFT status (current: ${draftVersion.status})`)
+    }
+
+    // Check for existing active A/B test
+    const activeABTest = await prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'TESTING',
+        isAbTest: true,
+      },
+    })
+
+    if (activeABTest) {
+      throw new Error(`Weblet ${webletId} already has an active A/B test running`)
+    }
+
+    // Promote to TESTING
+    await prisma.webletVersion.update({
+      where: { id: draftVersionId },
+      data: {
+        status: 'TESTING',
+        isAbTest: true,
+        abTestTrafficPct: trafficPct,
+        abTestStartedAt: new Date(),
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to start A/B test: ${message}`)
+  }
 }
