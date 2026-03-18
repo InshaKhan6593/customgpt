@@ -64,6 +64,12 @@ export function ChatSidebar({ webletId }: ChatSidebarProps) {
     fetchSessions()
   }, [pathname, fetchSessions])
 
+  useEffect(() => {
+    const handler = () => fetchSessions()
+    window.addEventListener("chat-session-created", handler)
+    return () => window.removeEventListener("chat-session-created", handler)
+  }, [fetchSessions])
+
   const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
     e.preventDefault()
     setIsDeleting(sessionId)

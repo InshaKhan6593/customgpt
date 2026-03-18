@@ -76,6 +76,8 @@ export function ChatContainer({
               "",
               `/chat/${weblet.id}/${newSessionId}`
             )
+            // Notify sidebar to refetch sessions (replaceState doesn't trigger usePathname)
+            window.dispatchEvent(new CustomEvent("chat-session-created", { detail: { sessionId: newSessionId } }))
           }
         }
         return response
