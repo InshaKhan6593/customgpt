@@ -19,20 +19,38 @@
 .DS_Store
 Thumbs.db
 
-# Starter Kit (Keeping original PDFs, but ignoring extracted versions if any)
-**/tmp_pdfs/
-**/extract.py
+# Planning docs and reference materials
+segments/
+lovable_instructions/
+Self_Improving_System_Starter_Kit/
+docs/
 
-# Generated runtime data
-**/public/artifacts/
-**/data/generated-images/
+# Business plans and scratch notes
+WEBLETGPT_BUSINESS_MODEL.md
+WEBLETGPT_MASTER_PLAN.md
+plan.md
+rag-implementation.md
+langfuse_api_snapshot.md
 
-# Local tool config
+# Screenshots and images (non-code)
+evaluator-mapping.png
+langfuse_scores_v2.png
+
+# AI tool config
 .claude/
 agent-skills/
 .sisyphus/
-nul
+**/AGENTS.md
+**/CLAUDE.md
 
-# Scratch / temp files
+# Generated runtime data
+**/tmp_pdfs/
+**/extract.py
+**/public/artifacts/
+**/data/generated-images/
+
+# Misc
+nul
 *.pyc
 e2b_check/
+.ruff_cache/
