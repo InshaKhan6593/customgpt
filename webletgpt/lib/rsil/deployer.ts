@@ -1,150 +1,366 @@
-/**
- * RSIL Deployer — evaluates A/B test results and promotes winner / rolls back loser.
- * Uses statistical significance (p < 0.05) to determine winner.
- */
+import type { WebletVersion } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
-import { fetchScores } from '@/lib/langfuse/client'
-import { isInTestGroup } from './ab-test'
-import { getGovernance } from './governance'
+import { analyzeVersion } from '@/lib/rsil/analyzer'
 
-interface TestResult {
-  winner: 'control' | 'variant' | 'insufficient_data'
-  controlAvg: number
-  variantAvg: number
-  controlCount: number
-  variantCount: number
-  improvement: number
-}
+export async function startABTest(params: {
+  webletId: string
+  draftVersionId: string
+  trafficPct: number
+}): Promise<WebletVersion> {
+  try {
+    const version = await prisma.webletVersion.findUnique({
+      where: { id: params.draftVersionId },
+    })
 
-export async function evaluateAbTest(webletId: string): Promise<TestResult> {
-  const testingVersion = await prisma.webletVersion.findFirst({
-    where: { webletId, status: 'TESTING', isAbTest: true },
-  })
-
-  if (!testingVersion) {
-    return { winner: 'insufficient_data', controlAvg: 0, variantAvg: 0, controlCount: 0, variantCount: 0, improvement: 0 }
-  }
-
-  const weblet = await prisma.weblet.findUnique({
-    where: { id: webletId },
-    select: { rsilGovernance: true },
-  })
-  const governance = getGovernance(weblet?.rsilGovernance)
-  const minDurationMs = governance.minTestDurationHours * 60 * 60 * 1000
-  const testAge = Date.now() - (testingVersion.abTestStartedAt?.getTime() || 0)
-
-  if (testAge < minDurationMs) {
-    return { winner: 'insufficient_data', controlAvg: 0, variantAvg: 0, controlCount: 0, variantCount: 0, improvement: 0 }
-  }
-
-  const fromTimestamp = testingVersion.abTestStartedAt!.toISOString()
-  const scoresData = await fetchScores({ webletId, fromTimestamp, limit: 200 })
-  const scores: Array<{ traceId: string; value: number }> = (scoresData?.data || [])
-    .filter((s: any) => s.name === 'user-rating' && typeof s.value === 'number')
-
-  if (scores.length < 20) {
-    return { winner: 'insufficient_data', controlAvg: 0, variantAvg: 0, controlCount: 0, variantCount: 0, improvement: 0 }
-  }
-
-  // Get all chat sessions during test period to check which group each user was in
-  const sessions = await prisma.chatSession.findMany({
-    where: {
-      webletId,
-      createdAt: { gte: testingVersion.abTestStartedAt! },
-      langfuseTraceId: { not: null },
-    },
-    select: { userId: true, langfuseTraceId: true },
-  })
-
-  const sessionMap = new Map(sessions.map(s => [s.langfuseTraceId!, s.userId]))
-
-  const controlScores: number[] = []
-  const variantScores: number[] = []
-
-  for (const score of scores) {
-    const userId = sessionMap.get(score.traceId)
-    if (!userId) continue
-
-    if (isInTestGroup(userId, webletId, testingVersion.abTestTrafficPct)) {
-      variantScores.push(score.value)
-    } else {
-      controlScores.push(score.value)
+    if (!version) {
+      throw new Error(`Version ${params.draftVersionId} not found`)
     }
-  }
 
-  if (controlScores.length < 10 || variantScores.length < 10) {
-    return { winner: 'insufficient_data', controlAvg: 0, variantAvg: 0, controlCount: controlScores.length, variantCount: variantScores.length, improvement: 0 }
-  }
+    if (version.webletId !== params.webletId) {
+      throw new Error(
+        `Version ${params.draftVersionId} does not belong to weblet ${params.webletId}`
+      )
+    }
 
-  const controlAvg = controlScores.reduce((a, b) => a + b, 0) / controlScores.length
-  const variantAvg = variantScores.reduce((a, b) => a + b, 0) / variantScores.length
-  const improvement = ((variantAvg - controlAvg) / controlAvg) * 100
+    if (version.status !== 'DRAFT') {
+      throw new Error(
+        `Version ${params.draftVersionId} is not in DRAFT status (current: ${version.status})`
+      )
+    }
 
-  const winner = variantAvg > controlAvg + 0.2 ? 'variant' : variantAvg < controlAvg - 0.2 ? 'control' : 'control'
-
-  return { winner, controlAvg, variantAvg, controlCount: controlScores.length, variantCount: variantScores.length, improvement }
-}
-
-export async function deployWinner(webletId: string): Promise<{ deployed: boolean; action: string }> {
-  const result = await evaluateAbTest(webletId)
-
-  if (result.winner === 'insufficient_data') {
-    return { deployed: false, action: 'waiting_for_data' }
-  }
-
-  const webletForFloor = await prisma.weblet.findUnique({
-    where: { id: webletId },
-    select: { rsilGovernance: true },
-  })
-  const gov = getGovernance(webletForFloor?.rsilGovernance)
-
-  if (result.winner === 'variant' && result.variantAvg < gov.performanceFloor) {
-    const testingVersionForFloor = await prisma.webletVersion.findFirst({
-      where: { webletId, status: 'TESTING', isAbTest: true },
+    const existingTesting = await prisma.webletVersion.findFirst({
+      where: {
+        webletId: params.webletId,
+        status: 'TESTING',
+      },
     })
 
-    if (!testingVersionForFloor) return { deployed: false, action: 'no_test_running' }
+    if (existingTesting) {
+      throw new Error(
+        `Weblet ${params.webletId} already has a TESTING version (${existingTesting.id})`
+      )
+    }
 
-    await prisma.webletVersion.update({
-      where: { id: testingVersionForFloor.id },
-      data: { status: 'ARCHIVED', isAbTest: false, abTestEndedAt: new Date(), abTestWinner: false },
-    })
-    return { deployed: false, action: `variant_below_floor (${result.variantAvg.toFixed(2)} < ${gov.performanceFloor})` }
-  }
-
-  const testingVersion = await prisma.webletVersion.findFirst({
-    where: { webletId, status: 'TESTING', isAbTest: true },
-  })
-
-  if (!testingVersion) return { deployed: false, action: 'no_test_running' }
-
-  if (result.winner === 'variant') {
-    // Promote variant, archive current active
-    await prisma.$transaction([
-      prisma.webletVersion.updateMany({
-        where: { webletId, status: 'ACTIVE' },
-        data: { status: 'ARCHIVED' },
-      }),
+    const [updated] = await prisma.$transaction([
       prisma.webletVersion.update({
-        where: { id: testingVersion.id },
+        where: { id: params.draftVersionId },
         data: {
-          status: 'ACTIVE',
-          isAbTest: false,
-          abTestEndedAt: new Date(),
-          abTestWinner: true,
-          avgScore: result.variantAvg,
-          commitMsg: `RSIL auto-promoted: +${result.improvement.toFixed(1)}% improvement`,
+          status: 'TESTING',
+          isAbTest: true,
+          abTestTrafficPct: params.trafficPct,
+          abTestStartedAt: new Date(),
         },
       }),
     ])
-    return { deployed: true, action: `promoted_variant (+${result.improvement.toFixed(1)}%)` }
-  } else {
-    // Rollback — archive test version
-    await prisma.webletVersion.update({
-      where: { id: testingVersion.id },
-      data: { status: 'ARCHIVED', isAbTest: false, abTestEndedAt: new Date(), abTestWinner: false },
+
+    return updated
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`startABTest failed: ${message}`)
+  }
+}
+
+export async function concludeABTest(
+  webletId: string,
+  winnerId: string
+): Promise<void> {
+  try {
+    const winner = await prisma.webletVersion.findUnique({
+      where: { id: winnerId },
     })
-    return { deployed: true, action: 'rolled_back_to_control' }
+
+    if (!winner) {
+      throw new Error(`Winner version ${winnerId} not found`)
+    }
+
+    if (winner.webletId !== webletId) {
+      throw new Error(`Winner version ${winnerId} does not belong to weblet ${webletId}`)
+    }
+
+    if (winner.status !== 'TESTING') {
+      throw new Error(
+        `Winner version ${winnerId} must be TESTING (current: ${winner.status})`
+      )
+    }
+
+    const loser = await prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'ACTIVE',
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (!loser) {
+      throw new Error(`No ACTIVE control version found for weblet ${webletId}`)
+    }
+
+    const endedAt = new Date()
+
+    await prisma.$transaction([
+      prisma.webletVersion.update({
+        where: { id: winner.id },
+        data: {
+          abTestWinner: true,
+          abTestEndedAt: endedAt,
+        },
+      }),
+      prisma.webletVersion.update({
+        where: { id: loser.id },
+        data: {
+          abTestWinner: false,
+          abTestEndedAt: endedAt,
+        },
+      }),
+    ])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`concludeABTest failed: ${message}`)
+  }
+}
+
+export async function promoteVersion(
+  webletId: string,
+  versionId: string,
+  strategy: 'instant' | 'canary',
+  canaryStages?: number[]
+): Promise<void> {
+  try {
+    const version = await prisma.webletVersion.findUnique({
+      where: { id: versionId },
+    })
+
+    if (!version) {
+      throw new Error(`Version ${versionId} not found`)
+    }
+
+    if (version.webletId !== webletId) {
+      throw new Error(`Version ${versionId} does not belong to weblet ${webletId}`)
+    }
+
+    if (strategy === 'instant') {
+      await prisma.$transaction([
+        prisma.webletVersion.updateMany({
+          where: {
+            webletId,
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'ARCHIVED',
+          },
+        }),
+        prisma.webletVersion.update({
+          where: { id: versionId },
+          data: {
+            status: 'ACTIVE',
+            isAbTest: false,
+            abTestTrafficPct: 100,
+          },
+        }),
+      ])
+
+      return
+    }
+
+    const firstStage = (canaryStages ?? [10, 50, 100])[0]
+
+    await prisma.$transaction([
+      prisma.webletVersion.update({
+        where: { id: versionId },
+        data: {
+          status: 'TESTING',
+          isAbTest: true,
+          abTestWinner: true,
+          abTestTrafficPct: firstStage,
+        },
+      }),
+    ])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`promoteVersion failed: ${message}`)
+  }
+}
+
+export async function advanceCanary(
+  webletId: string,
+  versionId: string,
+  stages: number[]
+): Promise<{ nextStage: number | null; currentStage: number }> {
+  try {
+    const version = await prisma.webletVersion.findUnique({
+      where: { id: versionId },
+    })
+
+    if (!version) {
+      throw new Error(`Version ${versionId} not found`)
+    }
+
+    if (version.webletId !== webletId) {
+      throw new Error(`Version ${versionId} does not belong to weblet ${webletId}`)
+    }
+
+    const currentPct = version.abTestTrafficPct
+    const currentIndex = stages.indexOf(currentPct)
+
+    if (currentIndex === -1 || currentPct >= 100 || currentIndex >= stages.length - 1) {
+      await _finalizeCanary(webletId, versionId)
+      return { nextStage: null, currentStage: currentPct }
+    }
+
+    const nextStage = stages[currentIndex + 1]
+
+    if (nextStage === 100) {
+      await _finalizeCanary(webletId, versionId)
+      return { nextStage: null, currentStage: 100 }
+    }
+
+    await prisma.webletVersion.update({
+      where: { id: versionId },
+      data: {
+        abTestTrafficPct: nextStage,
+      },
+    })
+
+    return { nextStage, currentStage: currentPct }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`advanceCanary failed: ${message}`)
+  }
+}
+
+async function _finalizeCanary(webletId: string, versionId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.webletVersion.updateMany({
+      where: {
+        webletId,
+        status: 'ACTIVE',
+      },
+      data: {
+        status: 'ARCHIVED',
+      },
+    }),
+    prisma.webletVersion.update({
+      where: { id: versionId },
+      data: {
+        status: 'ACTIVE',
+        isAbTest: false,
+        abTestTrafficPct: 100,
+      },
+    }),
+  ])
+}
+
+export async function rollbackVersion(
+  webletId: string
+): Promise<{ rolledBack: WebletVersion; restoredTo: WebletVersion }> {
+  try {
+    const testingWinner = await prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'TESTING',
+        isAbTest: true,
+        abTestWinner: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (testingWinner) {
+      const activeVersion = await prisma.webletVersion.findFirst({
+        where: {
+          webletId,
+          status: 'ACTIVE',
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      if (!activeVersion) {
+        throw new Error(`No ACTIVE version to restore for weblet ${webletId}`)
+      }
+
+      const [rolledBack] = await prisma.$transaction([
+        prisma.webletVersion.update({
+          where: { id: testingWinner.id },
+          data: {
+            status: 'ROLLED_BACK',
+            isAbTest: false,
+            abTestEndedAt: new Date(),
+            abTestWinner: false,
+          },
+        }),
+      ])
+
+      return { rolledBack, restoredTo: activeVersion }
+    }
+
+    const activeVersion = await prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'ACTIVE',
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (!activeVersion) {
+      throw new Error(`No ACTIVE version found for weblet ${webletId}`)
+    }
+
+    const archivedVersion = await prisma.webletVersion.findFirst({
+      where: {
+        webletId,
+        status: 'ARCHIVED',
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (!archivedVersion) {
+      throw new Error(`No ARCHIVED version available to restore for weblet ${webletId}`)
+    }
+
+    const [rolledBack, restoredTo] = await prisma.$transaction([
+      prisma.webletVersion.update({
+        where: { id: activeVersion.id },
+        data: {
+          status: 'ROLLED_BACK',
+        },
+      }),
+      prisma.webletVersion.update({
+        where: { id: archivedVersion.id },
+        data: {
+          status: 'ACTIVE',
+          isAbTest: false,
+          abTestWinner: null,
+          abTestEndedAt: null,
+          abTestTrafficPct: 100,
+        },
+      }),
+    ])
+
+    return { rolledBack, restoredTo }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`rollbackVersion failed: ${message}`)
+  }
+}
+
+export async function checkPerformanceFloor(
+  webletId: string,
+  versionId: string,
+  floor: number
+): Promise<{ belowFloor: boolean; currentScore: number }> {
+  try {
+    const result = await analyzeVersion(webletId, versionId, 24)
+
+    if (result.sampleSize === 0) {
+      return { belowFloor: false, currentScore: 1 }
+    }
+
+    return {
+      belowFloor: result.compositeScore < floor,
+      currentScore: result.compositeScore,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`checkPerformanceFloor failed: ${message}`)
   }
 }
