@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Weblet not found' }, { status: 404 })
     }
 
-    const cacheKey = `${webletId}-${hours}`
+     const cacheKey = `${developerId}-${webletId}-${hours}`
     const cached = analyticsCache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) {
       return NextResponse.json(cached.data)
