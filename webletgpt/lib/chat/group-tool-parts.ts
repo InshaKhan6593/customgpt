@@ -108,7 +108,13 @@ export function groupToolParts(
       continue
     }
 
-    // Generic tool: add to accumulator
+    if (accumulator.length > 0) {
+      const prev = accumulator[accumulator.length - 1]
+      const stateChanged = prev.isLoading !== isLoading || prev.isDone !== isDone
+      if (stateChanged) {
+        flushAccumulator(accumulator, result)
+      }
+    }
     accumulator.push({ toolName, isLoading, isDone, part })
   }
 
