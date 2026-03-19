@@ -30,7 +30,7 @@ function camelToTitle(str: string): string {
     .replace(/^./, (c) => c.toUpperCase())
 }
 
-function formatToolName(name: string): { label: string; action: string } {
+export function formatToolName(name: string): { label: string; action: string } {
   // Built-in capability tools (camelCase)
   if (TOOL_DISPLAY_NAMES[name]) {
     return TOOL_DISPLAY_NAMES[name]
@@ -88,7 +88,7 @@ function formatResult(result: unknown): string {
 }
 
 /** Vercel-style action description from tool name */
-function getActionDescription(label: string, action: string): string {
+export function getActionDescription(label: string, action: string): string {
   if (!action) return `Used ${label}`
   return `Used ${label}: ${action}`
 }
@@ -386,7 +386,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   // ── Loading state: Claude-style shimmer + pulsing dot ──
   if (isLoading) {
     return (
-      <div className="my-1.5 py-0.5">
+      <div className="my-1.5 py-0.5" data-tool-state="loading">
         <span className="text-sm font-medium tool-shimmer">
           {action ? `${action}...${elapsedStr}` : `${label}...${elapsedStr}`}
         </span>
@@ -394,10 +394,13 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
     )
   }
 
-  // ── Done state: subtle label, no toggle ──
+  // ── Done state: ChatGPT-style checkmark ──
   return (
-    <div className="my-1 py-0.5">
-      <span className="text-[13px] text-muted-foreground/60">
+    <div className="my-1 py-0.5 flex items-center gap-1.5" data-tool-state="done">
+      <svg className="size-3.5 text-muted-foreground/70 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 8.5L6.5 12L13 4" />
+      </svg>
+      <span className="text-[13px] text-muted-foreground/70">
         {actionDesc}
       </span>
     </div>
