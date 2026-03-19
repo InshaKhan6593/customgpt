@@ -6,9 +6,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Copy, ThumbsDown, ThumbsUp } from "lucide-react"
 import { UIMessage, isToolUIPart } from "ai"
 import { toast } from "sonner"
-import React from "react"
+import React, { useMemo } from "react"
 import { ChatMarkdown } from "@/components/ui/chat-markdown"
-import { ToolInvocationToggle } from "./tool-invocation-toggle"
+import { groupToolParts } from "@/lib/chat/group-tool-parts"
+import { ToolInvocationGroup } from "./tool-invocation-group"
 
 // ── Main Component ──
 interface MessageBubbleProps {
@@ -20,6 +21,8 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplete, isStreaming = false }: MessageBubbleProps) {
+  const groupedParts = useMemo(() => groupToolParts(message.parts), [message.parts])
+
   const getMessageText = (parts: UIMessage["parts"] = []) => {
     return parts.filter(p => p.type === "text").map((p: any) => p.text).join("\n")
   }
@@ -65,17 +68,19 @@ export function MessageBubble({ message, weblet, onRateMessage, onMCPAuthComplet
       </Avatar>
 
       <div className="flex-1 min-w-0 space-y-1.5 max-w-[calc(100%-2.5rem)]">
-        {message.parts.map((part, i) => {
-          if (part.type === "step-start" && i > 0) {
-            return <div key={i} className="border-t border-border/40 my-2" />
+        {groupedParts.map((item, i) => {
+          if (item.type === "passthrough") {
+            const part = item.part
+            if (part.type === "step-start" && i > 0) {
+              return <div key={i} className="border-t border-border/40 my-2" />
+            }
+            if (part.type === "text" && (part as any).text?.trim()) {
+              return <ChatMarkdown key={i} content={(part as any).text} />
+            }
+            return null
           }
-          if (part.type === "text" && part.text.trim()) {
-            return <ChatMarkdown key={i} content={part.text} />
-          }
-          if (isToolUIPart(part) || (part as any).type?.startsWith('tool-')) {
-            return <ToolInvocationToggle key={i} part={part} onMCPAuthComplete={onMCPAuthComplete} />
-          }
-          return null
+
+          return <ToolInvocationGroup key={i} group={item} onMCPAuthComplete={onMCPAuthComplete} />
         })}
 
         {/* Message actions — hidden while streaming */}
@@ -115,10 +120,17 @@ const getLastTextContent = (parts: UIMessage["parts"] = []) => {
   return textParts.length > 0 ? (textParts[textParts.length - 1] as any).text : ""
 }
 
+const getToolStates = (parts: UIMessage["parts"]) =>
+  parts
+    .filter(p => isToolUIPart(p) || (p as any).type?.startsWith("tool-"))
+    .map(p => `${(p as any).toolName ?? "unknown"}:${(p as any).state ?? "none"}`)
+    .join(",")
+
 export default React.memo(MessageBubble, (prev, next) =>
   prev.message.id === next.message.id &&
   prev.message.parts.length === next.message.parts.length &&
   getLastTextContent(prev.message.parts) === getLastTextContent(next.message.parts) &&
   prev.isStreaming === next.isStreaming &&
-  prev.weblet.id === next.weblet.id
+  prev.weblet.id === next.weblet.id &&
+  getToolStates(prev.message.parts) === getToolStates(next.message.parts)
 )
