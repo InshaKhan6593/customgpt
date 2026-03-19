@@ -266,6 +266,17 @@
   animation: shimmer-sweep 2.5s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .tool-shimmer {
+    animation: none;
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    -webkit-text-fill-color: unset;
+    color: var(--muted-foreground);
+  }
+}
+
 @keyframes glowPulse {
   0% {
     filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3));
