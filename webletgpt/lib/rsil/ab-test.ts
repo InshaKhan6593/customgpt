@@ -5,7 +5,6 @@
  * - normalCDF: Standard normal cumulative distribution function
  * - calculateSignificance: Z-test for proportions
  * - hashBucket: Deterministic user bucketing
- * - startABTest: Promote draft version to TESTING status
  */
 
 import { prisma } from '@/lib/prisma'
@@ -302,66 +301,4 @@ export async function getABTestStatus(
   }
 }
 
-/**
- * Start an A/B test by promoting a DRAFT version to TESTING status
- *
- * @param params - { webletId, draftVersionId, trafficPct, userId }
- * @throws If version not found, already in A/B test, or DB error
- */
-export async function startABTest({
-  webletId,
-  draftVersionId,
-  trafficPct,
-  userId,
-}: {
-  webletId: string
-  draftVersionId: string
-  trafficPct: number
-  userId: string
-}): Promise<void> {
-  try {
-    // Fetch the draft version
-    const draftVersion = await prisma.webletVersion.findUnique({
-      where: { id: draftVersionId },
-    })
 
-    if (!draftVersion) {
-      throw new Error(`Draft version ${draftVersionId} not found`)
-    }
-
-    if (draftVersion.webletId !== webletId) {
-      throw new Error(`Version ${draftVersionId} does not belong to weblet ${webletId}`)
-    }
-
-    if (draftVersion.status !== 'DRAFT') {
-      throw new Error(`Version ${draftVersionId} is not in DRAFT status (current: ${draftVersion.status})`)
-    }
-
-    // Check for existing active A/B test
-    const activeABTest = await prisma.webletVersion.findFirst({
-      where: {
-        webletId,
-        status: 'TESTING',
-        isAbTest: true,
-      },
-    })
-
-    if (activeABTest) {
-      throw new Error(`Weblet ${webletId} already has an active A/B test running`)
-    }
-
-    // Promote to TESTING
-    await prisma.webletVersion.update({
-      where: { id: draftVersionId },
-      data: {
-        status: 'TESTING',
-        isAbTest: true,
-        abTestTrafficPct: trafficPct,
-        abTestStartedAt: new Date(),
-      },
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to start A/B test: ${message}`)
-  }
-}
