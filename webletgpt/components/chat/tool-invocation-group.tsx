@@ -38,34 +38,34 @@ export function ToolInvocationGroup({ group, onMCPAuthComplete }: ToolInvocation
       const { label, action } = formatToolName(group.toolName)
       const actionDesc = getActionDescription(label, action)
 
-      if (group.isLoading) {
-        return (
-          <div className="my-1.5 py-0.5" data-tool-group="same-loading">
-            <span className="text-sm font-medium tool-shimmer">
-              {actionDesc} ×{group.count}
-            </span>
-          </div>
-        )
-      }
+       if (group.isLoading) {
+         return (
+           <div className="my-1.5 py-0.5" data-tool-group="same-loading">
+             <span className="text-sm font-medium tool-shimmer">
+               {actionDesc}{group.count >= 2 ? ` ×${group.count}` : ""}
+             </span>
+           </div>
+         )
+       }
 
-      if (group.isDone) {
-        return (
-          <div className="my-1 py-0.5 flex items-center gap-1.5" data-tool-group="same-done">
-            {CheckmarkSVG}
-            <span className="text-[13px] text-muted-foreground/70">
-              {actionDesc} ×{group.count}
-            </span>
-          </div>
-        )
-      }
+       if (group.isDone) {
+         return (
+           <div className="my-1 py-0.5 flex items-center gap-1.5" data-tool-group="same-done">
+             {CheckmarkSVG}
+             <span className="text-[13px] text-muted-foreground/70">
+               {actionDesc}{group.count >= 2 ? ` ×${group.count}` : ""}
+             </span>
+           </div>
+         )
+       }
 
-      return (
-        <div className="my-1 py-0.5 flex items-center gap-1.5" data-tool-group="same-fallback">
-          <span className="text-[13px] text-muted-foreground/70">
-            {actionDesc} ×{group.count}
-          </span>
-        </div>
-      )
+       return (
+         <div className="my-1 py-0.5 flex items-center gap-1.5" data-tool-group="same-fallback">
+           <span className="text-[13px] text-muted-foreground/70">
+             {actionDesc}{group.count >= 2 ? ` ×${group.count}` : ""}
+           </span>
+         </div>
+       )
     }
 
     case "tool-group-parallel": {

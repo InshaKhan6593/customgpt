@@ -67,7 +67,8 @@ export function groupToolParts(
   const accumulator: AccumulatedTool[] = []
 
   for (const part of parts) {
-    const isToolPart = isToolUIPart(part) || (part as any).type?.startsWith("tool-")
+    const partWithType = part as { type?: string }
+    const isToolPart = isToolUIPart(part) || partWithType.type?.startsWith("tool-")
 
     if (!isToolPart) {
       // Flush accumulator before emitting passthrough
@@ -82,7 +83,7 @@ export function groupToolParts(
     }
 
     // This is a tool part
-    const p = part as any
+    const p = part as { toolName?: string; state?: string }
     const toolName = p.toolName ?? "tool"
     const state: string = p.state ?? "input-available"
 
@@ -176,44 +177,64 @@ function flushAccumulator(
   const doneTools = accumulator.filter((t) => t.isDone)
 
   if (loadingTools.length > 0) {
-    const sameToolLoading = loadingTools.every((t) => t.toolName === loadingTools[0].toolName)
-    if (sameToolLoading) {
+    if (loadingTools.length === 1) {
       result.push({
-        type: "tool-group-same",
+        type: "tool-single",
+        part: loadingTools[0].part,
         toolName: loadingTools[0].toolName,
-        count: loadingTools.length,
-        parts: loadingTools.map((t) => t.part),
         isLoading: true,
         isDone: false,
       })
     } else {
-      result.push({
-        type: "tool-group-parallel",
-        tools: loadingTools.map((t) => ({ toolName: t.toolName, part: t.part })),
-        isLoading: true,
-        isDone: false,
-      })
+      const sameToolLoading = loadingTools.every((t) => t.toolName === loadingTools[0].toolName)
+      if (sameToolLoading) {
+        result.push({
+          type: "tool-group-same",
+          toolName: loadingTools[0].toolName,
+          count: loadingTools.length,
+          parts: loadingTools.map((t) => t.part),
+          isLoading: true,
+          isDone: false,
+        })
+      } else {
+        result.push({
+          type: "tool-group-parallel",
+          tools: loadingTools.map((t) => ({ toolName: t.toolName, part: t.part })),
+          isLoading: true,
+          isDone: false,
+        })
+      }
     }
   }
 
   if (doneTools.length > 0) {
-    const sameToolDone = doneTools.every((t) => t.toolName === doneTools[0].toolName)
-    if (sameToolDone) {
+    if (doneTools.length === 1) {
       result.push({
-        type: "tool-group-same",
+        type: "tool-single",
+        part: doneTools[0].part,
         toolName: doneTools[0].toolName,
-        count: doneTools.length,
-        parts: doneTools.map((t) => t.part),
         isLoading: false,
         isDone: true,
       })
     } else {
-      result.push({
-        type: "tool-group-parallel",
-        tools: doneTools.map((t) => ({ toolName: t.toolName, part: t.part })),
-        isLoading: false,
-        isDone: true,
-      })
+      const sameToolDone = doneTools.every((t) => t.toolName === doneTools[0].toolName)
+      if (sameToolDone) {
+        result.push({
+          type: "tool-group-same",
+          toolName: doneTools[0].toolName,
+          count: doneTools.length,
+          parts: doneTools.map((t) => t.part),
+          isLoading: false,
+          isDone: true,
+        })
+      } else {
+        result.push({
+          type: "tool-group-parallel",
+          tools: doneTools.map((t) => ({ toolName: t.toolName, part: t.part })),
+          isLoading: false,
+          isDone: true,
+        })
+      }
     }
   }
 
