@@ -17,6 +17,8 @@ import {
   FlaskConical,
   Sparkles,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   ArrowUpDown,
 } from "lucide-react"
 
@@ -62,6 +64,10 @@ export interface AggregateData {
     interactionCount: number
     decision: "NONE" | "SUGGESTION" | "AUTO_UPDATE"
   }>
+  activeABTestCount?: number
+  optimizations30dCount?: number
+  trendData?: Array<{ date: string; score: number }>
+  optimizationActivity?: Array<{ week: string; count: number }>
 }
 
 interface RSILAggregateDashboardProps {
@@ -74,11 +80,11 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null)
 
   const activeTestsCount = useMemo(() => {
-    return data?.perWebletScores.filter((w) => w.decision === "SUGGESTION").length || 0
+    return data?.activeABTestCount ?? data?.perWebletScores.filter((w) => w.decision === "SUGGESTION").length ?? 0
   }, [data])
 
   const optimizationsCount = useMemo(() => {
-    return data?.perWebletScores.filter((w) => w.decision === "AUTO_UPDATE").length || 0
+    return data?.optimizations30dCount ?? data?.perWebletScores.filter((w) => w.decision === "AUTO_UPDATE").length ?? 0
   }, [data])
 
   const sortedWeblets = useMemo(() => {
@@ -98,31 +104,16 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
     else setSortOrder(null)
   }
 
-  const lineChartConfig = useMemo(() => {
-    const config: ChartConfig = {}
-    data?.perWebletScores.forEach((w, i) => {
-      config[w.webletId] = {
-        label: w.webletName,
-        color: `var(--chart-${(i % 5) + 1})`,
-      }
-    })
-    return config
-  }, [data])
+  const lineChartConfig = useMemo((): ChartConfig => ({
+    composite: { label: "Composite Score", color: "var(--chart-1)" },
+  }), [])
 
   const trendData = useMemo(() => {
-    if (!data?.perWebletScores.length) return []
-    const dates = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date()
-      d.setDate(d.getDate() - (6 - i))
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    })
-    return dates.map((date) => {
-      const row: Record<string, string | number> = { date }
-      data.perWebletScores.forEach((w) => {
-        row[w.webletId] = w.compositeScore
-      })
-      return row
-    })
+    if (!data?.trendData?.length) return []
+    return data.trendData.map((point) => ({
+      date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      composite: parseFloat((point.score * 10).toFixed(1)),
+    }))
   }, [data])
 
   const dimensionChartConfig = useMemo(() => {
@@ -147,7 +138,7 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
       }
       data.perWebletScores.forEach((w) => {
         const dimObj = w.dimensions.find((d) => d.name === dim)
-        row[w.webletId] = dimObj ? dimObj.avgValue : 0
+        row[w.webletId] = dimObj ? parseFloat((dimObj.avgValue * 10).toFixed(1)) : 0
       })
       return row
     })
@@ -209,11 +200,11 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
               <div
                 className={cn(
                   "text-3xl font-bold tracking-tight",
-                  aggregateStats.avgCompositeScore >= 7 ? "text-green-600" :
-                  aggregateStats.avgCompositeScore >= 4 ? "text-yellow-600" : "text-red-600"
+                  aggregateStats.avgCompositeScore >= 0.7 ? "text-green-600" :
+                  aggregateStats.avgCompositeScore >= 0.4 ? "text-yellow-600" : "text-red-600"
                 )}
               >
-                {aggregateStats.avgCompositeScore.toFixed(1)}
+                {(aggregateStats.avgCompositeScore * 10).toFixed(1)}
               </div>
               <p className="text-xs text-muted-foreground">Across all optimized weblets</p>
             </CardContent>
@@ -262,21 +253,12 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
                   <YAxis domain={[0, 10]} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
-                  {data.perWebletScores.map((w, i) => (
-                    <Line
-                      key={w.webletId}
-                      type="monotone"
-                      dataKey={w.webletId}
-                      stroke={`var(--chart-${(i % 5) + 1})`}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  ))}
+                  <Line type="monotone" dataKey="composite" stroke="var(--chart-1)" strokeWidth={2} dot={false} />
                 </LineChart>
               </ChartContainer>
             ) : (
               <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
-                No trend data available
+                Historical trend data not yet available
               </div>
             )}
           </CardContent>
@@ -320,9 +302,21 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
             <CardDescription>Weekly prompt update frequency</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex h-[200px] w-full items-center justify-center text-sm text-muted-foreground rounded-md border border-dashed">
-              Optimization activity data loading...
-            </div>
+            {data?.optimizationActivity?.some(a => a.count > 0) ? (
+              <ChartContainer config={{ count: { label: "Optimizations", color: "var(--chart-2)" } }} className="h-[200px] w-full">
+                <BarChart data={data.optimizationActivity}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex h-[200px] w-full items-center justify-center text-sm text-muted-foreground rounded-md border border-dashed">
+                No optimization activity yet
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -362,23 +356,33 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
                   {sortedWeblets.map((weblet) => {
                     const score = weblet.compositeScore
                     let scoreColor = "text-red-600"
-                    if (score >= 7) scoreColor = "text-green-600"
-                    else if (score >= 4) scoreColor = "text-yellow-600"
+                    if (score >= 0.7) scoreColor = "text-green-600"
+                    else if (score >= 0.4) scoreColor = "text-yellow-600"
 
-                    let statusLabel = "Active"
+                    let statusLabel = "Healthy"
                     let statusColor = "bg-green-500/10 text-green-700 hover:bg-green-500/20"
-                    if (weblet.decision === "SUGGESTION") {
-                      statusLabel = "Testing"
+                    if (weblet.decision === "AUTO_UPDATE") {
+                      statusLabel = "Optimizing"
+                      statusColor = "bg-blue-500/10 text-blue-700 hover:bg-blue-500/20"
+                    } else if (weblet.decision === "SUGGESTION") {
+                      statusLabel = "Needs Improvement"
                       statusColor = "bg-amber-500/10 text-amber-700 hover:bg-amber-500/20"
                     } else if (weblet.interactionCount === 0) {
                       statusLabel = "Idle"
                       statusColor = "bg-muted text-muted-foreground hover:bg-muted/80"
                     }
 
-                    const TrendIcon = ArrowRight
-                    const trendColor = "text-yellow-600"
+                    const trendPoints = data?.trendData ?? []
+                    const TrendIcon = trendPoints.length >= 2
+                      ? (trendPoints[trendPoints.length - 1].score > trendPoints[trendPoints.length - 2].score ? ArrowUp :
+                         trendPoints[trendPoints.length - 1].score < trendPoints[trendPoints.length - 2].score ? ArrowDown : ArrowRight)
+                      : ArrowRight
+                    const trendColor = trendPoints.length >= 2
+                      ? (trendPoints[trendPoints.length - 1].score > trendPoints[trendPoints.length - 2].score ? "text-green-600" :
+                         trendPoints[trendPoints.length - 1].score < trendPoints[trendPoints.length - 2].score ? "text-red-600" : "text-yellow-600")
+                      : "text-muted-foreground"
 
-                    const lastOptimized = weblet.decision === "AUTO_UPDATE" ? "Recently" : "Never"
+                    const lastOptimized = "N/A"
 
                     return (
                       <TableRow
@@ -388,7 +392,7 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
                       >
                         <TableCell className="font-medium">{weblet.webletName}</TableCell>
                         <TableCell className={cn("font-bold tabular-nums", scoreColor)}>
-                          {score.toFixed(1)}
+                          {(score * 10).toFixed(1)}
                         </TableCell>
                         <TableCell>
                           <TrendIcon className={cn("size-4", trendColor)} />
