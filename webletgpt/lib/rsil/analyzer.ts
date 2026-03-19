@@ -59,55 +59,57 @@ function normalize(value: number, config: { max: number; higherIsBetter: boolean
 }
 
 export async function analyzeWeblet(webletId: string, lookbackHours = 24): Promise<AnalysisResult> {
-  const fromTimestamp = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
+   const fromTimestamp = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
 
-  // Fetch all scores (user + LLM-as-a-Judge) — filter by webletId tag server-side
-  const data = await fetchScores({ webletId, fromTimestamp, limit: 500 })
-  const allScores: Array<{ traceId: string; name: string; value: number }> =
-    (data?.data || []).filter((s: any) => typeof s.value === 'number')
+   // Fetch all scores (user + LLM-as-a-Judge) — filter by webletId tag server-side
+   const data = await fetchScores({ webletId, fromTimestamp, limit: 500 })
+   const allScores: Array<{ traceId: string; name: string; value: number }> =
+     (data?.data || []).filter((s: any) => typeof s.value === 'number')
 
-  if (allScores.length === 0) {
-    return {
-      decision: 'NONE',
-      compositeScore: 1,
-      avgScore: 5,
-      sampleSize: 0,
-      lowScoredTraceIds: [],
-      dimensions: [],
-      weakDimensions: [],
-      reason: 'No scores collected yet',
-    }
-  }
+   if (allScores.length === 0) {
+     return {
+       decision: 'NONE',
+       compositeScore: 1,
+       avgScore: 5,
+       sampleSize: 0,
+       lowScoredTraceIds: [],
+       dimensions: [],
+       weakDimensions: [],
+       reason: 'No scores collected yet',
+     }
+   }
 
-  // Group scores by dimension name
-  const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
+   // Group scores by dimension name
+   const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
 
-  for (const score of allScores) {
-    const key = score.name.toLowerCase()
-    const config = SCORE_CONFIGS[key]
-    if (!config) continue // ignore unknown score names
+   for (const score of allScores) {
+     const key = score.name.toLowerCase()
+     const config = SCORE_CONFIGS[key]
+     if (!config) continue // ignore unknown score names
 
-    const norm = normalize(score.value, config)
-    if (!byDimension[key]) byDimension[key] = []
-    byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
-  }
+     const norm = normalize(score.value, config)
+     if (!byDimension[key]) byDimension[key] = []
+     byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
+   }
 
-  // Compute per-dimension averages
-  const dimensions: ScoreDimension[] = []
-  let totalWeight = 0
+   // Compute per-dimension averages
+   const dimensions: ScoreDimension[] = []
+   let totalWeight = 0
 
-  for (const [name, entries] of Object.entries(byDimension)) {
-    const config = SCORE_CONFIGS[name]
-    const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
-    dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
-    totalWeight += config.weight
-  }
+   for (const [name, entries] of Object.entries(byDimension)) {
+     const config = SCORE_CONFIGS[name]
+     const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
+     dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
+     totalWeight += config.weight
+   }
 
-  // Compute weighted composite (re-normalize weights to account for absent dimensions)
-  let compositeScore = 0
-  for (const dim of dimensions) {
-    compositeScore += (dim.avgValue * dim.weight) / totalWeight
-  }
+   // Compute weighted composite (re-normalize weights to account for absent dimensions)
+   let compositeScore = 0
+   if (totalWeight > 0) {
+     for (const dim of dimensions) {
+       compositeScore += (dim.avgValue * dim.weight) / totalWeight
+     }
+   }
 
   // Collect trace IDs where any dimension scored poorly (normalized < 0.5)
   const lowScoredTraceIdSet = new Set<string>()
@@ -152,55 +154,57 @@ export async function analyzeWeblet(webletId: string, lookbackHours = 24): Promi
 }
 
 export async function analyzeVersion(webletId: string, versionId: string, lookbackHours = 24): Promise<AnalysisResult> {
-  const fromTimestamp = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
+   const fromTimestamp = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
 
-  // Fetch all scores (user + LLM-as-a-Judge) — filter by webletId and versionId tags server-side
-  const data = await fetchScores({ webletId, versionId, fromTimestamp, limit: 500 })
-  const allScores: Array<{ traceId: string; name: string; value: number }> =
-    (data?.data || []).filter((s: any) => typeof s.value === 'number')
+   // Fetch all scores (user + LLM-as-a-Judge) — filter by webletId and versionId tags server-side
+   const data = await fetchScores({ webletId, versionId, fromTimestamp, limit: 500 })
+   const allScores: Array<{ traceId: string; name: string; value: number }> =
+     (data?.data || []).filter((s: any) => typeof s.value === 'number')
 
-  if (allScores.length === 0) {
-    return {
-      decision: 'NONE',
-      compositeScore: 1,
-      avgScore: 5,
-      sampleSize: 0,
-      lowScoredTraceIds: [],
-      dimensions: [],
-      weakDimensions: [],
-      reason: 'No scores collected yet',
-    }
-  }
+   if (allScores.length === 0) {
+     return {
+       decision: 'NONE',
+       compositeScore: 1,
+       avgScore: 5,
+       sampleSize: 0,
+       lowScoredTraceIds: [],
+       dimensions: [],
+       weakDimensions: [],
+       reason: 'No scores collected yet',
+     }
+   }
 
-  // Group scores by dimension name
-  const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
+   // Group scores by dimension name
+   const byDimension: Record<string, Array<{ traceId: string; normalizedValue: number }>> = {}
 
-  for (const score of allScores) {
-    const key = score.name.toLowerCase()
-    const config = SCORE_CONFIGS[key]
-    if (!config) continue // ignore unknown score names
+   for (const score of allScores) {
+     const key = score.name.toLowerCase()
+     const config = SCORE_CONFIGS[key]
+     if (!config) continue // ignore unknown score names
 
-    const norm = normalize(score.value, config)
-    if (!byDimension[key]) byDimension[key] = []
-    byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
-  }
+     const norm = normalize(score.value, config)
+     if (!byDimension[key]) byDimension[key] = []
+     byDimension[key].push({ traceId: score.traceId, normalizedValue: norm })
+   }
 
-  // Compute per-dimension averages
-  const dimensions: ScoreDimension[] = []
-  let totalWeight = 0
+   // Compute per-dimension averages
+   const dimensions: ScoreDimension[] = []
+   let totalWeight = 0
 
-  for (const [name, entries] of Object.entries(byDimension)) {
-    const config = SCORE_CONFIGS[name]
-    const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
-    dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
-    totalWeight += config.weight
-  }
+   for (const [name, entries] of Object.entries(byDimension)) {
+     const config = SCORE_CONFIGS[name]
+     const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
+     dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
+     totalWeight += config.weight
+   }
 
-  // Compute weighted composite (re-normalize weights to account for absent dimensions)
-  let compositeScore = 0
-  for (const dim of dimensions) {
-    compositeScore += (dim.avgValue * dim.weight) / totalWeight
-  }
+   // Compute weighted composite (re-normalize weights to account for absent dimensions)
+   let compositeScore = 0
+   if (totalWeight > 0) {
+     for (const dim of dimensions) {
+       compositeScore += (dim.avgValue * dim.weight) / totalWeight
+     }
+   }
 
   // Collect trace IDs where any dimension scored poorly (normalized < 0.5)
   const lowScoredTraceIdSet = new Set<string>()
