@@ -20,6 +20,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Minus,
 } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -376,7 +377,7 @@ export function RSILAggregateDashboard({ data, loading, onSelectWeblet }: RSILAg
                     const TrendIcon = trendPoints.length >= 2
                       ? (trendPoints[trendPoints.length - 1].score > trendPoints[trendPoints.length - 2].score ? ArrowUp :
                          trendPoints[trendPoints.length - 1].score < trendPoints[trendPoints.length - 2].score ? ArrowDown : ArrowRight)
-                      : ArrowRight
+                      : Minus
                     const trendColor = trendPoints.length >= 2
                       ? (trendPoints[trendPoints.length - 1].score > trendPoints[trendPoints.length - 2].score ? "text-green-600" :
                          trendPoints[trendPoints.length - 1].score < trendPoints[trendPoints.length - 2].score ? "text-red-600" : "text-yellow-600")

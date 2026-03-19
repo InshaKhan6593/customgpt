@@ -127,13 +127,31 @@ export async function GET() {
           return [] as TrendPoint[]
         }
 
-        const metrics = await fetchScoreMetrics({
-          webletId: weblets[0].id,
-          fromTimestamp: sevenDaysAgoIso,
-          granularity: "day",
-        })
+        const allMetrics = await Promise.all(
+          weblets.map((w) =>
+            fetchScoreMetrics({
+              webletId: w.id,
+              fromTimestamp: sevenDaysAgoIso,
+              granularity: "day",
+            })
+          )
+        )
 
-        return buildTrendData(metrics.timeSeries)
+        const allPoints = allMetrics.flatMap((m) => buildTrendData(m.timeSeries))
+
+        const byDate = new Map<string, number[]>()
+        for (const point of allPoints) {
+          const arr = byDate.get(point.date) ?? []
+          arr.push(point.score)
+          byDate.set(point.date, arr)
+        }
+
+        return Array.from(byDate.entries())
+          .map(([date, scores]) => ({
+            date,
+            score: scores.reduce((sum, s) => sum + s, 0) / scores.length,
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date))
       })(),
       prisma.webletVersion.findMany({
         where: {
