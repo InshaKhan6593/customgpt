@@ -1,0 +1,391 @@
+import { ArrowUpRight, ArrowDownRight, Brain, TrendingUp, Users, MessageSquare, Zap, Activity, ChevronRight, CheckCircle2, AlertCircle, ChevronDown, Plus } from 'lucide-react';
+import { useState } from 'react';
+
+function App() {
+  const [selectedImprovement, setSelectedImprovement] = useState(0);
+  const [selectedWeblet, setSelectedWeblet] = useState(0);
+
+  const weblets = [
+    { id: 1, name: 'Customer Support Bot', status: 'active', conversations: 2847, lastUpdate: '2 hours ago' },
+    { id: 2, name: 'Technical Assistant', status: 'active', conversations: 1524, lastUpdate: '4 hours ago' },
+    { id: 3, name: 'Content Writer', status: 'inactive', conversations: 892, lastUpdate: '1 day ago' },
+  ];
+
+  const currentWeblet = weblets[selectedWeblet];
+
+  const improvements = [
+    {
+      id: 1,
+      version: 'v2.4',
+      date: '2 hours ago',
+      status: 'active',
+      trigger: '127 conversations analyzed',
+      changes: [
+        { type: 'added', text: 'Enhanced context awareness for technical queries' },
+        { type: 'improved', text: 'Response tone adjusted for professional audience' },
+        { type: 'removed', text: 'Removed redundant clarification patterns' }
+      ],
+      impact: {
+        satisfaction: +12,
+        responseTime: -8,
+        accuracy: +15,
+        engagement: +9
+      },
+      prompt_preview: 'You are a technical assistant specialized in...'
+    },
+    {
+      id: 2,
+      version: 'v2.3',
+      date: '1 day ago',
+      status: 'completed',
+      trigger: '94 conversations analyzed',
+      changes: [
+        { type: 'improved', text: 'Better handling of multi-step instructions' },
+        { type: 'added', text: 'Code example formatting improvements' }
+      ],
+      impact: {
+        satisfaction: +8,
+        responseTime: -3,
+        accuracy: +11,
+        engagement: +6
+      },
+      prompt_preview: 'You are a helpful assistant that...'
+    }
+  ];
+
+  const currentImprovement = improvements[selectedImprovement];
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+      <div className="w-72 border-r border-slate-800 bg-slate-900/30 flex flex-col">
+        <div className="p-6 border-b border-slate-800">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold">RSIL</h1>
+              <p className="text-xs text-slate-400">Self-Improving AI</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Your Weblets</div>
+          {weblets.map((weblet, idx) => (
+            <button
+              key={weblet.id}
+              onClick={() => setSelectedWeblet(idx)}
+              className={`w-full text-left p-3 rounded-lg border transition-all ${
+                selectedWeblet === idx
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-slate-800/20 border-slate-800 hover:bg-slate-800/40'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{weblet.name}</div>
+                  <div className="text-xs text-slate-400 mt-1">{weblet.conversations.toLocaleString()} conversations</div>
+                </div>
+                {weblet.status === 'active' && (
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 ml-2 mt-1"></div>
+                )}
+              </div>
+              <div className="text-xs text-slate-500">{weblet.lastUpdate}</div>
+            </button>
+          ))}
+
+          <button className="w-full mt-4 p-3 rounded-lg border-2 border-dashed border-slate-700 text-slate-400 hover:text-slate-300 hover:border-slate-600 transition-colors flex items-center justify-center gap-2 text-sm">
+            <Plus className="w-4 h-4" />
+            Enable RSIL
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col">
+        <div className="border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm sticky top-0 z-10">
+          <div className="px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">{currentWeblet.name}</h2>
+                <p className="text-sm text-slate-400">Self-improvement analytics and optimization</p>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-emerald-400">$847</div>
+                  <div className="text-xs text-slate-400">Value this month</div>
+                </div>
+                <div className="w-px h-10 bg-slate-800"></div>
+                <div className="px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                  <div className="text-sm font-medium text-emerald-400">Active</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-8 py-8">
+        <div className="max-w-6xl">
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex items-center gap-1 text-emerald-400 text-sm font-medium">
+                <ArrowUpRight className="w-4 h-4" />
+                12%
+              </div>
+            </div>
+            <div className="text-2xl font-bold mb-1">4.7</div>
+            <div className="text-sm text-slate-400">Avg User Rating</div>
+          </div>
+
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div className="flex items-center gap-1 text-emerald-400 text-sm font-medium">
+                <ArrowUpRight className="w-4 h-4" />
+                15%
+              </div>
+            </div>
+            <div className="text-2xl font-bold mb-1">89%</div>
+            <div className="text-sm text-slate-400">Response Accuracy</div>
+          </div>
+
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-purple-400" />
+              </div>
+              <div className="flex items-center gap-1 text-red-400 text-sm font-medium">
+                <ArrowDownRight className="w-4 h-4" />
+                8%
+              </div>
+            </div>
+            <div className="text-2xl font-bold mb-1">1.8s</div>
+            <div className="text-sm text-slate-400">Avg Response Time</div>
+          </div>
+
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Users className="w-5 h-5 text-amber-400" />
+              </div>
+              <div className="flex items-center gap-1 text-emerald-400 text-sm font-medium">
+                <ArrowUpRight className="w-4 h-4" />
+                9%
+              </div>
+            </div>
+            <div className="text-2xl font-bold mb-1">2,847</div>
+            <div className="text-sm text-slate-400">Conversations Analyzed</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-2 space-y-6">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+              <div className="p-6 border-b border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold mb-1">Improvement Timeline</h2>
+                    <p className="text-sm text-slate-400">System prompt evolution and performance impact</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    <span className="text-slate-400">Next analysis in</span>
+                    <span className="font-medium text-emerald-400">47 minutes</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="space-y-4">
+                  {improvements.map((improvement, idx) => (
+                    <button
+                      key={improvement.id}
+                      onClick={() => setSelectedImprovement(idx)}
+                      className={`w-full text-left p-4 rounded-lg border transition-all ${
+                        selectedImprovement === idx
+                          ? 'bg-emerald-500/5 border-emerald-500/30'
+                          : 'bg-slate-800/30 border-slate-800 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            improvement.status === 'active'
+                              ? 'bg-emerald-500/10'
+                              : 'bg-slate-700/50'
+                          }`}>
+                            {improvement.status === 'active' ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                            ) : (
+                              <CheckCircle2 className="w-5 h-5 text-slate-500" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{improvement.version}</span>
+                              {improvement.status === 'active' && (
+                                <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-slate-400">{improvement.date} • {improvement.trigger}</div>
+                          </div>
+                        </div>
+                        <ChevronRight className={`w-5 h-5 transition-transform ${
+                          selectedImprovement === idx ? 'rotate-90' : ''
+                        } text-slate-400`} />
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-3 mt-3">
+                        <div className="text-center">
+                          <div className={`text-lg font-bold ${improvement.impact.satisfaction > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {improvement.impact.satisfaction > 0 ? '+' : ''}{improvement.impact.satisfaction}%
+                          </div>
+                          <div className="text-xs text-slate-500">Satisfaction</div>
+                        </div>
+                        <div className="text-center">
+                          <div className={`text-lg font-bold ${improvement.impact.responseTime < 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {improvement.impact.responseTime}%
+                          </div>
+                          <div className="text-xs text-slate-500">Response Time</div>
+                        </div>
+                        <div className="text-center">
+                          <div className={`text-lg font-bold ${improvement.impact.accuracy > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {improvement.impact.accuracy > 0 ? '+' : ''}{improvement.impact.accuracy}%
+                          </div>
+                          <div className="text-xs text-slate-500">Accuracy</div>
+                        </div>
+                        <div className="text-center">
+                          <div className={`text-lg font-bold ${improvement.impact.engagement > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {improvement.impact.engagement > 0 ? '+' : ''}{improvement.impact.engagement}%
+                          </div>
+                          <div className="text-xs text-slate-500">Engagement</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Performance Trends</h3>
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <span>Last 30 days</span>
+                </div>
+              </div>
+              <div className="h-48 flex items-end gap-2">
+                {[65, 68, 70, 72, 71, 74, 76, 78, 80, 79, 82, 85, 87, 89].map((value, idx) => (
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 rounded-t-sm hover:from-emerald-400 hover:to-teal-300 transition-colors"
+                         style={{ height: `${value}%` }}></div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
+                <span>Feb 24</span>
+                <span>Mar 24</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <Brain className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-emerald-400">Active Learning</h3>
+                  <p className="text-sm text-slate-400">Analyzing patterns</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">Conversations processed</span>
+                  <span className="font-medium">127 / 150</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2">
+                  <div className="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full" style={{ width: '85%' }}></div>
+                </div>
+                <div className="pt-2 border-t border-emerald-500/20">
+                  <div className="text-sm text-slate-300 mb-2">Detected patterns:</div>
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-slate-400">Users prefer concise technical responses</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-slate-400">Code examples increase satisfaction by 23%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+              <h3 className="font-semibold mb-4">Latest Changes</h3>
+              <div className="space-y-3">
+                {currentImprovement.changes.map((change, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
+                    <div className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${
+                      change.type === 'added' ? 'bg-emerald-500/10' :
+                      change.type === 'improved' ? 'bg-blue-500/10' :
+                      'bg-red-500/10'
+                    }`}>
+                      <span className={`text-xs font-bold ${
+                        change.type === 'added' ? 'text-emerald-400' :
+                        change.type === 'improved' ? 'text-blue-400' :
+                        'text-red-400'
+                      }`}>
+                        {change.type === 'added' ? '+' : change.type === 'improved' ? '↑' : '−'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed">{change.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+              <h3 className="font-semibold mb-3">ROI Summary</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-400">Support tickets reduced</span>
+                  <span className="font-semibold text-emerald-400">-34%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-400">User retention improved</span>
+                  <span className="font-semibold text-emerald-400">+18%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-400">Response quality score</span>
+                  <span className="font-semibold text-emerald-400">+27%</span>
+                </div>
+                <div className="pt-3 mt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Estimated cost savings</span>
+                    <span className="text-lg font-bold text-emerald-400">$847/mo</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
