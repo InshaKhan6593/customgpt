@@ -1,0 +1,15 @@
+
+> my-project@0.1.0 dev
+> next dev --port 3000
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.100.58:3000
+- Environments: .env
+
+✓ Starting...
+✓ Ready in 997ms
+ GET /dashboard/rsil/cmmotepbj000gyelv906wpa0y/deployments 200 in 2.9s (compile: 875ms, proxy.ts: 197ms, render: 1831ms)
+ GET /api/auth/session 200 in 900ms (compile: 846ms, proxy.ts: 26ms, render: 29ms)
+ GET /api/auth/session 200 in 49ms (compile: 16ms, proxy.ts: 8ms, render: 25ms)
+ GET /api/weblets/cmmotepbj000gyelv906wpa0y/versions 200 in 1296ms (compile: 893ms, proxy.ts: 21ms, render: 383ms)

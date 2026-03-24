@@ -20,16 +20,14 @@ model User {
   updatedAt     DateTime       @updatedAt
   accounts      Account[]
   chatSessions  ChatSession[]
+  developerPlan DeveloperPlan?
   payouts       Payout[]
   sessions      Session[]
   subscriptions Subscription[]
   transactions  Transaction[]
   flows         UserFlow[]
-  weblets       Weblet[]       @relation("DeveloperWeblets")
-  mcpTokens     UserMCPToken[]
-  developerPlan DeveloperPlan?
   userPlan      UserPlan?
-  userWeblets   UserWeblet[]
+  weblets       Weblet[]       @relation("DeveloperWeblets")
 }
 
 model Account {
@@ -67,35 +65,34 @@ model VerificationToken {
 }
 
 model Weblet {
-  id                 String              @id @default(cuid())
-  developerId        String
-  name               String
-  slug               String              @unique
-  description        String?
-  iconUrl            String?
-  category           WebletCategory
-  isActive           Boolean             @default(true)
-  isPublic           Boolean             @default(false)
-  rsilEnabled        Boolean             @default(false)
-  rsilGovernance     Json?
-  accessType         AccessType          @default(FREE)
-  monthlyPrice       Float?
-  stripePriceId      String?
-  stripeProductId    String?
-  capabilities       Json?
-  privacyPolicy      String?
+  id                   String              @id @default(cuid())
+  developerId          String
+  name                 String
+  slug                 String              @unique
+  description          String?
+  iconUrl              String?
+  category             WebletCategory
+  isActive             Boolean             @default(true)
+  isPublic             Boolean             @default(false)
+  rsilEnabled          Boolean             @default(false)
+  rsilGovernance       Json?
+  accessType           AccessType          @default(FREE)
+  monthlyPrice         Float?
+  stripePriceId        String?
+  stripeProductId      String?
+  capabilities         Json?
+  privacyPolicy        String?
   conversationStarters Json?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  analyticsEvents    AnalyticsEvent[]
-  chatSessions       ChatSession[]
-  knowledgeFiles     KnowledgeFile[]
-  developer          User                @relation("DeveloperWeblets", fields: [developerId], references: [id], onDelete: Cascade)
-  childCompositions  WebletComposition[] @relation("ChildWeblet")
-  parentCompositions WebletComposition[] @relation("ParentWeblet")
-  mcpServers         WebletMCPServer[]
-  versions           WebletVersion[]
-  userWeblets        UserWeblet[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  analyticsEvents      AnalyticsEvent[]
+  chatSessions         ChatSession[]
+  knowledgeFiles       KnowledgeFile[]
+  developer            User                @relation("DeveloperWeblets", fields: [developerId], references: [id], onDelete: Cascade)
+  childCompositions    WebletComposition[] @relation("ChildWeblet")
+  parentCompositions   WebletComposition[] @relation("ParentWeblet")
+  mcpServers           WebletMCPServer[]
+  versions             WebletVersion[]
 
   @@index([developerId])
   @@index([category])
@@ -103,23 +100,22 @@ model Weblet {
 }
 
 model WebletVersion {
-  id                  String        @id @default(cuid())
-  webletId            String
-  versionNum          Int
-  prompt              String
-  status              VersionStatus @default(DRAFT)
-  commitMsg           String?
-  model               String        @default("anthropic/claude-3.5-sonnet")
-  openapiSchema       Json?
-  // RSIL A/B testing
-  isAbTest            Boolean       @default(false)
-  abTestTrafficPct    Int           @default(50)
-  abTestStartedAt     DateTime?
-  abTestEndedAt       DateTime?
-  abTestWinner        Boolean?
-  avgScore            Float?        // Cached avg Langfuse score for this version
-  createdAt           DateTime      @default(now())
-  weblet              Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  id               String        @id @default(cuid())
+  webletId         String
+  versionNum       Int
+  prompt           String
+  status           VersionStatus @default(DRAFT)
+  commitMsg        String?
+  model            String        @default("anthropic/claude-3.5-sonnet")
+  createdAt        DateTime      @default(now())
+  openapiSchema    Json?
+  isAbTest         Boolean       @default(false)
+  abTestTrafficPct Int           @default(50)
+  abTestStartedAt  DateTime?
+  abTestEndedAt    DateTime?
+  abTestWinner     Boolean?
+  avgScore         Float?
+  weblet           Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
 
   @@unique([webletId, versionNum])
 }
@@ -151,14 +147,14 @@ model UserFlow {
   userId         String
   name           String
   description    String?
-  mode           FlowMode @default(PARALLEL)
+  mode           FlowMode @default(SEQUENTIAL)
   steps          Json
-  canvasState    Json?
-  defaultPrompt  String?
   masterWebletId String?
   isPublic       Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  defaultPrompt  String?
+  canvasState    Json?
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -182,9 +178,9 @@ model ChatSession {
   userId          String
   webletId        String
   title           String?
-  langfuseTraceId String?       // Langfuse trace ID for linking scores
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  langfuseTraceId String?
   messages        ChatMessage[]
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   weblet          Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
@@ -194,14 +190,14 @@ model ChatSession {
 }
 
 model ChatMessage {
-  id            String      @id @default(cuid())
-  chatSessionId String
-  role          String
-  content       String
-  tokensUsed    Int?
+  id              String      @id @default(cuid())
+  chatSessionId   String
+  role            String
+  content         String
+  tokensUsed      Int?
+  createdAt       DateTime    @default(now())
   langfuseTraceId String?
-  createdAt     DateTime    @default(now())
-  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  chatSession     ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
   @@index([chatSessionId])
 }
@@ -262,6 +258,84 @@ model Payout {
   @@index([developerId])
 }
 
+model DeveloperPlan {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  tier                 DevTier  @default(STARTER)
+  creditsIncluded      Int
+  creditsUsed          Int      @default(0)
+  billingCycleStart    DateTime
+  billingCycleEnd      DateTime
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  autoReloadEnabled    Boolean  @default(true)
+  autoReloadAmount     Int      @default(2000)
+  overageRate          Decimal  @default(0.005)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserPlan {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  tier                 UserTier @default(FREE_USER)
+  creditsIncluded      Int
+  creditsUsed          Int      @default(0)
+  workflowRunsIncluded Int      @default(2)
+  workflowRunsUsed     Int      @default(0)
+  billingCycleStart    DateTime
+  billingCycleEnd      DateTime
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UsageRecord {
+  id             String      @id @default(cuid())
+  userId         String
+  webletId       String
+  developerId    String
+  sessionId      String?
+  workflowId     String?
+  tokensIn       Int
+  tokensOut      Int
+  modelId        String
+  toolCalls      Json?
+  creditsCharged Int
+  estimatedCost  Decimal
+  source         UsageSource
+  parentRecordId String?
+  createdAt      DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@index([developerId, createdAt])
+  @@index([webletId, createdAt])
+}
+
+model WebletMCPServer {
+  id               String      @id @default(cuid())
+  webletId         String
+  serverUrl        String
+  label            String
+  description      String?
+  iconUrl          String?
+  authType         MCPAuthType @default(NONE)
+  authToken        String?
+  tools            Json?
+  isActive         Boolean     @default(true)
+  catalogId        String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  requiresUserAuth Boolean     @default(false)
+  weblet           Weblet      @relation(fields: [webletId], references: [id], onDelete: Cascade)
+
+  @@unique([webletId, serverUrl])
+  @@index([webletId])
+}
+
 enum UserRole {
   USER
   DEVELOPER
@@ -291,8 +365,8 @@ enum AccessType {
 
 enum FlowMode {
   SEQUENTIAL
-  PARALLEL
   HYBRID
+  PARALLEL
 }
 
 enum VersionStatus {
@@ -330,66 +404,6 @@ enum PayoutStatus {
   FAILED
 }
 
-// ── Developer Subscription Plan ──
-model DeveloperPlan {
-  id                   String    @id @default(cuid())
-  userId               String    @unique
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier                 DevTier   @default(STARTER)
-  creditsIncluded      Int       // Monthly credit quota (e.g., 200, 10000, 50000)
-  creditsUsed          Int       @default(0)
-  billingCycleStart    DateTime
-  billingCycleEnd      DateTime
-  stripeSubscriptionId String?
-  stripePriceId        String?
-  autoReloadEnabled    Boolean   @default(true)  // Automatically buy credits when 0
-  autoReloadAmount     Int       @default(2000)  // How many credits to buy at a time
-  overageRate          Decimal   @default(0.005) // $/credit
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-}
-
-// ── User Platform Plan ──
-model UserPlan {
-  id                   String    @id @default(cuid())
-  userId               String    @unique
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier                 UserTier  @default(FREE_USER)
-  creditsIncluded      Int       // Monthly credit quota (e.g., 100, 1000, unlimited=-1)
-  creditsUsed          Int       @default(0)
-  workflowRunsIncluded Int       @default(2)
-  workflowRunsUsed     Int       @default(0)
-  billingCycleStart    DateTime
-  billingCycleEnd      DateTime
-  stripeSubscriptionId String?
-  stripePriceId        String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-}
-
-// ── Per-Message Usage Record (Audit Trail) ──
-model UsageRecord {
-  id             String      @id @default(cuid())
-  userId         String      // Who initiated the chat
-  webletId       String      // Which weblet was called
-  developerId    String      // Who owns the weblet
-  sessionId      String?     // Chat session (null for RSIL)
-  workflowId     String?     // If part of a workflow
-  tokensIn       Int         // Input tokens consumed
-  tokensOut      Int         // Output tokens consumed
-  modelId        String      // e.g., "anthropic/claude-3.5-sonnet"
-  toolCalls      Json?       // e.g., { "tavily": 1, "dalle": 0, "e2b": 0, "rag": 2 }
-  creditsCharged Int         // Credits deducted for this action
-  estimatedCost  Decimal     // Platform's estimated cost in USD
-  source         UsageSource // Where this usage came from
-  parentRecordId String?     // If triggered by composability, link to parent
-  createdAt      DateTime    @default(now())
-
-  @@index([userId, createdAt])
-  @@index([developerId, createdAt])
-  @@index([webletId, createdAt])
-}
-
 enum DevTier {
   STARTER
   PRO
@@ -404,111 +418,11 @@ enum UserTier {
 }
 
 enum UsageSource {
-  DIRECT_CHAT       // User chatted directly with weblet
-  COMPOSABILITY     // Weblet called as a child by another weblet
-  WORKFLOW          // Part of a user workflow pipeline
-  ORCHESTRATION     // Part of multi-agent orchestration
-  RSIL              // Automated optimization (platform cost)
-}
-
-
-// ── MCP Server Integration ──
-model WebletMCPServer {
-  id          String      @id @default(cuid())
-  webletId    String
-  weblet      Weblet      @relation(fields: [webletId], references: [id], onDelete: Cascade)
-  serverUrl   String
-  label       String
-  description String?
-  iconUrl     String?
-  authType         MCPAuthType @default(NONE)
-  authToken        String?     // Developer's API key or OAuth token
-  tools            Json?       // Cached tool definitions from discovery
-  isActive         Boolean     @default(true)
-  requiresUserAuth Boolean     @default(false) // If true, end users must provide their own token
-  catalogId        String?     // Null = custom server, non-null = from curated catalog
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  userTokens       UserMCPToken[]
-
-  @@unique([webletId, serverUrl])
-  @@index([webletId])
-}
-
-// ── Per-User MCP Authentication Tokens ──
-model UserMCPToken {
-  id              String          @id @default(cuid())
-  userId          String
-  serverId        String
-  tokenEnc        String          // AES-256-GCM encrypted access token
-  tokenIv         String          // Initialization vector for decryption
-  refreshTokenEnc String?         // AES-256-GCM encrypted refresh token (OAuth only)
-  refreshTokenIv  String?         // IV for refresh token
-  expiresAt       DateTime?       // When the access token expires (OAuth only)
-  scope           String?         // OAuth scopes granted
-  tokenType       String?         // "pat" | "oauth" — distinguishes manual PAT from OAuth flow
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  server    WebletMCPServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, serverId])
-  @@index([userId])
-}
-
-// ── OAuth State (CSRF + PKCE verification for MCP OAuth flows) ──
-model OAuthState {
-  id            String   @id @default(cuid())
-  state         String   @unique          // Random state parameter (CSRF protection)
-  codeVerifier  String                    // PKCE code_verifier (stored server-side, never exposed to client)
-  userId        String
-  serverId      String
-  webletId      String
-  redirectUri   String                    // The callback URL used
-  expiresAt     DateTime                  // Short TTL (10 minutes)
-  createdAt     DateTime @default(now())
-
-  @@index([state])
-  @@index([expiresAt])
-}
-
-// ── User's Added Weblets (sidebar) ──
-model UserWeblet {
-  id        String   @id @default(cuid())
-  userId    String
-  webletId  String
-  addedAt   DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  weblet    Weblet   @relation(fields: [webletId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, webletId])
-  @@index([userId])
-}
-
-// ── RSIL Batch Evaluation Runs ──
-model EvaluationRun {
-  id              String     @id @default(cuid())
-  webletId        String
-  tracesSampled   Int
-  tracesEvaluated Int
-  dimensions      Json       // { helpfulness: { avg, count, min, max }, ... }
-  compositeScore  Float
-  judgeModel      String
-  creditsUsed     Int        @default(0)
-  status          EvalStatus @default(RUNNING)
-  errorMessage    String?
-  triggeredBy     String?    // userId who triggered, or "cron" for scheduled
-  createdAt       DateTime   @default(now())
-  completedAt     DateTime?
-
-  @@index([webletId, createdAt])
-}
-
-enum EvalStatus {
-  RUNNING
-  COMPLETED
-  FAILED
+  DIRECT_CHAT
+  COMPOSABILITY
+  WORKFLOW
+  ORCHESTRATION
+  RSIL
 }
 
 enum MCPAuthType {

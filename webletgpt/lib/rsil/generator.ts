@@ -7,10 +7,12 @@ import { prisma } from '@/lib/prisma'
 import type { AnalysisResult, ScoreDimension } from '@/lib/rsil/analyzer'
 
 const GENERATOR_MODEL = 'openai/gpt-4o'
+const MAX_OUTPUT_TOKENS = 4096
 const PERCENT_SCALE = 100
 const PERCENT_DECIMAL_PLACES = 1
 const SCORE_DECIMAL_PLACES = 3
 const MAX_PROMPT_LENGTH_MULTIPLIER = 2
+const MIN_PROMPT_LENGTH_LIMIT = 300
 const TOKENS_PER_CREDIT = 1000
 
 const outputSchema = z.object({
@@ -33,6 +35,22 @@ export interface GenerationResult {
   changelog: string
   model: string
   tokensUsed: number
+}
+
+type EvaluationRunCreateData = {
+  webletId: string
+  tracesSampled: number
+  tracesEvaluated: number
+  dimensions: Prisma.InputJsonValue
+  compositeScore: number
+  judgeModel: string
+  status: 'COMPLETED'
+  creditsUsed: number
+  completedAt: Date
+}
+
+type EvaluationRunDelegate = {
+  create: (args: { data: EvaluationRunCreateData }) => Promise<unknown>
 }
 
 type ConversationExample = {
@@ -137,6 +155,7 @@ export async function generateImprovedPrompt(params: {
     const result = await generateObject({
       model,
       schema: outputSchema,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       system: [
         'You are an expert AI prompt engineer specializing in improving system prompts.',
         "PRESERVE the weblet's core identity, persona, and purpose completely. Only improve the identified weak areas.",
@@ -154,7 +173,10 @@ export async function generateImprovedPrompt(params: {
     })
 
     const generatedPrompt = result.object.improvedPrompt
-    const maxAllowedPromptLength = MAX_PROMPT_LENGTH_MULTIPLIER * params.currentPrompt.length
+    const maxAllowedPromptLength = Math.max(
+      MIN_PROMPT_LENGTH_LIMIT,
+      MAX_PROMPT_LENGTH_MULTIPLIER * params.currentPrompt.length
+    )
 
     if (generatedPrompt.length > maxAllowedPromptLength) {
       throw new Error(
@@ -167,19 +189,28 @@ export async function generateImprovedPrompt(params: {
       ? Math.max(...params.dimensions.map((dimension) => dimension.sampleSize))
       : 0
 
-    await prisma.evaluationRun.create({
-      data: {
-        webletId: params.webletId,
-        tracesSampled: tracesEstimated,
-        tracesEvaluated: tracesEstimated,
-        dimensions: params.dimensions as unknown as Prisma.InputJsonValue,
-        compositeScore: params.compositeScore,
-        judgeModel: GENERATOR_MODEL,
-        status: 'COMPLETED',
-        creditsUsed: Math.ceil(totalTokens / TOKENS_PER_CREDIT),
-        completedAt: new Date(),
-      },
-    })
+    const evaluationRun = (prisma as unknown as { evaluationRun?: EvaluationRunDelegate }).evaluationRun
+
+    // Optional audit persistence: do not fail optimization if evaluationRun is unavailable
+    if (evaluationRun) {
+      try {
+        await evaluationRun.create({
+          data: {
+            webletId: params.webletId,
+            tracesSampled: tracesEstimated,
+            tracesEvaluated: tracesEstimated,
+            dimensions: params.dimensions as unknown as Prisma.InputJsonValue,
+            compositeScore: params.compositeScore,
+            judgeModel: GENERATOR_MODEL,
+            status: 'COMPLETED',
+            creditsUsed: Math.ceil(totalTokens / TOKENS_PER_CREDIT),
+            completedAt: new Date(),
+          },
+        })
+      } catch (err) {
+        console.warn('Failed to persist evaluationRun audit record:', err instanceof Error ? err.message : String(err))
+      }
+    }
 
     return {
       improvedPrompt: generatedPrompt,

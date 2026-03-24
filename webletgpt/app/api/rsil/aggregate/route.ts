@@ -14,6 +14,72 @@ type OptimizationActivityPoint = {
   count: number
 }
 
+type WebletAnalysisFallback = {
+  decision: "NONE" | "SUGGESTION" | "AUTO_UPDATE"
+  compositeScore: number
+  avgScore: number
+  dimensions: Array<{ name: string; avgValue: number; sampleSize: number; weight: number }>
+  sampleSize: number
+  lowScoredTraceIds: string[]
+  weakDimensions: string[]
+  reason: string
+  warning?: string
+}
+
+const ANALYZE_WEBLET_TIMEOUT_MS = 6000
+const FETCH_SCORE_METRICS_TIMEOUT_MS = 4000
+
+const DEFAULT_WEBLET_ANALYSIS: WebletAnalysisFallback = {
+  decision: "NONE",
+  compositeScore: 0,
+  avgScore: 0,
+  dimensions: [],
+  sampleSize: 0,
+  lowScoredTraceIds: [],
+  weakDimensions: [],
+  reason: "Timed out or failed to analyze weblet",
+}
+
+const DEFAULT_SCORE_METRICS: { dimensions: Array<{ name: string; avgValue: number; count: number; p50?: number; p90?: number }>; timeSeries: Array<{ date: string; [scoreName: string]: number | string }> } = {
+  dimensions: [],
+  timeSeries: [],
+}
+
+async function withTimeoutFallback<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    const timedOperation = Promise.race([
+      operation.then((value) => ({ type: "success" as const, value })),
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          resolve(fallback)
+        }, timeoutMs)
+      }).then((value) => ({ type: "timeout" as const, value })),
+    ])
+
+    const result = await timedOperation
+    if (result.type === "timeout") {
+      console.warn(`[rsil/aggregate] ${label} timed out after ${timeoutMs}ms`)
+    }
+
+    return result.value
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error"
+    console.warn(`[rsil/aggregate] ${label} failed: ${message}`)
+    return fallback
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
 function getWeekStartUtc(date: Date): Date {
   const weekStart = new Date(date)
   const day = weekStart.getUTCDay()
@@ -104,7 +170,12 @@ export async function GET() {
     ] = await Promise.allSettled([
       Promise.allSettled(
         weblets.map(async (weblet) => {
-          const analysis = await analyzeWeblet(weblet.id, 168)
+          const analysis = await withTimeoutFallback(
+            analyzeWeblet(weblet.id, 168),
+            ANALYZE_WEBLET_TIMEOUT_MS,
+            DEFAULT_WEBLET_ANALYSIS,
+            `analyzeWeblet(${weblet.id})`
+          )
           return { webletId: weblet.id, analysis }
         })
       ),
@@ -129,11 +200,16 @@ export async function GET() {
 
         const allMetrics = await Promise.all(
           weblets.map((w) =>
-            fetchScoreMetrics({
-              webletId: w.id,
-              fromTimestamp: sevenDaysAgoIso,
-              granularity: "day",
-            })
+            withTimeoutFallback(
+              fetchScoreMetrics({
+                webletId: w.id,
+                fromTimestamp: sevenDaysAgoIso,
+                granularity: "day",
+              }),
+              FETCH_SCORE_METRICS_TIMEOUT_MS,
+              DEFAULT_SCORE_METRICS,
+              `fetchScoreMetrics(${w.id})`
+            )
           )
         )
 
@@ -186,12 +262,7 @@ export async function GET() {
         const analysis =
           resultObj.status === "fulfilled"
             ? resultObj.value.analysis
-            : {
-                decision: "NONE" as const,
-                compositeScore: 0,
-                dimensions: [],
-                sampleSize: 0,
-              }
+            : DEFAULT_WEBLET_ANALYSIS
 
         const interactionCount = await prisma.chatMessage.count({
           where: { chatSession: { webletId: weblet.id } },
