@@ -7,6 +7,11 @@ import { prisma } from '@/lib/prisma'
 import type { AnalysisResult, ScoreDimension } from '@/lib/rsil/analyzer'
 
 const GENERATOR_MODEL = 'openai/gpt-4o'
+const PERCENT_SCALE = 100
+const PERCENT_DECIMAL_PLACES = 1
+const SCORE_DECIMAL_PLACES = 3
+const MAX_PROMPT_LENGTH_MULTIPLIER = 2
+const TOKENS_PER_CREDIT = 1000
 
 const outputSchema = z.object({
   improvedPrompt: z.string().describe('The improved system prompt'),
@@ -30,6 +35,13 @@ export interface GenerationResult {
   tokensUsed: number
 }
 
+type ConversationExample = {
+  traceId: string
+  conversation: string
+  score: number
+  weakDimensions: string[]
+}
+
 function formatDimensionScores(dimensions: AnalysisResult['dimensions']): string {
   if (dimensions.length === 0) {
     return '- No dimension scores available.'
@@ -38,7 +50,7 @@ function formatDimensionScores(dimensions: AnalysisResult['dimensions']): string
   return dimensions
     .map((dimension) => {
       const meaning = DIMENSION_MEANINGS[dimension.name] ?? 'General quality signal.'
-      const percent = (dimension.avgValue * 100).toFixed(1)
+      const percent = (dimension.avgValue * PERCENT_SCALE).toFixed(PERCENT_DECIMAL_PLACES)
       return `- ${dimension.name}: ${percent}% (samples=${dimension.sampleSize}, weight=${dimension.weight}) — ${meaning}`
     })
     .join('\n')
@@ -54,18 +66,73 @@ function formatWeakDimensions(weakDimensions: string[]): string {
     .join('\n')
 }
 
+function formatConversationExamples(examples: ConversationExample[]): string {
+  return examples
+    .map((example) => {
+      const weakDimensions = example.weakDimensions.length > 0
+        ? example.weakDimensions.join(', ')
+        : 'none'
+
+      return [
+        `- traceId: ${example.traceId}`,
+        `  score: ${example.score.toFixed(SCORE_DECIMAL_PLACES)}`,
+        `  weakDimensions: ${weakDimensions}`,
+        '  conversation:',
+        example.conversation,
+      ].join('\n')
+    })
+    .join('\n\n')
+}
+
 export async function generateImprovedPrompt(params: {
   webletId: string
   currentPrompt: string
   weakDimensions: string[]
   compositeScore: number
   dimensions: ScoreDimension[]
+  badExamples?: ConversationExample[]
+  goodExamples?: ConversationExample[]
 }): Promise<GenerationResult> {
   try {
     const model = getLanguageModel(GENERATOR_MODEL)
+    const hasBadExamples = Boolean(params.badExamples && params.badExamples.length > 0)
+    const hasGoodExamples = Boolean(params.goodExamples && params.goodExamples.length > 0)
+    const hasConversationExamples = hasBadExamples || hasGoodExamples
 
     const weakDimensionsSummary = formatWeakDimensions(params.weakDimensions)
     const dimensionScoreSummary = formatDimensionScores(params.dimensions)
+    const promptSections = [
+      'Improve the following system prompt while preserving its core behavior.',
+      `Current composite score: ${(params.compositeScore * PERCENT_SCALE).toFixed(PERCENT_DECIMAL_PLACES)}%`,
+      'Weak dimensions:',
+      weakDimensionsSummary,
+      'Per-dimension scores and meanings:',
+      dimensionScoreSummary,
+      hasConversationExamples
+        ? 'When writing `changelog`, explicitly cite concrete recurring conversation patterns from the provided examples (failure modes, response issues, or missing behaviors) and tie each cited pattern to a prompt change.'
+        : 'When writing `changelog`, summarize changes and rationale based on the score/dimension context only; do not invent conversation-pattern references.',
+    ]
+
+    if (params.badExamples && params.badExamples.length > 0) {
+      promptSections.push(
+        'Low-scoring conversation examples (what to fix):',
+        formatConversationExamples(params.badExamples)
+      )
+    }
+
+    if (params.goodExamples && params.goodExamples.length > 0) {
+      promptSections.push(
+        'High-scoring conversation examples (what to preserve):',
+        formatConversationExamples(params.goodExamples)
+      )
+    }
+
+    promptSections.push(
+      'Current prompt (preserve persona/identity/purpose):',
+      '<<<CURRENT_PROMPT_START>>>',
+      params.currentPrompt,
+      '<<<CURRENT_PROMPT_END>>>'
+    )
 
     const result = await generateObject({
       model,
@@ -75,22 +142,25 @@ export async function generateImprovedPrompt(params: {
         "PRESERVE the weblet's core identity, persona, and purpose completely. Only improve the identified weak areas.",
         'Do NOT change the weblet\'s name, role description, or fundamental purpose.',
         'Add specific examples for low-scoring dimensions. Add guardrails for identified failure modes.',
+        hasConversationExamples
+          ? 'If conversation examples are provided, the `changelog` MUST reference concrete patterns observed in those examples (recurring failure mode, response issue, or missing behavior) and map each pattern to a specific prompt update.'
+          : 'If no conversation examples are provided, keep `changelog` grounded in the score/dimension context and avoid fabricated example references.',
         'Use the weak dimensions context below and their meanings to target improvements precisely:',
         weakDimensionsSummary,
       ].join('\n\n'),
       prompt: [
-        'Improve the following system prompt while preserving its core behavior.',
-        `Current composite score: ${(params.compositeScore * 100).toFixed(1)}%`,
-        'Weak dimensions:',
-        weakDimensionsSummary,
-        'Per-dimension scores and meanings:',
-        dimensionScoreSummary,
-        'Current prompt (preserve persona/identity/purpose):',
-        '<<<CURRENT_PROMPT_START>>>',
-        params.currentPrompt,
-        '<<<CURRENT_PROMPT_END>>>',
+        ...promptSections,
       ].join('\n\n'),
     })
+
+    const generatedPrompt = result.object.improvedPrompt
+    const maxAllowedPromptLength = MAX_PROMPT_LENGTH_MULTIPLIER * params.currentPrompt.length
+
+    if (generatedPrompt.length > maxAllowedPromptLength) {
+      throw new Error(
+        `Generated prompt length (${generatedPrompt.length}) exceeds safety limit (${maxAllowedPromptLength}). Reduce prompt bloat before deployment.`
+      )
+    }
 
     const totalTokens = result.usage?.totalTokens ?? 0
     const tracesEstimated = params.dimensions.length > 0
@@ -106,13 +176,13 @@ export async function generateImprovedPrompt(params: {
         compositeScore: params.compositeScore,
         judgeModel: GENERATOR_MODEL,
         status: 'COMPLETED',
-        creditsUsed: Math.ceil(totalTokens / 1000),
+        creditsUsed: Math.ceil(totalTokens / TOKENS_PER_CREDIT),
         completedAt: new Date(),
       },
     })
 
     return {
-      improvedPrompt: result.object.improvedPrompt,
+      improvedPrompt: generatedPrompt,
       changelog: result.object.changelog,
       model: GENERATOR_MODEL,
       tokensUsed: totalTokens,

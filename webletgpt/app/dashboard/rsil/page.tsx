@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { ArrowLeft, Sparkles, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { useRsilV2Flag } from "@/lib/feature-flags"
 
 import { WebletSelector } from "@/components/rsil/weblet-selector"
 import { RSILAggregateDashboard } from "@/components/rsil/rsil-aggregate-dashboard"
@@ -30,6 +31,10 @@ import { ABTestStatus } from "@/components/rsil/ab-test-status"
 import { VersionHistory } from "@/components/rsil/version-history"
 import { GovernancePanel } from "@/components/rsil/governance-panel"
 import { AnalyticsTab } from "@/components/rsil/analytics-tab"
+
+import { HealthScoreTab } from "@/components/rsil/v2/tabs/health-score-tab"
+import { ImprovementsTab } from "@/components/rsil/v2/tabs/improvements-tab"
+import { SettingsTab } from "@/components/rsil/v2/tabs/settings-tab"
 
 import type {
   AnalysisResult,
@@ -50,6 +55,8 @@ type ScoresResponse = {
 }
 
 export default function RSILDashboardPage() {
+  const isV2Enabled = useRsilV2Flag()
+  
   const [weblets, setWeblets] = useState<WebletOverview[]>([])
   const [selectedWebletId, setSelectedWebletId] = useState<string | null>(null)
 
@@ -65,7 +72,7 @@ export default function RSILDashboardPage() {
   const [rsilEnabled, setRsilEnabled] = useState(false)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
 
-  const [activeTab, setActiveTab] = useState("scores")
+  const [activeTab, setActiveTab] = useState(isV2Enabled ? "health" : "scores")
   
   const [draftVersion, setDraftVersion] = useState<{ id: string; prompt: string; changelog: string } | null>(null)
   const [currentVersionPrompt, setCurrentVersionPrompt] = useState("")
@@ -181,7 +188,7 @@ export default function RSILDashboardPage() {
     setAnalysis(null)
     setRecentRatings([])
     setMetrics(null)
-    setActiveTab("scores")
+    setActiveTab(isV2Enabled ? "health" : "scores")
     setDraftVersion(null)
   }
 
@@ -444,204 +451,276 @@ export default function RSILDashboardPage() {
         </div>
       </motion.div>
 
-      <Tabs defaultValue="scores" value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="scores">Scores</TabsTrigger>
-          <TabsTrigger value="optimization">Optimization</TabsTrigger>
-          <TabsTrigger value="abtest">A/B Test</TabsTrigger>
-          <TabsTrigger value="versions">Versions</TabsTrigger>
-          <TabsTrigger value="governance">Governance</TabsTrigger>
-          <TabsTrigger value="analytics"><BarChart3 className="h-4 w-4 mr-1.5" />Analytics</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue={isV2Enabled ? "health" : "scores"} value={activeTab} onValueChange={setActiveTab}>
+        {isV2Enabled ? (
+          <>
+            <TabsList>
+              <TabsTrigger value="health">Health Score</TabsTrigger>
+              <TabsTrigger value="improvements">Improvements</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="scores" className="mt-6 space-y-8">
-          <PerformanceChart
-            timeSeries={chartData}
-            dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
-          />
+            <div className="relative mt-6">
+              <AnimatePresence mode="wait">
+                {activeTab === "health" && (
+                  <TabsContent value="health" className="mt-0" forceMount>
+                    <motion.div
+                      key="health"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                    >
+                      <HealthScoreTab
+                        webletId={selectedWebletId}
+                        analysisResult={analysis}
+                        analyticsData={null}
+                        loading={scoresLoading}
+                      />
+                    </motion.div>
+                  </TabsContent>
+                )}
 
-          {scoresLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-80 rounded-xl" />
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton key={i} className="h-32 rounded-xl" />
-                ))}
-              </div>
+                {activeTab === "improvements" && (
+                  <TabsContent value="improvements" className="mt-0" forceMount>
+                    <motion.div
+                      key="improvements"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                    >
+                      <ImprovementsTab
+                        webletId={selectedWebletId}
+                        optimizations30dCount={0}
+                        weeklySummary={draftVersion ? "Recent optimization activity detected" : undefined}
+                        versions={versions}
+                        onStartTest={handleStartTest}
+                        onDeploy={handleDeploy}
+                        onConcludeTest={handleConcludeTest}
+                        onCancelTest={handleCancelTest}
+                      />
+                    </motion.div>
+                  </TabsContent>
+                )}
+
+                {activeTab === "settings" && (
+                  <TabsContent value="settings" className="mt-0" forceMount>
+                    <motion.div
+                      key="settings"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                    >
+                      <SettingsTab webletId={selectedWebletId} />
+                    </motion.div>
+                  </TabsContent>
+                )}
+              </AnimatePresence>
             </div>
-          ) : (
-            <div className="space-y-8">
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Dimensions</h3>
-                {analysis?.dimensions && analysis.dimensions.length > 0 ? (
+          </>
+        ) : (
+          <>
+            <TabsList>
+              <TabsTrigger value="scores">Scores</TabsTrigger>
+              <TabsTrigger value="optimization">Optimization</TabsTrigger>
+              <TabsTrigger value="abtest">A/B Test</TabsTrigger>
+              <TabsTrigger value="versions">Versions</TabsTrigger>
+              <TabsTrigger value="governance">Governance</TabsTrigger>
+              <TabsTrigger value="analytics"><BarChart3 className="h-4 w-4 mr-1.5" />Analytics</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="scores" className="mt-6 space-y-8">
+              <PerformanceChart
+                timeSeries={chartData}
+                dimensionNames={(metrics?.dimensions ?? []).map((d) => d.name)}
+              />
+
+              {scoresLoading ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-80 rounded-xl" />
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {analysis.dimensions.map((dim) => {
-                      const isWeak = analysis.weakDimensions.includes(dim.name)
-                      const metric = metrics?.dimensions.find((m) => m.name === dim.name)
-                      return (
-                        <motion.div
-                          key={dim.name}
-                          initial={{ opacity: 0, scale: 0.97 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.25 }}
-                        >
-                          <div className={cn(
-                            "rounded-xl border bg-card/50 overflow-hidden",
-                            isWeak && "border-amber-500/30 bg-amber-500/5"
-                          )}>
-                            <div className="p-4 flex flex-row items-center justify-between pb-2">
-                              <span className="text-sm font-medium text-muted-foreground capitalize">{dim.name}</span>
-                              {isWeak && (
-                                <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-[10px] uppercase tracking-wider h-5 px-1.5 font-medium">
-                                  Improve
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="p-4 pt-0">
-                              <div className="flex items-baseline gap-1">
-                                <span className="text-2xl font-semibold tracking-tight text-foreground">{(dim.avgValue * 10).toFixed(1)}</span>
-                                <span className="text-sm text-muted-foreground font-medium">/ 10</span>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {metric ? metric.count : dim.sampleSize} samples
-                              </p>
-                              {metric && (metric.p50 != null || metric.p90 != null) && (
-                                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground/80 border-t pt-2.5">
-                                  {metric.p50 != null && (
-                                    <span>p50: <span className="font-medium text-muted-foreground">{metric.p50.toFixed(2)}</span></span>
-                                  )}
-                                  {metric.p90 != null && (
-                                    <span>p90: <span className="font-medium text-muted-foreground">{metric.p90.toFixed(2)}</span></span>
+                    {[0, 1, 2].map((i) => (
+                      <Skeleton key={i} className="h-32 rounded-xl" />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Dimensions</h3>
+                    {analysis?.dimensions && analysis.dimensions.length > 0 ? (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {analysis.dimensions.map((dim) => {
+                          const isWeak = analysis.weakDimensions.includes(dim.name)
+                          const metric = metrics?.dimensions.find((m) => m.name === dim.name)
+                          return (
+                            <motion.div
+                              key={dim.name}
+                              initial={{ opacity: 0, scale: 0.97 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.25 }}
+                            >
+                              <div className={cn(
+                                "rounded-xl border bg-card/50 overflow-hidden",
+                                isWeak && "border-amber-500/30 bg-amber-500/5"
+                              )}>
+                                <div className="p-4 flex flex-row items-center justify-between pb-2">
+                                  <span className="text-sm font-medium text-muted-foreground capitalize">{dim.name}</span>
+                                  {isWeak && (
+                                    <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-[10px] uppercase tracking-wider h-5 px-1.5 font-medium">
+                                      Improve
+                                    </Badge>
                                   )}
                                 </div>
-                              )}
-                            </div>
-                          </div>
-                        </motion.div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center py-12 text-muted-foreground text-sm border rounded-md border-dashed">
-                    No dimension scores available yet.
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Recent Ratings</h3>
-                {recentRatings.length === 0 ? (
-                  <div className="py-8 text-sm text-muted-foreground text-center border rounded-md border-dashed">
-                    No individual ratings in this time range yet.
-                  </div>
-                ) : (
-                  <div className="rounded-md border bg-card/50 overflow-hidden shadow-sm">
-                    <Table>
-                      <TableHeader className="bg-muted/30">
-                        <TableRow>
-                          <TableHead className="h-9">Type</TableHead>
-                          <TableHead className="h-9">Score</TableHead>
-                          <TableHead className="h-9">Trace ID</TableHead>
-                          <TableHead className="h-9">Feedback</TableHead>
-                          <TableHead className="h-9 text-right">Timestamp</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {recentRatings.map((entry) => {
-                          const numericScore = getEventDataValue(entry.eventData, ["score", "rating", "value"])
-                          const traceId = getEventDataValue(entry.eventData, ["traceId", "langfuseTraceId", "trace_id", "sessionTraceId"])
-                          const feedback = getEventDataValue(entry.eventData, ["feedback", "comment", "reason", "notes"])
-
-                          return (
-                            <TableRow key={entry.id} className="hover:bg-muted/20">
-                              <TableCell className="py-2.5">
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "uppercase tracking-wide text-[10px] font-medium h-5",
-                                    entry.eventType === "thumbs_up" && "text-emerald-500 border-emerald-500/30 bg-emerald-500/5",
-                                    entry.eventType === "thumbs_down" && "text-rose-500 border-rose-500/30 bg-rose-500/5"
+                                <div className="p-4 pt-0">
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-2xl font-semibold tracking-tight text-foreground">{(dim.avgValue * 10).toFixed(1)}</span>
+                                    <span className="text-sm text-muted-foreground font-medium">/ 10</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {metric ? metric.count : dim.sampleSize} samples
+                                  </p>
+                                  {metric && (metric.p50 != null || metric.p90 != null) && (
+                                    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground/80 border-t pt-2.5">
+                                      {metric.p50 != null && (
+                                        <span>p50: <span className="font-medium text-muted-foreground">{metric.p50.toFixed(2)}</span></span>
+                                      )}
+                                      {metric.p90 != null && (
+                                        <span>p90: <span className="font-medium text-muted-foreground">{metric.p90.toFixed(2)}</span></span>
+                                      )}
+                                    </div>
                                   )}
-                                >
-                                  {entry.eventType}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="py-2.5 font-medium text-sm">
-                                {typeof numericScore === "number"
-                                  ? numericScore
-                                  : entry.eventType === "thumbs_up"
-                                    ? "\uD83D\uDC4D"
-                                    : entry.eventType === "thumbs_down"
-                                      ? "\uD83D\uDC4E"
-                                      : "-"}
-                              </TableCell>
-                              <TableCell className="py-2.5 font-mono text-xs text-muted-foreground max-w-[180px] truncate">
-                                {typeof traceId === "string" ? traceId : "-"}
-                              </TableCell>
-                              <TableCell className="py-2.5 max-w-[280px] truncate text-sm text-muted-foreground">
-                                {typeof feedback === "string" ? feedback : "-"}
-                              </TableCell>
-                              <TableCell className="py-2.5 text-right text-xs text-muted-foreground whitespace-nowrap">
-                                {new Date(entry.createdAt).toLocaleString(undefined, {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </TableCell>
-                            </TableRow>
+                                </div>
+                              </div>
+                            </motion.div>
                           )
                         })}
-                      </TableBody>
-                    </Table>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center py-12 text-muted-foreground text-sm border rounded-md border-dashed">
+                        No dimension scores available yet.
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-        </TabsContent>
 
-        <TabsContent value="optimization" className="mt-6">
-          <PromptComparison
-            currentPrompt={currentVersionPrompt}
-            proposedPrompt={draftVersion?.prompt || ""}
-            changelog={draftVersion?.changelog || ""}
-            draftVersionId={draftVersion?.id || ""}
-            webletId={selectedWebletId}
-            loading={optimizing}
-            onOptimize={handleOptimize}
-            onStartTest={handleStartTest}
-            onDeploy={handleDeploy}
-          />
-        </TabsContent>
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Recent Ratings</h3>
+                    {recentRatings.length === 0 ? (
+                      <div className="py-8 text-sm text-muted-foreground text-center border rounded-md border-dashed">
+                        No individual ratings in this time range yet.
+                      </div>
+                    ) : (
+                      <div className="rounded-md border bg-card/50 overflow-hidden shadow-sm">
+                        <Table>
+                          <TableHeader className="bg-muted/30">
+                            <TableRow>
+                              <TableHead className="h-9">Type</TableHead>
+                              <TableHead className="h-9">Score</TableHead>
+                              <TableHead className="h-9">Trace ID</TableHead>
+                              <TableHead className="h-9">Feedback</TableHead>
+                              <TableHead className="h-9 text-right">Timestamp</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {recentRatings.map((entry) => {
+                              const numericScore = getEventDataValue(entry.eventData, ["score", "rating", "value"])
+                              const traceId = getEventDataValue(entry.eventData, ["traceId", "langfuseTraceId", "trace_id", "sessionTraceId"])
+                              const feedback = getEventDataValue(entry.eventData, ["feedback", "comment", "reason", "notes"])
 
-        <TabsContent value="abtest" className="mt-6">
-          <ABTestStatus
-            webletId={selectedWebletId}
-            onConclude={handleConcludeTest}
-            onCancel={handleCancelTest}
-          />
-        </TabsContent>
+                              return (
+                                <TableRow key={entry.id} className="hover:bg-muted/20">
+                                  <TableCell className="py-2.5">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "uppercase tracking-wide text-[10px] font-medium h-5",
+                                        entry.eventType === "thumbs_up" && "text-emerald-500 border-emerald-500/30 bg-emerald-500/5",
+                                        entry.eventType === "thumbs_down" && "text-rose-500 border-rose-500/30 bg-rose-500/5"
+                                      )}
+                                    >
+                                      {entry.eventType}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="py-2.5 font-medium text-sm">
+                                    {typeof numericScore === "number"
+                                      ? numericScore
+                                      : entry.eventType === "thumbs_up"
+                                        ? "\uD83D\uDC4D"
+                                        : entry.eventType === "thumbs_down"
+                                          ? "\uD83D\uDC4E"
+                                          : "-"}
+                                  </TableCell>
+                                  <TableCell className="py-2.5 font-mono text-xs text-muted-foreground max-w-[180px] truncate">
+                                    {typeof traceId === "string" ? traceId : "-"}
+                                  </TableCell>
+                                  <TableCell className="py-2.5 max-w-[280px] truncate text-sm text-muted-foreground">
+                                    {typeof feedback === "string" ? feedback : "-"}
+                                  </TableCell>
+                                  <TableCell className="py-2.5 text-right text-xs text-muted-foreground whitespace-nowrap">
+                                    {new Date(entry.createdAt).toLocaleString(undefined, {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
 
-        <TabsContent value="versions" className="mt-6">
-          <VersionHistory
-            versions={versions}
-            webletId={selectedWebletId}
-            onRollback={handleRollback}
-            onStartTest={handleStartTest}
-            onDeploy={handleDeploy}
-          />
-        </TabsContent>
+            <TabsContent value="optimization" className="mt-6">
+              <PromptComparison
+                currentPrompt={currentVersionPrompt}
+                proposedPrompt={draftVersion?.prompt || ""}
+                changelog={draftVersion?.changelog || ""}
+                draftVersionId={draftVersion?.id || ""}
+                webletId={selectedWebletId}
+                loading={optimizing}
+                onOptimize={handleOptimize}
+                onStartTest={handleStartTest}
+                onDeploy={handleDeploy}
+              />
+            </TabsContent>
 
-        <TabsContent value="governance" className="mt-6">
-          <GovernancePanel webletId={selectedWebletId} />
-        </TabsContent>
+            <TabsContent value="abtest" className="mt-6">
+              <ABTestStatus
+                webletId={selectedWebletId}
+                onConclude={handleConcludeTest}
+                onCancel={handleCancelTest}
+              />
+            </TabsContent>
 
-        <TabsContent value="analytics" className="mt-6">
-          {selectedWebletId && (
-            <AnalyticsTab webletId={selectedWebletId} />
-          )}
-        </TabsContent>
+            <TabsContent value="versions" className="mt-6">
+              <VersionHistory
+                versions={versions}
+                webletId={selectedWebletId}
+                onRollback={handleRollback}
+                onStartTest={handleStartTest}
+                onDeploy={handleDeploy}
+              />
+            </TabsContent>
+
+            <TabsContent value="governance" className="mt-6">
+              <GovernancePanel webletId={selectedWebletId} />
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-6">
+              {selectedWebletId && (
+                <AnalyticsTab webletId={selectedWebletId} />
+              )}
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </div>
   )

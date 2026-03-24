@@ -1,0 +1,12 @@
+// V2 RSIL Components - New Redesigned Interface
+export { HealthScoreTab } from "./tabs/health-score-tab"
+export { ImprovementsTab } from "./tabs/improvements-tab"
+export { SettingsTab } from "./tabs/settings-tab"
+export { AchievementBadge } from "./achievement-badge"
+export { PresetSelector } from "./preset-selector"
+export { ShadowModeTeaser } from "./shadow-mode-teaser"
+export { BeforeAfterComparison } from "./before-after-comparison"
+export { UpgradeCTA } from "./upgrade-cta"
+export type { PresetSelectorProps } from "./preset-selector"
+export type { BeforeAfterComparisonProps, DimensionImprovement } from "./before-after-comparison"
+export type { UpgradeCTAProps } from "./upgrade-cta"

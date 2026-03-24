@@ -77,6 +77,8 @@ export interface ABTestStatus {
   canConclude: boolean
   minDurationMet: boolean
   minSamplesMet: boolean
+  maxDurationReached: boolean
+  durationWinner: 'control' | 'variant' | 'none'
 }
 
 /**
@@ -91,7 +93,8 @@ export interface ABTestStatus {
  */
 export function calculateSignificance(
   control: { good: number; total: number },
-  variant: { good: number; total: number }
+  variant: { good: number; total: number },
+  significanceThreshold = 0.05
 ): SignificanceResult {
   // Handle edge cases
   if (control.total === 0 || variant.total === 0) {
@@ -132,7 +135,7 @@ export function calculateSignificance(
   const pValue = 2 * (1 - normalCDF(Math.abs(zScore)))
 
   // Determine significance and winner
-  const significant = pValue < 0.05
+  const significant = pValue < significanceThreshold
 
   let winner: 'control' | 'variant' | 'none' = 'none'
   if (significant) {
@@ -148,7 +151,7 @@ export function calculateSignificance(
     zScore,
     pValue,
     winner,
-    confidenceLevel: 0.95,
+    confidenceLevel: 1 - significanceThreshold,
   }
 }
 
@@ -191,10 +194,19 @@ export function shouldServeVariant(userId: string, webletId: string, trafficPct:
 
 export async function getABTestStatus(
   webletId: string,
-  opts?: { minTestDurationHours?: number; minScoresPerVersion?: number }
+  opts?: {
+    minTestDurationHours?: number
+    maxTestDurationHours?: number
+    minScoresPerVersion?: number
+    significanceThreshold?: number
+    goodScoreThreshold?: number
+  }
 ): Promise<ABTestStatus | null> {
   const minTestDurationHours = opts?.minTestDurationHours ?? 24
+  const maxTestDurationHours = opts?.maxTestDurationHours ?? 168
   const minScoresPerVersion = opts?.minScoresPerVersion ?? 30
+  const significanceThreshold = opts?.significanceThreshold ?? 0.05
+  const goodScoreThreshold = opts?.goodScoreThreshold ?? 0.6
 
   const [controlVersion, variantVersion] = await Promise.all([
     prisma.webletVersion.findFirst({
@@ -255,7 +267,10 @@ export async function getABTestStatus(
 
     const computeScores = (data: Array<{ name: string; value: number }>) => {
       const total = data.length
-      const good = data.filter((s) => s.value >= (s.name === 'user-rating' ? 3 : 0.5)).length
+      const good = data.filter((s) => {
+        const normalizedScore = s.name === 'user-rating' ? s.value / 5 : s.value
+        return normalizedScore >= goodScoreThreshold
+      }).length
       return { total, good }
     }
 
@@ -267,15 +282,31 @@ export async function getABTestStatus(
 
   const significance =
     controlScores.total > 0 && variantScores.total > 0
-      ? calculateSignificance(controlScores, variantScores)
+      ? calculateSignificance(controlScores, variantScores, significanceThreshold)
       : null
 
   const startedAt = variantVersion.abTestStartedAt ?? variantVersion.createdAt
   const minDurationMs = minTestDurationHours * 60 * 60 * 1000
+  const maxDurationMs = maxTestDurationHours * 60 * 60 * 1000
+  const elapsedMs = Date.now() - startedAt.getTime()
   const minDurationMet = Date.now() - startedAt.getTime() >= minDurationMs
+  const maxDurationReached = elapsedMs >= maxDurationMs
   const minSamplesMet =
     controlScores.total >= minScoresPerVersion && variantScores.total >= minScoresPerVersion
-  const canConclude = minDurationMet && minSamplesMet && significance?.significant === true
+
+  const controlRate = controlScores.total > 0 ? controlScores.good / controlScores.total : 0
+  const variantRate = variantScores.total > 0 ? variantScores.good / variantScores.total : 0
+  const durationWinner: 'control' | 'variant' | 'none' =
+    variantRate > controlRate
+      ? 'variant'
+      : controlRate > variantRate
+        ? 'control'
+        : maxDurationReached
+          ? 'control'
+          : 'none'
+
+  const canConclude =
+    (minDurationMet && minSamplesMet && significance?.significant === true) || maxDurationReached
 
   return {
     controlVersion: {
@@ -298,6 +329,8 @@ export async function getABTestStatus(
     canConclude,
     minDurationMet,
     minSamplesMet,
+    maxDurationReached,
+    durationWinner,
   }
 }
 

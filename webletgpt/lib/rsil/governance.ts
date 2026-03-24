@@ -29,6 +29,12 @@ export interface RSILGovernance {
   /** Statistical significance threshold (p-value) for declaring winner; 0.05 = 95% confidence */
   significanceThreshold: number
 
+  maxTestDurationHours: number
+
+  goodScoreThreshold: number
+
+  optimizationScoreThreshold: number
+
   /** Deployment strategy: instant rollout or canary with staged traffic increases */
   deploymentStrategy: 'instant' | 'canary'
 
@@ -79,6 +85,21 @@ export const RSILGovernanceSchema = z.object({
     .min(0.01)
     .max(0.5)
     .default(0.05),
+  maxTestDurationHours: z
+    .number()
+    .int()
+    .min(1)
+    .default(168),
+  goodScoreThreshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.6),
+  optimizationScoreThreshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.7),
   deploymentStrategy: z
     .enum(['instant', 'canary'])
     .default('canary'),
@@ -120,6 +141,9 @@ export const DEFAULT_GOVERNANCE: RSILGovernance = {
   minTestDurationHours: 48,
   minScoresPerVersion: 50,
   significanceThreshold: 0.05,
+  maxTestDurationHours: 168,
+  goodScoreThreshold: 0.6,
+  optimizationScoreThreshold: 0.7,
   deploymentStrategy: 'canary',
   canaryStages: [10, 50, 100],
   monitoringWindowHours: 48,
