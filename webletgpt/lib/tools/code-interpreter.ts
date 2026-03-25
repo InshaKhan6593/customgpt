@@ -66,7 +66,9 @@ export function createCodeInterpreterTool(persistentSandbox?: any) {
         } catch { /* non-fatal */ }
     }
 
-    const artifactsDir = path.join(process.cwd(), 'public', 'artifacts')
+    const artifactsDir = process.env.VERCEL
+        ? path.join('/tmp', 'artifacts')
+        : path.join(process.cwd(), 'public', 'artifacts')
 
     return {
         description: TOOL_DESCRIPTION,
