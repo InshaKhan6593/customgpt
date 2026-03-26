@@ -112,11 +112,11 @@ export function PerformanceTrendChart({
       </CardHeader>
       <CardContent className="px-2 pb-5 sm:px-5">
         {isEmpty ? (
-          <div className="flex items-center justify-center h-[300px] text-sm text-muted-foreground border-dashed border-border/50 rounded-md bg-transparent">
+          <div className="flex items-center justify-center h-[220px] text-sm text-muted-foreground border-dashed border-border/50 rounded-md bg-transparent">
             Performance trend will appear here after your weblet receives conversations
           </div>
         ) : (
-          <ChartContainer config={chartConfig} className="h-[300px] w-full">
+          <ChartContainer config={chartConfig} className="h-[220px] w-full">
             <AreaChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
               <XAxis

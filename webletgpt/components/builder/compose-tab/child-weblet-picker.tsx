@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ChevronsUpDown, Loader2, Plus, Puzzle, Search } from "lucide-react"
+import { AlertTriangle, ChevronsUpDown, Loader2, Plus, Puzzle, Search } from "lucide-react"
 import { toast } from "sonner"
 
 type SearchResult = {
@@ -17,6 +17,9 @@ type SearchResult = {
     iconUrl: string | null
     category: string
     developer: { name: string | null }
+    isOwnedByCurrentUser?: boolean
+    isSelectable?: boolean
+    disabledReason?: string | null
 }
 
 type ChildWebletPickerProps = {
@@ -73,9 +76,13 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
     }, [])
 
     const fetchWeblets = async () => {
+        if (!webletId) {
+            return
+        }
+
         setIsLoading(true)
         try {
-            const res = await fetch(`/api/weblets/search?exclude=${webletId}&limit=200`)
+            const res = await fetch(`/api/weblets/search?exclude=${encodeURIComponent(webletId)}&limit=200`)
             if (!res.ok) throw new Error("Search failed")
             const data = await res.json()
             setResults(data.weblets || [])
@@ -122,8 +129,8 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
 
     const existingSet = new Set(existingChildIds)
     const allAvailableResults = useMemo(
-        () => results.filter((result) => !existingSet.has(result.id)),
-        [results, existingChildIds]
+        () => results.filter((result) => !existingSet.has(result.id) && result.id !== webletId && result.slug !== webletId),
+        [results, existingChildIds, webletId]
     )
 
     const filteredResults = useMemo(() => {
@@ -177,17 +184,21 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
                                 <div className="max-h-72 overflow-y-auto p-1 space-y-1">
                                     {filteredResults.map((result) => {
                                         const isAdding = addingId === result.id
+                                        const isSelectable = result.isSelectable !== false
+                                        const disabledReason = result.disabledReason || "Not selectable"
+                                        const sourceLabel = result.isOwnedByCurrentUser ? "Yours" : "Marketplace"
 
                                         return (
                                             <Button
                                                 key={result.id}
                                                 variant="ghost"
                                                 onClick={() => {
-                                                    if (!isAdding) {
+                                                    if (!isAdding && isSelectable) {
                                                         void handleAdd(result.id, result.name)
                                                     }
                                                 }}
-                                                disabled={isAdding}
+                                                disabled={isAdding || !isSelectable}
+                                                aria-disabled={!isSelectable}
                                                 className="w-full h-auto justify-start p-2 gap-3"
                                             >
                                                 <Avatar className="size-8 rounded-md shrink-0">
@@ -203,14 +214,29 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
                                                         <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
                                                             {result.category.replace("_", " ")}
                                                         </Badge>
+                                                        <Badge variant={result.isOwnedByCurrentUser ? "secondary" : "outline"} className="text-[10px] px-1 py-0 shrink-0">
+                                                            {sourceLabel}
+                                                        </Badge>
                                                     </div>
                                                     <p className="text-xs text-muted-foreground truncate">
                                                         {result.description || "No description"}
                                                     </p>
+                                                    {!result.isOwnedByCurrentUser && result.developer?.name && (
+                                                        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                                            By {result.developer.name}
+                                                        </p>
+                                                    )}
+                                                    {!isSelectable && (
+                                                        <p className="text-[11px] text-amber-600 truncate mt-0.5">
+                                                            {disabledReason}
+                                                        </p>
+                                                    )}
                                                 </div>
 
                                                 {isAdding ? (
                                                     <Loader2 className="size-3.5 animate-spin shrink-0 text-muted-foreground" />
+                                                ) : !isSelectable ? (
+                                                    <AlertTriangle className="size-3.5 shrink-0 text-amber-600" />
                                                 ) : (
                                                     <Plus className="size-3.5 shrink-0 text-muted-foreground" />
                                                 )}

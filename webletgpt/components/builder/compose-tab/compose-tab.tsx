@@ -71,11 +71,11 @@ export function ComposeTab({ webletId }: ComposeTabProps) {
 
             {/* Connected Children */}
             {compositions.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                     <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Child Weblets ({compositions.length})
                     </h3>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         {compositions.map((comp) => (
                             <CompositionCard
                                 key={comp.id}

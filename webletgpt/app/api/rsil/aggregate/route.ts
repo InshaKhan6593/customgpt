@@ -270,6 +270,15 @@ export async function GET() {
           where: { chatSession: { webletId: weblet.id } },
         })
 
+        const lastOptimizedVersion = await prisma.webletVersion.findFirst({
+          where: {
+            webletId: weblet.id,
+            abTestWinner: true,
+          },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        })
+
         return {
           webletId: weblet.id,
           webletName: weblet.name,
@@ -277,6 +286,7 @@ export async function GET() {
           dimensions: analysis.dimensions,
           interactionCount,
           decision: analysis.decision,
+          lastOptimizedAt: lastOptimizedVersion?.createdAt ?? null,
         }
       })
     )

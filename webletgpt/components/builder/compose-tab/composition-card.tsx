@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -64,75 +63,68 @@ export function CompositionCard({ composition, webletId, onUpdate }: Composition
     }
 
     return (
-        <Card>
-            <CardContent className="p-3">
-                <div className="flex items-center gap-3">
-                    {/* Icon */}
-                    <Avatar className="size-9 rounded-md">
-                        <AvatarImage src={child.iconUrl || undefined} alt={child.name} className="rounded-md object-cover" />
-                        <AvatarFallback className="rounded-md bg-violet-500/10 text-violet-500">
-                            <Puzzle className="size-4" />
-                        </AvatarFallback>
-                    </Avatar>
+        <div className="rounded-lg border bg-card px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+                <Avatar className="size-8 rounded-md shrink-0">
+                    <AvatarImage src={child.iconUrl || undefined} alt={child.name} className="rounded-md object-cover" />
+                    <AvatarFallback className="rounded-md bg-violet-500/10 text-violet-500">
+                        <Puzzle className="size-3.5" />
+                    </AvatarFallback>
+                </Avatar>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{child.name}</span>
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                {child.category.replace("_", " ")}
-                            </Badge>
-                            {!child.isActive && (
-                                <Badge variant="destructive" className="text-[10px] px-1 py-0">Inactive</Badge>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-muted-foreground truncate">
-                                {child.description || `weblet_${child.slug}`}
-                            </span>
-                        </div>
-                        {composition.triggerCondition && (
-                            <span className="text-[11px] text-muted-foreground italic mt-0.5 block">
-                                Trigger: {composition.triggerCondition}
-                            </span>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-medium truncate">{child.name}</span>
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">
+                            {child.category.replace("_", " ")}
+                        </Badge>
+                        {!child.isActive && (
+                            <Badge variant="destructive" className="text-[10px] px-1 py-0 shrink-0">Inactive</Badge>
                         )}
                     </div>
-
-                    {/* Tool name preview */}
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono shrink-0">
-                        weblet_{child.slug}
-                    </Badge>
-
-                    {/* Delete */}
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-destructive hover:text-destructive shrink-0"
-                                title="Remove child"
-                            >
-                                <Trash2 className="size-3.5" />
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Remove {child.name}?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This weblet will no longer be available as a tool during conversations.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDelete} disabled={isDeleting}>
-                                    {isDeleting ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
-                                    Remove
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {child.description || `weblet_${child.slug}`}
+                    </p>
                 </div>
-            </CardContent>
-        </Card>
+
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono shrink-0 hidden md:inline-flex">
+                    weblet_{child.slug}
+                </Badge>
+
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-destructive hover:text-destructive shrink-0"
+                            title="Remove child"
+                        >
+                            <Trash2 className="size-3.5" />
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Remove {child.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This weblet will no longer be available as a tool during conversations.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleDelete} disabled={isDeleting}>
+                                {isDeleting ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
+                                Remove
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
+
+            {composition.triggerCondition && (
+                <p className="text-[11px] text-muted-foreground italic mt-1.5 pl-10">
+                    Trigger: {composition.triggerCondition}
+                </p>
+            )}
+        </div>
     )
 }

@@ -30,6 +30,7 @@ export async function GET() {
         id: weblet.id,
         name: weblet.name,
         slug: weblet.slug,
+        iconUrl: weblet.iconUrl,
         rsilEnabled: weblet.rsilEnabled,
         totalVersions: weblet._count.versions,
         interactionCount,

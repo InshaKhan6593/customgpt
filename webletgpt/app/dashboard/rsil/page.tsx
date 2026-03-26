@@ -15,6 +15,7 @@ type WebletOverview = {
   id: string
   name: string
   slug: string
+  iconUrl: string | null
   rsilEnabled: boolean
   totalVersions?: number
   interactionCount: number
@@ -30,7 +31,8 @@ type PerWebletScore = {
   compositeScore: number
   dimensions: Array<{ dimension: string; avgValue: number }>
   interactionCount: number
-  decision: string
+  decision: "NONE" | "SUGGESTION" | "AUTO_UPDATE"
+  lastOptimizedAt: string | null
 }
 
 type AggregateResponse = {
@@ -120,7 +122,12 @@ export default function RSILLandingPage() {
     return {
       id: weblet.id,
       name: weblet.name,
+      iconUrl: weblet.iconUrl,
+      interactionCount: weblet.interactionCount,
+      totalVersions: weblet.totalVersions ?? 0,
       compositeScore: hasScoreData ? scoreData.compositeScore : null,
+      decision: hasScoreData ? scoreData.decision : null,
+      lastOptimizedAt: hasScoreData ? scoreData.lastOptimizedAt : null,
       status: hasScoreData ? ("active" as const) : ("pending" as const),
     }
   })

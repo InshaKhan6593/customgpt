@@ -35,12 +35,23 @@ export async function GET(req: NextRequest) {
         }
 
         const query = searchParams.get("q") || ""
-        const excludeId = searchParams.get("exclude") || ""
+        const exclude = (searchParams.get("exclude") || "").trim()
+
+        const excludeFilter = exclude
+            ? {
+                NOT: {
+                    OR: [
+                        { id: exclude },
+                        { slug: exclude },
+                    ],
+                },
+            }
+            : null
 
         const weblets = await prisma.weblet.findMany({
             where: {
                 AND: [
-                    { id: { not: excludeId } },
+                    ...(excludeFilter ? [excludeFilter] : []),
                     { isActive: true },
                     {
                         OR: [
@@ -66,6 +77,7 @@ export async function GET(req: NextRequest) {
                 description: true,
                 iconUrl: true,
                 category: true,
+                developerId: true,
                 developer: {
                     select: { name: true },
                 },
@@ -74,7 +86,53 @@ export async function GET(req: NextRequest) {
             orderBy: { name: "asc" },
         })
 
-        return NextResponse.json({ weblets })
+        let blockedByCycle = new Set<string>()
+
+        if (exclude) {
+            const parentWeblet = await prisma.weblet.findFirst({
+                where: {
+                    OR: [{ id: exclude }, { slug: exclude }],
+                },
+                select: { id: true },
+            })
+
+            if (parentWeblet) {
+                blockedByCycle.add(parentWeblet.id)
+
+                const visited = new Set<string>([parentWeblet.id])
+                const queue = [parentWeblet.id]
+
+                while (queue.length > 0) {
+                    const batch = queue.splice(0, 100)
+                    const directParents = await prisma.webletComposition.findMany({
+                        where: { childWebletId: { in: batch } },
+                        select: { parentWebletId: true },
+                    })
+
+                    for (const relation of directParents) {
+                        if (!visited.has(relation.parentWebletId)) {
+                            visited.add(relation.parentWebletId)
+                            blockedByCycle.add(relation.parentWebletId)
+                            queue.push(relation.parentWebletId)
+                        }
+                    }
+                }
+            }
+        }
+
+        const enrichedWeblets = weblets.map((weblet) => {
+            const isSelectable = !blockedByCycle.has(weblet.id)
+            const isOwnedByCurrentUser = weblet.developerId === session.user.id
+
+            return {
+                ...weblet,
+                isOwnedByCurrentUser,
+                isSelectable,
+                disabledReason: isSelectable ? null : "Would create circular dependency",
+            }
+        })
+
+        return NextResponse.json({ weblets: enrichedWeblets })
     } catch (error) {
         console.error("Weblet search error:", error)
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
