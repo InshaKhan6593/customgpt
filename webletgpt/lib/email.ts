@@ -34,8 +34,17 @@ export async function sendVerificationRequest(params: {
     if (match) token = match[1];
   }
 
+  // Log OTP to console in development so local dev works without a verified Resend domain
+  if (process.env.NODE_ENV === "development") {
+    console.log(
+      `\n========================================\n` +
+        `  [DEV] Login OTP for ${identifier}: ${token}\n` +
+        `========================================\n`,
+    );
+  }
+
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: "WebletGPT <noreply@webletgpt.com>", // Update this to verified domain when going to prod
       to: [identifier],
       subject: `Sign in to WebletGPT`,
@@ -53,8 +62,27 @@ export async function sendVerificationRequest(params: {
         </div>
       `,
     });
+
+    if (error) {
+      console.error("Resend API error:", error);
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          "[DEV] Email delivery failed — use the OTP code logged above to sign in locally.",
+        );
+        return;
+      }
+      throw new Error(`Failed to send verification email: ${error.message}`);
+    }
+
+    console.log("Verification email sent successfully:", data?.id);
   } catch (error) {
     console.error("Failed to send verification email:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        "[DEV] Email send threw an error — use the OTP code logged above to sign in locally.",
+      );
+      return;
+    }
     throw new Error("Failed to send verification email.");
   }
 }
