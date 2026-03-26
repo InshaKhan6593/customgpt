@@ -42,6 +42,7 @@ export function PreviewChat({ state, webletId }: { state: BuilderState, webletId
 
   const { messages, setMessages, sendMessage, status } = useChat({
     id: "preview-chat-session",
+    experimental_throttle: 50,
     transport: new DefaultChatTransport({
       api: "/api/chat",
       body: {

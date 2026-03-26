@@ -43,6 +43,7 @@ const VALID_IMAGE_MODELS = [
   "google/gemini-3-pro-image-preview",
   "openai/gpt-5-image-mini",
   "openai/gpt-5-image",
+  "sourceful/riverflow-v2-pro",
 ]
 const DEFAULT_IMAGE_MODEL = VALID_IMAGE_MODELS[0]
 
@@ -112,6 +113,7 @@ export function CapabilitiesTab({ state, onUpdate }: CapabilitiesTabProps) {
                   <SelectItem value="google/gemini-3-pro-image-preview">Gemini 3 Pro Image — Higher quality</SelectItem>
                   <SelectItem value="openai/gpt-5-image-mini">GPT-5 Image Mini — Great quality, affordable</SelectItem>
                   <SelectItem value="openai/gpt-5-image">GPT-5 Image — Best quality, premium</SelectItem>
+                  <SelectItem value="sourceful/riverflow-v2-pro">Riverflow V2 Pro — Sourceful</SelectItem>
                 </SelectContent>
               </Select>
             </div>
