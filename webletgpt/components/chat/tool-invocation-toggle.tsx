@@ -21,6 +21,7 @@ const TOOL_DISPLAY_NAMES: Record<string, { label: string; action: string }> = {
   codeInterpreter: { label: "Code Interpreter", action: "Running code" },
   imageGeneration: { label: "Image Generation", action: "Generating image" },
   fileSearch: { label: "File Search", action: "Searching files" },
+  presentToUser: { label: "Present to User", action: "Presenting artifact" },
 }
 
 /** Split camelCase into readable words */
@@ -193,6 +194,17 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
   }
 
   const isPresentToUser = toolName === "presentToUser"
+
+  // Guarantee the shimmer is visible for at least 600ms so the user always sees
+  // the "Presenting artifact…" loading state, even when the tool resolves instantly.
+  const [shimmerHold, setShimmerHold] = useState(true)
+  const shimmerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!isPresentToUser) return
+    shimmerTimerRef.current = setTimeout(() => setShimmerHold(false), 600)
+    return () => { if (shimmerTimerRef.current) clearTimeout(shimmerTimerRef.current) }
+  }, [isPresentToUser])
+
   if (isPresentToUser) {
     const presented = isDone && output && typeof output === "object" && (output as any).presented
     const artifactType = (output as any)?.type
@@ -201,7 +213,7 @@ export function ToolInvocationToggle({ part, onMCPAuthComplete }: ToolInvocation
     const artifactCaption = (output as any)?.caption
     const artifactFileName = (output as any)?.fileName
 
-    if (isLoading) {
+    if (isLoading || shimmerHold) {
       return (
         <div className="my-1.5 py-0.5">
           <span className="text-sm font-medium tool-shimmer">

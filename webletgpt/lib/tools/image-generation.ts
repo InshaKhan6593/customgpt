@@ -18,6 +18,21 @@ import { storeImage } from "./image-store"
 
 const FETCH_TIMEOUT_MS = 60_000 // 60s — image generation can be slow
 
+/**
+ * Models that ONLY output images (no text).
+ * These require modalities: ["image"] on OpenRouter.
+ * Models that output both text+image (e.g. Gemini) use ["image", "text"].
+ */
+const IMAGE_ONLY_MODEL_PREFIXES = [
+  "sourceful/",
+  "black-forest-labs/",
+] as const
+
+function getOpenRouterModalities(modelId: string): string[] {
+  const isImageOnly = IMAGE_ONLY_MODEL_PREFIXES.some(prefix => modelId.startsWith(prefix))
+  return isImageOnly ? ["image"] : ["image", "text"]
+}
+
 export const imageGenerationTool = (modelId: string = "dall-e-3") => ({
   description: `Invoke an image generation model to create a custom visual image based on a text prompt.
 
@@ -32,7 +47,7 @@ HOW IT WORKS:
   toModelOutput: ({ output: result }: { toolCallId: string; input: unknown; output: any }) => {
     if (result?.error) return { type: 'text' as const, value: result.error }
     const url = result?.url || ''
-    return { type: 'text' as const, value: `Image generated successfully at url: ${url}` }
+    return { type: 'text' as const, value: `Image generated successfully. Call presentToUser with type "image" and url "${url}" to display it. Do NOT embed the URL in markdown.` }
   },
   inputSchema: z.object({
     prompt: z.string().describe("A highly detailed, descriptive prompt for the image generator. You MUST specify the style (e.g., photorealistic, watercolor, 3D render), lighting, composition, time period, and color scheme. Do not request text rendering inside the image. Be extremely specific."),
@@ -182,7 +197,7 @@ async function generateWithOpenRouter(prompt: string, modelId: string): Promise<
       body: JSON.stringify({
         model: modelId,
         messages: [{ role: "user", content: prompt }],
-        modalities: ["image", "text"],
+        modalities: getOpenRouterModalities(modelId),
       }),
       signal: controller.signal,
     })

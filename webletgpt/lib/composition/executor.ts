@@ -1,4 +1,5 @@
 import { generateText, stepCountIs } from "ai"
+import type { ModelMessage, StepResult } from "ai"
 import { stopWhenAny, noProgressDetected } from "@/lib/ai/stop-conditions"
 import { getLanguageModel } from "@/lib/ai/openrouter"
 import { getActiveVersion } from "@/lib/chat/engine"
@@ -17,9 +18,12 @@ import { checkQuotas } from "@/lib/billing/quota-check"
 // Token budget for child agent's context — triggers compaction when exceeded
 const CHILD_CONTEXT_BUDGET = 24_000
 
-// Hard timeout for a single child-weblet execution (3 minutes)
-// Prevents a runaway child from blocking the parent indefinitely.
-const CHILD_EXECUTION_TIMEOUT_MS = 3 * 60 * 1000
+// Per-attempt timeout. First attempt gets the full budget; retries get less
+// to cap total wall time at ~7 minutes worst case (180 + 120 + 120).
+const ATTEMPT_TIMEOUTS_MS = [3 * 60 * 1000, 2 * 60 * 1000, 2 * 60 * 1000]
+
+// Maximum retry attempts after a timeout (total calls = MAX_RETRIES + 1)
+const MAX_RETRIES = 2
 
 export interface ChildToolCallDetail {
     toolName: string
@@ -44,19 +48,6 @@ export interface ChildExecutionResult {
     durationMs: number
 }
 
-/**
- * Execute a child weblet by running a single message through the chat engine.
- *
- * Key production-grade properties:
- * - Persistent E2B sandbox: a single sandbox is created before generateText and
- *   shared across ALL codeInterpreter calls within this execution. Variables,
- *   installed packages, and files persist between calls — the child can do
- *   data loading → analysis → visualization without repeating setup.
- * - Hard timeout: AbortController cancels generateText after 3 minutes so a
- *   hung child never blocks the parent indefinitely.
- * - Safe cleanup: sandbox and MCP clients are always closed in a finally block.
- * - Billing: child token usage is logged to the child weblet's developer account.
- */
 export async function executeChildWeblet(
     childWebletId: string,
     message: string,
@@ -65,13 +56,11 @@ export async function executeChildWeblet(
 ): Promise<ChildExecutionResult> {
     const startTime = Date.now()
 
-    // Load child's active version (system prompt, model, openapiSchema)
     const activeVersion = await getActiveVersion(childWebletId)
     if (!activeVersion) {
         throw new Error("Child weblet has no active configuration")
     }
 
-    // Fetch child capabilities and MCP servers in one query
     const childWeblet = await prisma.weblet.findUnique({
         where: { id: childWebletId },
         select: {
@@ -87,26 +76,14 @@ export async function executeChildWeblet(
         }
     }
 
-    // ── Persistent E2B sandbox ──────────────────────────────────────────────
-    // Create ONE sandbox before generateText begins. All codeInterpreter calls
-    // share it — state (variables, imports, installed packages, /home/user files)
-    // persists across calls. Killed in the finally block.
     const caps = childWeblet?.capabilities as any
     const persistentSandbox = caps?.codeInterpreter
         ? await createPersistentSandbox()
         : null
 
-    // ── AbortController for hard timeout ───────────────────────────────────
-    const controller = new AbortController()
-    const timeoutHandle = setTimeout(
-        () => controller.abort(new Error(`Child weblet timed out after ${CHILD_EXECUTION_TIMEOUT_MS / 1000}s`)),
-        CHILD_EXECUTION_TIMEOUT_MS
-    )
-
     let mcpClients: Array<{ close: () => Promise<void> }> = []
 
     try {
-        // No presentToUser for children — only the parent/master presents artifacts.
         let tools = {
             ...getToolsFromCapabilities(
                 childWeblet?.capabilities,
@@ -115,7 +92,6 @@ export async function executeChildWeblet(
             ),
         }
 
-        // OpenAPI custom actions
         if (activeVersion.openapiSchema) {
             const openAPITools = getToolsFromOpenAPI(
                 typeof activeVersion.openapiSchema === "string"
@@ -125,7 +101,6 @@ export async function executeChildWeblet(
             tools = { ...tools, ...openAPITools }
         }
 
-        // MCP server tools
         if (childWeblet?.mcpServers && childWeblet.mcpServers.length > 0) {
             const mcpServers = childWeblet.mcpServers.map((s: any) => ({
                 ...s,
@@ -137,7 +112,6 @@ export async function executeChildWeblet(
             mcpClients = mcpResult.clients
         }
 
-        // Nested child compositions (recursive composability, capped at MAX_DEPTH)
         const childCompositions = await resolveCompositions(childWebletId)
         if (childCompositions.length > 0) {
             const childTools = createChildWebletTools(childCompositions, depth, userId)
@@ -147,23 +121,196 @@ export async function executeChildWeblet(
         const modelId = activeVersion.model || "anthropic/claude-3.5-sonnet"
         const model = getLanguageModel(modelId)
 
-        // ── System prompt ────────────────────────────────────────────────────
-        // The child's own developer-configured prompt is the foundation.
-        // We append sub-agent operating guidelines WITHOUT overriding the persona.
-        // First, build a capability summary so the child knows what tools it has.
-        const capabilityLines: string[] = []
-        if (caps?.codeInterpreter) capabilityLines.push('- **codeInterpreter**: Execute Python code, create files/scripts/apps/charts. Files saved to /home/user/ become downloadable artifacts.')
-        if (caps?.webSearch) capabilityLines.push('- **webSearch**: Search the web for live information.')
-        if (caps?.imageGen) capabilityLines.push('- **imageGeneration**: Generate images from text prompts.')
-        if (caps?.fileSearch) capabilityLines.push('- **fileSearch**: Search uploaded knowledge base documents.')
-        const mcpToolNames = Object.keys(tools).filter(t => t.startsWith('mcp_'))
-        if (mcpToolNames.length > 0) capabilityLines.push(`- **MCP tools**: ${mcpToolNames.map(t => `\`${t}\``).join(', ')}`)
+        const compositionPrompt = buildCompositionPrompt(activeVersion.prompt, caps, tools)
 
-        const capabilityBlock = capabilityLines.length > 0
-            ? `\n\n## Your Tools\n${capabilityLines.join('\n')}\nUse these proactively — do not describe what you would do, USE the tool.\n`
-            : ''
+        // ── Retry loop with resume ───────────────────────────────────────────
+        // On timeout, captured steps provide the conversation history to resume from.
+        // Sandbox and MCP clients stay alive across retries (cleaned in outer finally).
+        let currentMessages: ModelMessage[] = [{ role: "user", content: message }]
+        const allToolCalls: ChildToolCallDetail[] = []
+        const allArtifacts: PresentedArtifact[] = []
+        let totalStepsUsed = 0
+        let totalPromptTokens = 0
+        let totalCompletionTokens = 0
+        let finalText = ""
+        let lastError: Error | null = null
 
-        const compositionPrompt = `${activeVersion.prompt}${capabilityBlock}
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const timeoutMs = ATTEMPT_TIMEOUTS_MS[attempt] ?? ATTEMPT_TIMEOUTS_MS[ATTEMPT_TIMEOUTS_MS.length - 1]
+            const controller = new AbortController()
+            const timeoutHandle = setTimeout(
+                () => controller.abort(new Error(`Child weblet timed out after ${timeoutMs / 1000}s (attempt ${attempt + 1})`)),
+                timeoutMs,
+            )
+
+            const capturedSteps: StepResult<any>[] = []
+
+            try {
+                const remainingSteps = Math.max(3, 10 - totalStepsUsed)
+
+                const result = await generateText({
+                    model,
+                    system: compositionPrompt,
+                    messages: currentMessages,
+                    tools,
+                    stopWhen: stopWhenAny(stepCountIs(remainingSteps), noProgressDetected(5)),
+                    abortSignal: controller.signal,
+                    onStepFinish: (step: StepResult<any>) => {
+                        capturedSteps.push(step)
+                    },
+                    prepareStep: async ({ messages: stepMessages }) => {
+                        const compacted = await autoCompactMessages(stepMessages, CHILD_CONTEXT_BUDGET, model)
+                        return { messages: compacted }
+                    },
+                    experimental_telemetry: {
+                        isEnabled: true,
+                        metadata: {
+                            webletId: childWebletId,
+                            mode: "COMPOSITION",
+                            depth: String(depth),
+                            attempt: String(attempt + 1),
+                        },
+                    },
+                })
+
+                clearTimeout(timeoutHandle)
+
+                const { toolCalls, artifacts } = extractToolCallsAndArtifacts(result.steps ?? [])
+                allToolCalls.push(...toolCalls)
+                allArtifacts.push(...artifacts)
+                totalStepsUsed += result.steps?.length || 1
+
+                const usage = (result as any).totalUsage ?? result.usage
+                totalPromptTokens += (usage as any)?.promptTokens || (usage as any)?.inputTokens || 0
+                totalCompletionTokens += (usage as any)?.completionTokens || (usage as any)?.outputTokens || 0
+
+                finalText = result.text || ""
+                lastError = null
+                break
+            } catch (error: any) {
+                clearTimeout(timeoutHandle)
+                lastError = error
+
+                const isAbortError = error?.name === 'AbortError'
+                    || error?.message?.includes('timed out')
+                    || controller.signal.aborted
+
+                if (!isAbortError) throw error
+
+                if (capturedSteps.length > 0) {
+                    const { toolCalls, artifacts } = extractToolCallsAndArtifacts(capturedSteps)
+                    allToolCalls.push(...toolCalls)
+                    allArtifacts.push(...artifacts)
+                    totalStepsUsed += capturedSteps.length
+
+                    const lastStep = capturedSteps[capturedSteps.length - 1] as any
+                    const resumeMessages = lastStep?.response?.messages
+                    if (resumeMessages && Array.isArray(resumeMessages) && resumeMessages.length > 0) {
+                        currentMessages = [
+                            { role: "user" as const, content: message },
+                            ...resumeMessages,
+                        ]
+                    }
+
+                    finalText = lastStep?.text || finalText
+
+                    for (const step of capturedSteps) {
+                        const stepUsage = (step as any).usage
+                        if (stepUsage) {
+                            totalPromptTokens += stepUsage.promptTokens || stepUsage.inputTokens || 0
+                            totalCompletionTokens += stepUsage.completionTokens || stepUsage.outputTokens || 0
+                        }
+                    }
+
+                    if (attempt < MAX_RETRIES) {
+                        console.log(
+                            `[Executor] Child ${childWebletId} timed out after ${capturedSteps.length} steps (attempt ${attempt + 1}/${MAX_RETRIES + 1}). Resuming with ${currentMessages.length} messages...`
+                        )
+                        continue
+                    }
+                }
+
+                if (attempt >= MAX_RETRIES) {
+                    console.log(
+                        `[Executor] Child ${childWebletId} exhausted all ${MAX_RETRIES + 1} attempts. Total steps completed: ${totalStepsUsed}`
+                    )
+                    break
+                }
+            }
+        }
+
+        await langfuseSpanProcessor.forceFlush()
+
+        if (userId && (totalPromptTokens > 0 || totalCompletionTokens > 0)) {
+            const childDev = await prisma.weblet.findUnique({
+                where: { id: childWebletId },
+                select: { developerId: true },
+            })
+            if (childDev) {
+                const toolCounts: Record<string, number> = {}
+                for (const tc of allToolCalls) {
+                    toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1
+                }
+                logUsage({
+                    userId,
+                    webletId: childWebletId,
+                    developerId: childDev.developerId,
+                    tokensIn: totalPromptTokens,
+                    tokensOut: totalCompletionTokens,
+                    modelId,
+                    toolCalls: Object.keys(toolCounts).length > 0 ? toolCounts : null,
+                    source: "COMPOSABILITY",
+                }).catch(err => console.error("Failed to log child weblet usage:", err))
+            }
+        }
+
+        const artifactSummary = allToolCalls.map(tc => ({
+            tool: tc.toolName,
+            images: tc.result?.data?.images?.length ?? 0,
+            files: tc.result?.data?.files?.length ?? 0,
+        }))
+        console.log(`[Executor] Child ${childWebletId} toolCalls:`, JSON.stringify(artifactSummary))
+
+        if (!finalText && allToolCalls.length === 0 && lastError) {
+            throw lastError
+        }
+
+        return {
+            text: finalText || "No response from child weblet",
+            toolCalls: allToolCalls,
+            presentedArtifacts: allArtifacts,
+            stepsUsed: totalStepsUsed,
+            durationMs: Date.now() - startTime,
+        }
+
+    } finally {
+        if (persistentSandbox) {
+            persistentSandbox.kill().catch((err: any) =>
+                console.error("[E2B] Failed to kill persistent sandbox:", err)
+            )
+        }
+        if (mcpClients.length > 0) {
+            closeMCPClients(mcpClients).catch(err =>
+                console.error("Failed to close MCP clients:", err)
+            )
+        }
+    }
+}
+
+function buildCompositionPrompt(basePrompt: string, caps: any, tools: Record<string, any>): string {
+    const capabilityLines: string[] = []
+    if (caps?.codeInterpreter) capabilityLines.push('- **codeInterpreter**: Execute Python code, create files/scripts/apps/charts. Files saved to /home/user/ become downloadable artifacts.')
+    if (caps?.webSearch) capabilityLines.push('- **webSearch**: Search the web for live information.')
+    if (caps?.imageGen) capabilityLines.push('- **imageGeneration**: Generate images from text prompts.')
+    if (caps?.fileSearch) capabilityLines.push('- **fileSearch**: Search uploaded knowledge base documents.')
+    const mcpToolNames = Object.keys(tools).filter(t => t.startsWith('mcp_'))
+    if (mcpToolNames.length > 0) capabilityLines.push(`- **MCP tools**: ${mcpToolNames.map(t => `\`${t}\``).join(', ')}`)
+
+    const capabilityBlock = capabilityLines.length > 0
+        ? `\n\n## Your Tools\n${capabilityLines.join('\n')}\nUse these proactively — do not describe what you would do, USE the tool.\n`
+        : ''
+
+    return `${basePrompt}${capabilityBlock}
 
 ---
 ## Sub-Agent Operating Mode
@@ -190,154 +337,78 @@ Use judgment — generate charts and files when they genuinely add value, not fo
 - **Sandbox state persists**: Variables, imports, installed packages, and files from previous codeInterpreter calls in this session are still in scope — do not repeat setup.
 
 ### Artifact Handling
-- When your tools produce artifacts (images, files, charts), describe what you created in your text response.
-- Include artifact URLs in your response text so the parent agent can relay them to the user.
-- Example: "I generated an image of a sunset. The image URL is: /api/image/abc123.png"
+- Your artifacts (images, files, charts) are automatically collected and relayed to the parent agent.
+- Do NOT try to call presentToUser — you do not have that tool. The parent handles presentation.
+- Just describe what you created in your text response (e.g. "I generated a bar chart comparing X and Y").
+- The parent will display the artifacts to the user on your behalf.
 
 ### Response Format
 - Use markdown with headers, bullet points, and code blocks where appropriate.
 - Lead with the key answer or finding.
 - Keep it concise — the artifacts speak for themselves.`
+}
 
-        // ── Execute ──────────────────────────────────────────────────────────
-        const result = await generateText({
-            model,
-            system: compositionPrompt,
-            messages: [{ role: "user", content: message }],
-            tools,
-            stopWhen: stopWhenAny(stepCountIs(10), noProgressDetected(5)),
-            abortSignal: controller.signal,
-            prepareStep: async ({ messages: stepMessages }) => {
-                const compacted = await autoCompactMessages(stepMessages, CHILD_CONTEXT_BUDGET, model)
-                return { messages: compacted }
-            },
-            experimental_telemetry: {
-                isEnabled: true,
-                metadata: {
-                    webletId: childWebletId,
-                    mode: "COMPOSITION",
-                    depth: String(depth),
-                },
-            },
-        })
-
-        clearTimeout(timeoutHandle)
-        await langfuseSpanProcessor.forceFlush()
-
-        // ── Billing ──────────────────────────────────────────────────────────
-        const totalUsage = (result as any).totalUsage ?? result.usage
-        if (totalUsage?.totalTokens && userId) {
-            const childDev = await prisma.weblet.findUnique({
-                where: { id: childWebletId },
-                select: { developerId: true },
+function extractToolCallsAndArtifacts(steps: StepResult<any>[]): {
+    toolCalls: ChildToolCallDetail[]
+    artifacts: PresentedArtifact[]
+} {
+    const toolCalls: ChildToolCallDetail[] = []
+    for (const step of steps) {
+        if (!step.toolCalls?.length) continue
+        for (let i = 0; i < step.toolCalls.length; i++) {
+            const tc = step.toolCalls[i] as any
+            const tr = (step.toolResults as any[])?.[i]
+            toolCalls.push({
+                toolName: tc.toolName,
+                args: tc.input ?? tc.args ?? {},
+                result: tr?.output ?? tr?.result ?? null,
             })
-            if (childDev) {
-                const toolCounts: Record<string, number> = {}
-                for (const step of result.steps ?? []) {
-                    for (const tc of step.toolCalls ?? []) {
-                        toolCounts[tc.toolName] = (toolCounts[tc.toolName] || 0) + 1
-                    }
-                }
-                logUsage({
-                    userId,
-                    webletId: childWebletId,
-                    developerId: childDev.developerId,
-                    tokensIn: (totalUsage as any).promptTokens || (totalUsage as any).inputTokens || 0,
-                    tokensOut: (totalUsage as any).completionTokens || (totalUsage as any).outputTokens || 0,
-                    modelId,
-                    toolCalls: Object.keys(toolCounts).length > 0 ? toolCounts : null,
-                    source: "COMPOSABILITY",
-                }).catch(err => console.error("Failed to log child weblet usage:", err))
-            }
-        }
-
-        // ── Collect tool call details for UI visibility ─────────────────────
-        // AI SDK v6 uses `.input` / `.output` on tool calls/results (not `.args` / `.result`).
-        const toolCalls: ChildToolCallDetail[] = []
-        for (const step of result.steps ?? []) {
-            if (!step.toolCalls?.length) continue
-            for (let i = 0; i < step.toolCalls.length; i++) {
-                const tc = step.toolCalls[i] as any
-                const tr = (step.toolResults as any[])?.[i]
-                toolCalls.push({
-                    toolName: tc.toolName,
-                    args: tc.input ?? tc.args ?? {},
-                    result: tr?.output ?? tr?.result ?? null,
-                })
-            }
-        }
-
-        // Children produce raw artifacts via tool results (no presentToUser).
-        const presentedArtifacts: PresentedArtifact[] = []
-        for (const tc of toolCalls) {
-            if (tc.toolName === 'imageGeneration' && tc.result?.url) {
-                presentedArtifacts.push({
-                    type: 'image',
-                    url: tc.result.url,
-                    title: tc.args?.prompt?.slice(0, 80) || 'Generated image',
-                    caption: null,
-                    mimeType: 'image/png',
-                    fileName: null,
-                })
-            }
-            if (tc.toolName === 'codeInterpreter' && tc.result?.data) {
-                const data = tc.result.data
-                for (const img of data.images || []) {
-                    if (img.url) {
-                        presentedArtifacts.push({
-                            type: 'chart',
-                            url: img.url,
-                            title: 'Chart',
-                            caption: null,
-                            mimeType: img.mimeType || 'image/png',
-                            fileName: null,
-                        })
-                    }
-                }
-                for (const f of data.files || []) {
-                    if (f.url) {
-                        presentedArtifacts.push({
-                            type: 'file',
-                            url: f.url,
-                            title: f.name || 'File',
-                            caption: null,
-                            mimeType: f.mimeType || null,
-                            fileName: f.name || null,
-                        })
-                    }
-                }
-            }
-        }
-
-        // Debug: log artifact summary from child execution
-        const artifactSummary = toolCalls.map(tc => ({
-            tool: tc.toolName,
-            images: tc.result?.data?.images?.length ?? 0,
-            files: tc.result?.data?.files?.length ?? 0,
-        }))
-        console.log(`[Executor] Child ${childWebletId} toolCalls:`, JSON.stringify(artifactSummary))
-
-        return {
-            text: result.text || "No response from child weblet",
-            toolCalls,
-            presentedArtifacts,
-            stepsUsed: result.steps?.length || 1,
-            durationMs: Date.now() - startTime,
-        }
-
-    } finally {
-        clearTimeout(timeoutHandle)
-
-        // Always clean up — order matters: sandbox before MCP clients
-        if (persistentSandbox) {
-            persistentSandbox.kill().catch((err: any) =>
-                console.error("[E2B] Failed to kill persistent sandbox:", err)
-            )
-        }
-        if (mcpClients.length > 0) {
-            closeMCPClients(mcpClients).catch(err =>
-                console.error("Failed to close MCP clients:", err)
-            )
         }
     }
+
+    const artifacts: PresentedArtifact[] = []
+    for (const tc of toolCalls) {
+        const r = tc.result
+        if (!r || typeof r !== 'object') continue
+
+        if (tc.toolName === 'imageGeneration' && r.url) {
+            artifacts.push({
+                type: 'image',
+                url: r.url,
+                title: null,
+                caption: null,
+                mimeType: null,
+                fileName: null,
+            })
+        }
+
+        if (tc.toolName === 'codeInterpreter') {
+            for (const img of r.data?.images || []) {
+                if (img.url) {
+                    artifacts.push({
+                        type: 'chart',
+                        url: img.url,
+                        title: null,
+                        caption: null,
+                        mimeType: null,
+                        fileName: null,
+                    })
+                }
+            }
+            for (const f of r.data?.files || []) {
+                if (f.url) {
+                    artifacts.push({
+                        type: 'file',
+                        url: f.url,
+                        title: f.name || null,
+                        caption: null,
+                        mimeType: null,
+                        fileName: f.name || null,
+                    })
+                }
+            }
+        }
+    }
+
+    return { toolCalls, artifacts }
 }

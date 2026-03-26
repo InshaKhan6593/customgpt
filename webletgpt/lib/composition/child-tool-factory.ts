@@ -126,11 +126,13 @@ export function createChildWebletTools(
                 const presentedArtifacts: any[] = result?._childExecution?.presentedArtifacts || []
                 let artifactBlock = ''
                 if (presentedArtifacts.length > 0) {
-                    const artifactList = presentedArtifacts.map((a: any) => {
-                        const label = a.title || a.fileName || a.type
-                        return `- ${a.type}: "${label}" (url: ${a.url})`
+                    const artifactDetails = presentedArtifacts.map((a: any, i: number) => {
+                        const parts = [`  ${i + 1}. type="${a.type}", url="${a.url}"`]
+                        if (a.title) parts.push(`title="${a.title}"`)
+                        if (a.fileName) parts.push(`fileName="${a.fileName}"`)
+                        return parts.join(', ')
                     }).join('\n')
-                    artifactBlock = `\n\nGenerated Artifacts (call presentToUser for each to display them to the user):\n${artifactList}`
+                    artifactBlock = `\n\n## Generated Artifacts\nThe sub-agent produced ${presentedArtifacts.length} artifact(s). Call **presentToUser** for EACH to display them:\n${artifactDetails}`
                 }
 
                 return { type: 'text' as const, value: `${header}\n\n${result?.response || ''}${summaryBlock}${artifactBlock}` }

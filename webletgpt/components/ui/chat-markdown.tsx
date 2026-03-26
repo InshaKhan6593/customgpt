@@ -20,14 +20,16 @@ export function ChatMarkdown({ content }: { content: string }) {
         components={{
           a(props) {
             const { node, href, children, ...rest } = props
-            const isArtifact = href?.startsWith('/artifacts/')
+            const isArtifact = href?.startsWith('/artifacts/') || href?.includes('/api/image/')
+            if (isArtifact) {
+              return <span>{children}</span>
+            }
             return (
               <a
                 {...rest}
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                download={isArtifact || undefined}
               >
                 {children}
               </a>
@@ -50,6 +52,11 @@ export function ChatMarkdown({ content }: { content: string }) {
           },
           img(props) {
             const { node, ...rest } = props
+            const src = typeof rest.src === 'string' ? rest.src : ''
+            const isArtifactUrl = src.startsWith('/artifacts/') || src.includes('/api/image/')
+            if (isArtifactUrl) {
+              return null
+            }
             return (
               // eslint-disable-next-line @next/next/no-img-element
               <img

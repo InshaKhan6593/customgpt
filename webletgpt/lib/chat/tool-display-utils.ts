@@ -4,6 +4,7 @@ const TOOL_DISPLAY_NAMES: Record<string, { label: string; action: string }> = {
   codeInterpreter: { label: "Code Interpreter", action: "Running code" },
   imageGeneration: { label: "Image Generation", action: "Generating image" },
   fileSearch: { label: "File Search", action: "Searching files" },
+  presentToUser: { label: "Present to User", action: "Presenting artifact" },
 }
 
 /** Split camelCase into readable words */

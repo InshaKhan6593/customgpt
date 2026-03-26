@@ -155,17 +155,17 @@ export function ChatContainer({
     return () => el.removeEventListener("scroll", handleScroll)
   }, [])
 
-  const scrollRafRef = useRef<number | null>(null)
   useEffect(() => {
     if (!isNearBottomRef.current || !scrollRef.current) return
-    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: isLoading ? "instant" : "smooth",
-      })
-    })
-  }, [messages, isLoading])
+    const el = scrollRef.current
+    // During streaming, snap instantly so the scroll keeps up with content;
+    // after completion, use a smooth scroll for the final position.
+    if (status === "streaming" || status === "submitted") {
+      el.scrollTop = el.scrollHeight
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    }
+  }, [messages, status])
 
   const handleStarterClick = (starter: string) => {
     if (isLoading) return

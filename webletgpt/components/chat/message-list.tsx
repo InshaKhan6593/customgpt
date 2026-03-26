@@ -85,9 +85,14 @@ export function MessageList({
   )
 }
 
-export default React.memo(MessageList, (prev, next) =>
-  prev.messages.length === next.messages.length &&
-  prev.messages[prev.messages.length - 1]?.id === next.messages[next.messages.length - 1]?.id &&
-  prev.isLoading === next.isLoading &&
-  prev.conversationStarters === next.conversationStarters
-)
+export default React.memo(MessageList, (prev, next) => {
+  const prevLast = prev.messages[prev.messages.length - 1]
+  const nextLast = next.messages[next.messages.length - 1]
+  return (
+    prev.messages.length === next.messages.length &&
+    prevLast?.id === nextLast?.id &&
+    (prevLast?.parts?.length ?? 0) === (nextLast?.parts?.length ?? 0) &&
+    prev.isLoading === next.isLoading &&
+    prev.conversationStarters === next.conversationStarters
+  )
+})

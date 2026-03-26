@@ -3,25 +3,49 @@ import { Sandbox } from "@e2b/code-interpreter"
 import fs from 'fs'
 import path from 'path'
 
-const TOOL_DESCRIPTION = `Run Python code and produce real outputs — charts, files, and computed results.
+const TOOL_DESCRIPTION = `Execute Python code in a secure cloud sandbox (Jupyter IPython kernel). Returns stdout, stderr, display data (charts/images), and errors.
 
-CRITICAL RULES:
-- ALWAYS call this tool to execute code. NEVER paste raw code in your reply and ask the user to run it themselves.
-- When the user asks you to create a file, build something, analyze data, or make a chart — USE THIS TOOL. Do not describe what you would do; do it.
-- Write files to /home/user/<filename> to produce downloadable artifacts (scripts, CSVs, Excel, HTML apps, PDFs, etc.).
-- Charts: use matplotlib/seaborn with plt.show() for inline charts. For plotly, use fig.write_image('/home/user/chart.png').
-- If code fails, read the error, fix it, and call this tool again. Do not give up.
+WHEN TO USE: ALWAYS execute code when the user asks to analyze data, create files, make charts, compute anything, scrape the web, or build something. NEVER paste code in your reply — run it.
 
-WHAT YOU CAN DO:
-- Data analysis, statistics, ML, computation
-- Charts and visualizations (matplotlib, seaborn, plotly)
-- Create any file type: .py, .csv, .xlsx, .html, .json, .zip, .pdf
-- Web scraping and API calls
-- Install packages via subprocess.run(['pip', 'install', 'pkg'], capture_output=True)
+EXECUTION MODEL:
+- Each call runs in a Jupyter cell. State persists across calls — variables, imports, installed packages, and files carry over.
+- Multiple calls encouraged: explore data first, then analyze, then visualize. Break complex tasks into steps.
+- If code errors, read the traceback, fix the code, and call again. Do not give up after one failure.
 
-PRE-INSTALLED: pandas, numpy, matplotlib, seaborn, scipy, sklearn, requests, beautifulsoup4, openpyxl
+VISUALIZATION RULES:
+- ALWAYS call plt.show() for matplotlib/seaborn — this is how charts get captured and displayed. Without plt.show(), nothing renders.
+- For plotly: use fig.write_image('/home/user/chart.png') to produce a downloadable file.
+- For DataFrames: let the DataFrame be the last expression in the cell — it auto-renders as a rich HTML table. Avoid print(df) which loses formatting.
+- Always include titles, axis labels, and legends on charts.
 
-State persists across calls — variables, imports, and files carry over. Do not re-import unnecessarily.`
+FILE CREATION:
+- Write files to /home/user/<filename> to produce downloadable artifacts.
+- Supported: .py, .csv, .xlsx, .html, .json, .zip, .pdf, .docx, .png, .svg, .mp3, or any format.
+- Use openpyxl for Excel, python-docx for Word, Pillow/imageio for images.
+
+INTERNET & APIs:
+- Full internet access. Use requests, aiohttp, or urllib3 for HTTP calls, API integrations, and data downloads.
+- Web scraping with beautifulsoup4 + requests works. curl via !curl also works.
+
+PACKAGE MANAGEMENT:
+- Install additional packages: !pip install package_name (do this in a separate cell before using the package).
+- Install system tools: !apt-get install -y tool_name (Debian-based Linux).
+
+PRE-INSTALLED PACKAGES (do NOT pip install these):
+- Data: pandas, numpy, scipy, xarray, sympy
+- ML: scikit-learn, joblib
+- Visualization: matplotlib, seaborn, plotly, bokeh
+- Web: requests, aiohttp, urllib3, beautifulsoup4
+- NLP: spacy, nltk, gensim, textblob
+- Images/Media: opencv-python, Pillow, imageio, scikit-image, librosa, soundfile
+- Files: openpyxl, xlrd, python-docx
+- NOT pre-installed (need pip install): torch, transformers, tensorflow, openai, langchain, sqlalchemy, fastapi
+
+CONSTRAINTS:
+- 60-second execution timeout per call — break long operations into chunks.
+- 1 GB RAM default — avoid loading very large models or datasets all at once. Process in batches if needed.
+- Headless environment — no GUI windows. Use plt.show() for charts (auto-captured), not tkinter/Qt.
+- Top-level await is supported for async code.`
 
 /**
  * Create a persistent E2B sandbox to be shared across multiple codeInterpreter calls
@@ -74,8 +98,9 @@ export function createCodeInterpreterTool(persistentSandbox?: any) {
         description: TOOL_DESCRIPTION,
         inputSchema: z.object({
             code: z.string().describe(
-                "Raw, runnable Python code. No markdown code fences — just the code. " +
-                "Variables and imports from previous calls in this session are already in scope."
+                "Python code to execute in a single Jupyter cell. No markdown fences — just raw code. " +
+                "State persists: variables, imports, and files from previous calls are in scope. " +
+                "Can include !pip install for packages, !command for shell, file I/O, and HTTP requests."
             ),
         }),
         toModelOutput: ({ output: result }: { toolCallId: string; input: unknown; output: any }) => {
@@ -92,18 +117,24 @@ export function createCodeInterpreterTool(persistentSandbox?: any) {
                 if (cleanStdout) parts.push(cleanStdout)
             }
             if (result?.error?.trim()) parts.push(`Error:\n${result.error.trim()}`)
+            // Tell the model about artifacts WITHOUT exposing URLs — it must call presentToUser to display them.
+            // The URLs are still in the raw `execute` result (result.data.images/files) for presentToUser to reference.
             const images: any[] = result?.data?.images || []
             const files: any[] = result?.data?.files || []
             const artifactCount = images.length + files.length
             if (artifactCount > 0) {
-                const artifactLines: string[] = []
-                for (const img of images) {
-                    if (img.url) artifactLines.push(`- Chart image: ${img.url}`)
+                const artifactDescriptions: string[] = []
+                for (let i = 0; i < images.length; i++) {
+                    artifactDescriptions.push(`- Chart image #${i + 1} (url: available in tool result)`)
                 }
                 for (const f of files) {
-                    if (f.url) artifactLines.push(`- File "${f.name}": ${f.url}`)
+                    artifactDescriptions.push(`- File "${f.name}" (url: available in tool result)`)
                 }
-                parts.push(`[${artifactCount} artifact(s) produced:\n${artifactLines.join('\n')}]`)
+                parts.push(
+                    `[${artifactCount} artifact(s) produced — call presentToUser for EACH to display them:\n` +
+                    `${artifactDescriptions.join('\n')}\n` +
+                    `Use the artifact URLs from the tool result data to call presentToUser. Do NOT embed URLs in markdown.]`
+                )
             }
             return { type: 'text' as const, value: parts.join('\n') || 'Code executed successfully.' }
         },
