@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth'
 import { fetchScoreMetrics, type ScoreMetric, type ScoreTimeSeries } from '@/lib/langfuse/client'
 import { prisma } from '@/lib/prisma'
 import { analyzeWeblet, type AnalysisResult } from '@/lib/rsil/analyzer'
+import { getGovernance, DEFAULT_EVALUATOR_CONFIG } from '@/lib/rsil/governance'
 
 const querySchema = z.object({
   webletId: z.string().min(1),
@@ -87,16 +88,19 @@ export async function GET(req: NextRequest) {
 
     const weblet = await prisma.weblet.findFirst({
       where: { id: webletId, developerId },
-      select: { id: true },
+      select: { id: true, rsilGovernance: true },
     })
 
     if (!weblet) {
       return NextResponse.json({ error: 'Weblet not found' }, { status: 404 })
     }
 
+    const governance = getGovernance({ rsilGovernance: weblet.rsilGovernance })
+    const evaluatorConfig = governance.evaluatorConfig ?? DEFAULT_EVALUATOR_CONFIG
+
     const fromTimestamp = subHours(new Date(), hours).toISOString()
     const analysis = await withTimeoutFallback(
-      analyzeWeblet(webletId, hours),
+      analyzeWeblet(webletId, hours, evaluatorConfig),
       ANALYZE_WEBLET_TIMEOUT_MS,
       DEFAULT_WEBLET_ANALYSIS,
       `analyzeWeblet(${webletId})`

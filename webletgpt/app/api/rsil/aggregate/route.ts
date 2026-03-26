@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { fetchScoreMetrics } from "@/lib/langfuse/client"
 import { prisma } from "@/lib/prisma"
 import { analyzeWeblet } from "@/lib/rsil/analyzer"
+import { getGovernance, DEFAULT_EVALUATOR_CONFIG } from "@/lib/rsil/governance"
 
 type TrendPoint = {
   date: string
@@ -156,7 +157,6 @@ export async function GET() {
       },
       orderBy: { updatedAt: "desc" },
     })
-
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const eightWeeksAgo = new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000)
@@ -170,8 +170,10 @@ export async function GET() {
     ] = await Promise.allSettled([
       Promise.allSettled(
         weblets.map(async (weblet) => {
+          const governance = getGovernance({ rsilGovernance: weblet.rsilGovernance })
+          const evaluatorConfig = governance.evaluatorConfig ?? DEFAULT_EVALUATOR_CONFIG
           const analysis = await withTimeoutFallback(
-            analyzeWeblet(weblet.id, 168),
+            analyzeWeblet(weblet.id, 168, evaluatorConfig),
             ANALYZE_WEBLET_TIMEOUT_MS,
             DEFAULT_WEBLET_ANALYSIS,
             `analyzeWeblet(${weblet.id})`

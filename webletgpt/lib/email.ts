@@ -1,28 +1,31 @@
-import { Resend } from 'resend';
+import { Resend } from "resend";
 
 // A mock instance is used if the API key is not yet set
-const resend = new Resend(process.env.RESEND_API_KEY || 're_mock_key');
+const resend = new Resend(process.env.RESEND_API_KEY || "re_mock_key");
 
 /**
  * Sends a magic link verification email using Resend.
  */
 export async function sendVerificationRequest(params: {
   identifier: string; // the email address
-  url: string;        // the login URL containing the token
+  url: string; // the login URL containing the token
 }) {
   const { identifier, url } = params;
 
   // In NextAuth v5, Resend Provider by default sends the token inside a full URL.
   // The segment instructions requested a "6-digit OTP code input within the same card".
   // Note: To cleanly implement a true 6-digit OTP input that stays on the same page,
-  // typically requires a custom credentials provider or building a manual verification 
-  // API on top of NextAuth. For now, since NextAuth EmailProvider strictly relies on 
+  // typically requires a custom credentials provider or building a manual verification
+  // API on top of NextAuth. For now, since NextAuth EmailProvider strictly relies on
   // magic link URLs `/api/auth/callback/resend?token=CODE`, we will extract the token
   // from the URL to display it.
-  
+
   let token = "";
   try {
-    const tokenUrl = new URL(url, process.env.NEXTAUTH_URL || 'http://localhost:3000');
+    const tokenUrl = new URL(
+      url,
+      process.env.NEXTAUTH_URL || "http://localhost:3000",
+    );
     token = tokenUrl.searchParams.get("token") || "";
   } catch (e) {
     console.error("URL parse error in sendVerificationRequest:", e);
@@ -33,7 +36,7 @@ export async function sendVerificationRequest(params: {
 
   try {
     const data = await resend.emails.send({
-      from: 'WebletGPT <noreply@resend.dev>', // Update this to verified domain when going to prod
+      from: "WebletGPT <noreply@webletgpt.com>", // Update this to verified domain when going to prod
       to: [identifier],
       subject: `Sign in to WebletGPT`,
       text: `Sign in to WebletGPT\n\nYour login code is: ${token}\n\nAlternatively, click here to log in: ${url}`,
@@ -51,7 +54,7 @@ export async function sendVerificationRequest(params: {
       `,
     });
   } catch (error) {
-    console.error('Failed to send verification email:', error);
-    throw new Error('Failed to send verification email.');
+    console.error("Failed to send verification email:", error);
+    throw new Error("Failed to send verification email.");
   }
 }

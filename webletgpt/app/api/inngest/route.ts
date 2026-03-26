@@ -3,6 +3,7 @@ import { inngest } from "@/lib/inngest/client";
 import { resetBillingCycles } from "@/lib/inngest/functions";
 import { executeFlow } from "@/lib/inngest/orchestrator";
 import { rsilOptimizationCron, rsilMonitoringCron } from "@/lib/rsil/scheduler";
+import { rsilEvaluationCron } from "@/lib/inngest/rsil-evaluation";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -11,6 +12,7 @@ export const { GET, POST, PUT } = serve({
     executeFlow,
     rsilOptimizationCron,
     rsilMonitoringCron,
+    rsilEvaluationCron,
   ],
   streaming: "allow",
 });

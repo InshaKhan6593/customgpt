@@ -33,6 +33,7 @@ type Version = {
   avgScore: number | null
   isAbTest: boolean
   abTestWinner: boolean | null
+  hasOptimizationResult?: boolean
 }
 
 type DeploymentsPageProps = {
@@ -81,27 +82,13 @@ export default function DeploymentsPage({ params }: DeploymentsPageProps) {
     if (!webletId || optimizing) return
 
     setOptimizing(true)
-    try {
-      const res = await fetch("/api/rsil/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webletId }),
-      })
+    router.push(`/dashboard/rsil/${webletId}/optimize`)
+  }
 
-      if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || "Optimization failed")
-      }
+  function handleViewOptimizationResults(versionId: string) {
+    if (!webletId) return
 
-      toast.success("Prompt optimization complete")
-      router.refresh()
-      await fetchVersions()
-    } catch (error) {
-      console.error("Optimize error:", error)
-      toast.error(error instanceof Error ? error.message : "Optimization failed")
-    } finally {
-      setOptimizing(false)
-    }
+    router.push(`/dashboard/rsil/${webletId}/deployments/${versionId}/optimization`)
   }
 
   async function handleDeploy(versionId: string) {
@@ -264,21 +251,33 @@ export default function DeploymentsPage({ params }: DeploymentsPageProps) {
 
   function getActionsForStatus(version: Version) {
     const isProcessing = actionLoading === version.id
+    const optimizationResultsAction = version.hasOptimizationResult ? (
+      <DropdownMenuItem
+        onClick={() => handleViewOptimizationResults(version.id)}
+        disabled={isProcessing}
+      >
+        Optimization Results
+      </DropdownMenuItem>
+    ) : null
 
     switch (version.status) {
       case "ACTIVE":
         return (
-          <DropdownMenuItem
-            onClick={() => handleRollback()}
-            disabled={isProcessing || actionLoading === "rollback"}
-          >
-            Rollback
-          </DropdownMenuItem>
+          <>
+            {optimizationResultsAction}
+            <DropdownMenuItem
+              onClick={() => handleRollback()}
+              disabled={isProcessing || actionLoading === "rollback"}
+            >
+              Rollback
+            </DropdownMenuItem>
+          </>
         )
 
       case "TESTING":
         return (
           <>
+            {optimizationResultsAction}
             <DropdownMenuItem
               onClick={() => handleConcludeTest(version.id)}
               disabled={isProcessing}
@@ -305,6 +304,7 @@ export default function DeploymentsPage({ params }: DeploymentsPageProps) {
       case "ARCHIVED":
         return (
           <>
+            {optimizationResultsAction}
             <DropdownMenuItem
               onClick={() => handleDeploy(version.id)}
               disabled={isProcessing}
@@ -321,7 +321,7 @@ export default function DeploymentsPage({ params }: DeploymentsPageProps) {
         )
 
       default:
-        return null
+        return optimizationResultsAction
     }
   }
 

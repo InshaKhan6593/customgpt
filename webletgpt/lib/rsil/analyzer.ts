@@ -15,6 +15,8 @@
  */
 
 import { fetchScores } from '@/lib/langfuse/client'
+import { EvaluatorConfig, DEFAULT_EVALUATOR_CONFIG } from './governance'
+import { EVALUATOR_PROMPTS } from './evaluator-prompts'
 
 export type RSILDecision = 'NONE' | 'SUGGESTION' | 'AUTO_UPDATE'
 
@@ -41,6 +43,7 @@ interface AnalyzeParams {
   webletId: string
   versionId?: string
   lookbackHours?: number
+  evaluatorConfig?: EvaluatorConfig
 }
 
 const HOURS_TO_MS = 60 * 60 * 1000
@@ -78,21 +81,53 @@ const SCORE_CONFIGS: Record<string, { max: number; higherIsBetter: boolean; weig
   'conciseness':       { max: SCORE_SCALE_MAX_BINARY, higherIsBetter: true,  weight: CONCISENESS_WEIGHT },
 }
 
+export function getScoreConfigs(
+  evaluatorConfig?: EvaluatorConfig,
+): Record<string, { max: number; higherIsBetter: boolean; weight: number }> {
+  const config = evaluatorConfig ?? DEFAULT_EVALUATOR_CONFIG
+
+  const result: Record<string, { max: number; higherIsBetter: boolean; weight: number }> = {
+    'user-rating': { max: LEGACY_SCORE_SCALE_MAX, higherIsBetter: true, weight: USER_RATING_WEIGHT },
+  }
+
+  for (const [name, entry] of Object.entries(config.baseEvaluators)) {
+    const higherIsBetter = EVALUATOR_PROMPTS[name]?.higherIsBetter ?? true
+    result[name] = {
+      max: SCORE_SCALE_MAX_BINARY,
+      higherIsBetter,
+      weight: entry.weight / PERCENT_SCALE,
+    }
+  }
+
+  for (const [name, entry] of Object.entries(config.optionalEvaluators)) {
+    if (!entry.enabled) continue
+    const higherIsBetter = EVALUATOR_PROMPTS[name]?.higherIsBetter ?? true
+    result[name] = {
+      max: SCORE_SCALE_MAX_BINARY,
+      higherIsBetter,
+      weight: entry.weight / PERCENT_SCALE,
+    }
+  }
+
+  return result
+}
+
 /** Normalize a raw score value to 0–1 based on its config */
 function normalize(value: number, config: { max: number; higherIsBetter: boolean }): number {
   const ratio = Math.min(Math.max(value / config.max, 0), 1)
   return config.higherIsBetter ? ratio : 1 - ratio
 }
 
-export async function analyzeWeblet(webletId: string, lookbackHours = DEFAULT_LOOKBACK_HOURS): Promise<AnalysisResult> {
-  return analyze({ webletId, lookbackHours })
+export async function analyzeWeblet(webletId: string, lookbackHours = DEFAULT_LOOKBACK_HOURS, evaluatorConfig?: EvaluatorConfig): Promise<AnalysisResult> {
+  return analyze({ webletId, lookbackHours, evaluatorConfig })
 }
 
-export async function analyzeVersion(webletId: string, versionId: string, lookbackHours = DEFAULT_LOOKBACK_HOURS): Promise<AnalysisResult> {
-  return analyze({ webletId, versionId, lookbackHours })
+export async function analyzeVersion(webletId: string, versionId: string, lookbackHours = DEFAULT_LOOKBACK_HOURS, evaluatorConfig?: EvaluatorConfig): Promise<AnalysisResult> {
+  return analyze({ webletId, versionId, lookbackHours, evaluatorConfig })
 }
 
-export async function analyze({ webletId, versionId, lookbackHours = DEFAULT_LOOKBACK_HOURS }: AnalyzeParams): Promise<AnalysisResult> {
+export async function analyze({ webletId, versionId, lookbackHours = DEFAULT_LOOKBACK_HOURS, evaluatorConfig }: AnalyzeParams): Promise<AnalysisResult> {
+  const scoreConfigs = getScoreConfigs(evaluatorConfig)
   const fromTimestamp = new Date(Date.now() - lookbackHours * HOURS_TO_MS).toISOString()
 
   const data = await fetchScores({ webletId, versionId, fromTimestamp, limit: SCORE_FETCH_LIMIT })
@@ -117,7 +152,7 @@ export async function analyze({ webletId, versionId, lookbackHours = DEFAULT_LOO
 
   for (const score of allScores) {
     const key = score.name.toLowerCase()
-    const config = SCORE_CONFIGS[key]
+    const config = scoreConfigs[key]
     if (!config) continue // ignore unknown score names
 
     const norm = normalize(score.value, config)
@@ -130,7 +165,7 @@ export async function analyze({ webletId, versionId, lookbackHours = DEFAULT_LOO
   let totalWeight = 0
 
   for (const [name, entries] of Object.entries(byDimension)) {
-    const config = SCORE_CONFIGS[name]
+    const config = scoreConfigs[name]
     const avgValue = entries.reduce((sum, e) => sum + e.normalizedValue, 0) / entries.length
     dimensions.push({ name, avgValue, sampleSize: entries.length, weight: config.weight })
     totalWeight += config.weight

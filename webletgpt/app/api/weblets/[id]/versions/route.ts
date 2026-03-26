@@ -4,6 +4,10 @@ import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { VersionStatus } from "@prisma/client";
+import {
+  OPTIMIZATION_REVIEW_EVENT_TYPE,
+  parseOptimizationReviewData,
+} from "@/lib/rsil/optimization-review";
 
 const createVersionSchema = z.object({
   prompt: z.string().min(10),
@@ -26,7 +30,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       orderBy: { versionNum: "desc" }
     });
 
-    return successResponse(versions);
+    const optimizationEvents = await prisma.analyticsEvent.findMany({
+      where: {
+        webletId: id,
+        eventType: OPTIMIZATION_REVIEW_EVENT_TYPE,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    const reviewVersionIds = new Set(
+      optimizationEvents
+        .map((event) => parseOptimizationReviewData(event.eventData)?.optimizedVersionId)
+        .filter((versionId): versionId is string => Boolean(versionId))
+    )
+
+    const versionsWithReviewFlag = versions.map((version) => ({
+      ...version,
+      hasOptimizationResult: reviewVersionIds.has(version.id),
+    }))
+
+    return successResponse(versionsWithReviewFlag);
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
     return errorResponse("Internal server error", 500);

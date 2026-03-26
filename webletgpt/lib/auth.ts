@@ -1,15 +1,15 @@
-import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import Resend from "next-auth/providers/resend"
+import NextAuth from "next-auth";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import Resend from "next-auth/providers/resend";
 
-import { authConfig } from "./auth.config"
-import { prisma } from "./prisma"
-import { sendVerificationRequest } from "./email"
+import { authConfig } from "./auth.config";
+import { prisma } from "./prisma";
+import { sendVerificationRequest } from "./email";
 
 // Generate random uppercase alphanumeric token instead of default hash
 // to allow the user to type it in as an OTP code.
 function generateVerificationToken() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase()
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 export const {
@@ -22,7 +22,7 @@ export const {
   adapter: PrismaAdapter(prisma),
   providers: [
     Resend({
-      from: "WebletGPT <noreply@resend.dev>",
+      from: "WebletGPT <noreply@webletgpt.com>",
       sendVerificationRequest,
       generateVerificationToken,
     }),
@@ -38,7 +38,7 @@ export const {
       // Create a free UserPlan if one doesn't exist yet
       await prisma.userPlan.upsert({
         where: { userId: user.id },
-        update: {},  // returning user — don't overwrite their paid plan
+        update: {}, // returning user — don't overwrite their paid plan
         create: {
           userId: user.id,
           tier: "FREE_USER",
@@ -54,7 +54,7 @@ export const {
       // Create a Starter DeveloperPlan if one doesn't exist yet
       await prisma.developerPlan.upsert({
         where: { userId: user.id },
-        update: {},  // returning developer — don't overwrite their paid plan
+        update: {}, // returning developer — don't overwrite their paid plan
         create: {
           userId: user.id,
           tier: "STARTER",
@@ -69,4 +69,4 @@ export const {
       });
     },
   },
-})
+});

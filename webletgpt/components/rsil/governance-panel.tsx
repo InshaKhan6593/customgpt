@@ -12,7 +12,8 @@ import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { RSILGovernance, DEFAULT_GOVERNANCE } from "@/lib/rsil/governance"
+import { RSILGovernance, DEFAULT_GOVERNANCE, DEFAULT_EVALUATOR_CONFIG } from "@/lib/rsil/governance"
+import { EvaluatorConfigSection } from "./evaluator-config"
 
 interface GovernancePanelProps {
   webletId: string
@@ -103,6 +104,12 @@ export function GovernancePanel({ webletId }: GovernancePanelProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          <EvaluatorConfigSection
+            webletId={webletId}
+            value={formGovernance.evaluatorConfig ?? DEFAULT_EVALUATOR_CONFIG}
+            onChange={(config) => setFormGovernance({ ...formGovernance, evaluatorConfig: config })}
+          />
+
           <Card className="bg-card/50 p-4 space-y-4">
             <h3 className="font-semibold text-lg border-b pb-2">Automation</h3>
             

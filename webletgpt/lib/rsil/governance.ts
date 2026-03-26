@@ -7,6 +7,109 @@
 
 import { z } from 'zod'
 
+interface BaseEvaluatorEntry {
+  enabled: true
+  weight: number
+}
+
+interface OptionalEvaluatorEntry {
+  enabled: boolean
+  weight: number
+}
+
+/**
+ * Configurable evaluator weights for RSIL scoring.
+ *
+ * - Base evaluators are always enabled (cannot be disabled).
+ * - Optional evaluators can be toggled; use normalizeOptionalWeights() after changes.
+ * - Weights are expressed as percentages (0-100). User-rating (30%) is NOT in this config.
+ */
+export interface EvaluatorConfig {
+  baseEvaluators: {
+    helpfulness: BaseEvaluatorEntry
+    correctness: BaseEvaluatorEntry
+    hallucination: BaseEvaluatorEntry
+  }
+  optionalEvaluators: {
+    toxicity: OptionalEvaluatorEntry
+    conciseness: OptionalEvaluatorEntry
+    'context-relevance': OptionalEvaluatorEntry
+    'context-correctness': OptionalEvaluatorEntry
+    faithfulness: OptionalEvaluatorEntry
+    'answer-relevance': OptionalEvaluatorEntry
+  }
+}
+
+const BaseEvaluatorEntrySchema = z.object({
+  enabled: z.literal(true),
+  weight: z.number().min(0).max(100),
+})
+
+const OptionalEvaluatorEntrySchema = z.object({
+  enabled: z.boolean(),
+  weight: z.number().min(0).max(100),
+})
+
+export const EvaluatorConfigSchema = z.object({
+  baseEvaluators: z.object({
+    helpfulness: BaseEvaluatorEntrySchema.default({ enabled: true, weight: 20 }),
+    correctness: BaseEvaluatorEntrySchema.default({ enabled: true, weight: 15 }),
+    hallucination: BaseEvaluatorEntrySchema.default({ enabled: true, weight: 10 }),
+  }),
+  optionalEvaluators: z.object({
+    toxicity: OptionalEvaluatorEntrySchema.default({ enabled: true, weight: 5 }),
+    conciseness: OptionalEvaluatorEntrySchema.default({ enabled: true, weight: 5 }),
+    'context-relevance': OptionalEvaluatorEntrySchema.default({ enabled: true, weight: 15 }),
+    'context-correctness': OptionalEvaluatorEntrySchema.default({ enabled: false, weight: 0 }),
+    faithfulness: OptionalEvaluatorEntrySchema.default({ enabled: false, weight: 0 }),
+    'answer-relevance': OptionalEvaluatorEntrySchema.default({ enabled: false, weight: 0 }),
+  }),
+})
+
+export const DEFAULT_EVALUATOR_CONFIG: EvaluatorConfig = {
+  baseEvaluators: {
+    helpfulness: { enabled: true, weight: 20 },
+    correctness: { enabled: true, weight: 15 },
+    hallucination: { enabled: true, weight: 10 },
+  },
+  optionalEvaluators: {
+    toxicity: { enabled: true, weight: 5 },
+    conciseness: { enabled: true, weight: 5 },
+    'context-relevance': { enabled: true, weight: 15 },
+    'context-correctness': { enabled: false, weight: 0 },
+    faithfulness: { enabled: false, weight: 0 },
+    'answer-relevance': { enabled: false, weight: 0 },
+  },
+}
+
+export const OPTIONAL_EVALUATOR_MAX_WEIGHT = 25
+
+export function normalizeOptionalWeights(config: EvaluatorConfig): EvaluatorConfig {
+  const entries = Object.entries(config.optionalEvaluators) as [
+    keyof EvaluatorConfig['optionalEvaluators'],
+    OptionalEvaluatorEntry,
+  ][]
+
+  const normalizedOptional = { ...config.optionalEvaluators }
+
+  for (const [key, value] of entries) {
+    if (!value.enabled) {
+      normalizedOptional[key] = { ...config.optionalEvaluators[key], weight: 0 }
+      continue
+    }
+
+    normalizedOptional[key] = {
+      ...config.optionalEvaluators[key],
+      weight: Math.min(Math.max(value.weight, 0), OPTIONAL_EVALUATOR_MAX_WEIGHT),
+    }
+  }
+
+  return {
+    ...config,
+    optionalEvaluators: normalizedOptional,
+  }
+}
+
 export interface RSILGovernance {
   /** Enable or disable RSIL automation for this weblet */
   enabled: boolean
@@ -52,6 +155,8 @@ export interface RSILGovernance {
 
   /** Hours to wait between optimization runs (prevents test churn) */
   cooldownHours: number
+
+  evaluatorConfig?: EvaluatorConfig
 }
 
 /**

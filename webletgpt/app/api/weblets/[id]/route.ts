@@ -101,8 +101,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Handle Version updates seamlessly during auto-saves and publishes
     if (instructions !== undefined || model !== undefined || openapiSchema !== undefined) {
-      const activeVersion = await prisma.webletVersion.findFirst({
-        where: { webletId: id, status: "ACTIVE" },
+      // Always update the latest version by versionNum (highest), regardless of status.
+      // This ensures the builder — which loads versions[0] (highest versionNum) — always
+      // edits the same version it displayed. Previously, looking up only ACTIVE versions
+      // caused edits to land on a lower-numbered version while the builder showed a newer
+      // DRAFT/TESTING version, making changes appear to silently disappear on reload.
+      const latestVersion = await prisma.webletVersion.findFirst({
+        where: { webletId: id },
         orderBy: { versionNum: "desc" }
       });
 
@@ -123,13 +128,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
       }
 
-      if (activeVersion) {
-        const finalPrompt = instructions !== undefined ? instructions : activeVersion.prompt;
+      if (latestVersion) {
+        const finalPrompt = instructions !== undefined ? instructions : latestVersion.prompt;
         await prisma.webletVersion.update({
-          where: { id: activeVersion.id },
+          where: { id: latestVersion.id },
           data: {
             prompt: finalPrompt,
-            model: model !== undefined ? model : activeVersion.model,
+            model: model !== undefined ? model : latestVersion.model,
             ...(parsedSchema !== undefined && { openapiSchema: parsedSchema === null ? Prisma.JsonNull : parsedSchema as Prisma.InputJsonValue }),
           }
         });

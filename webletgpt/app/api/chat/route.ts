@@ -251,6 +251,7 @@ You have specialist sub-agents available as tools (look for weblet_* tools). For
             "langfuse.trace.metadata.promptVersion": String(activeVersion.versionNum),
             "langfuse.trace.metadata.developerId": weblet.developerId,
             "langfuse.trace.metadata.mode": "DIRECT_CHAT",
+            "langfuse.trace.metadata.context": systemPrompt.slice(0, 4000),
           },
         },
         onFinish(data) {

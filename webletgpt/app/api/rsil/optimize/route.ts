@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { analyzeWeblet } from "@/lib/rsil/analyzer"
 import { generateImprovedPrompt } from "@/lib/rsil/generator"
+import { OPTIMIZATION_REVIEW_EVENT_TYPE } from "@/lib/rsil/optimization-review"
 
 const optimizeSchema = z.object({
   webletId: z.string().min(1),
@@ -86,6 +87,22 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await prisma.analyticsEvent.create({
+      data: {
+        webletId,
+        eventType: OPTIMIZATION_REVIEW_EVENT_TYPE,
+        eventData: {
+          sourceVersionId: activeVersion.id,
+          sourceVersionNum: activeVersion.versionNum,
+          sourcePrompt: activeVersion.prompt,
+          optimizedVersionId: draftVersion.id,
+          optimizedVersionNum: draftVersion.versionNum,
+          optimizedPrompt: draftVersion.prompt,
+          changelog: generation.changelog,
+        },
+      },
+    })
+
     return NextResponse.json({
       draftVersion: {
         id: draftVersion.id,
@@ -98,6 +115,7 @@ export async function POST(req: NextRequest) {
         prompt: activeVersion.prompt,
         versionNum: activeVersion.versionNum,
       },
+      reviewPath: `/dashboard/rsil/${webletId}/deployments/${draftVersion.id}/optimization`,
       analysis,
     })
   } catch (error) {

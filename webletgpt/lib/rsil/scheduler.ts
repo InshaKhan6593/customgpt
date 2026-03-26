@@ -11,7 +11,7 @@ import {
 } from '@/lib/rsil/deployer'
 import { generateImprovedPrompt } from '@/lib/rsil/generator'
 import { getABTestStatus } from '@/lib/rsil/ab-test'
-import { getGovernance } from '@/lib/rsil/governance'
+import { getGovernance, DEFAULT_EVALUATOR_CONFIG } from '@/lib/rsil/governance'
 import { notifyDeveloper } from '@/lib/rsil/notifications'
 
 const HOURS_IN_MS = 60 * 60 * 1000
@@ -219,7 +219,8 @@ export const rsilOptimizationCron = inngest.createFunction(
       }
 
       const analysis = await step.run(`analyze-active-version-${weblet.id}`, async () => {
-        return analyzeVersion(weblet.id, activeVersion.id, ANALYSIS_LOOKBACK_HOURS)
+        const evaluatorConfig = governance.evaluatorConfig ?? DEFAULT_EVALUATOR_CONFIG
+        return analyzeVersion(weblet.id, activeVersion.id, ANALYSIS_LOOKBACK_HOURS, evaluatorConfig)
       })
 
       if (analysis.compositeScore >= governance.optimizationScoreThreshold) {

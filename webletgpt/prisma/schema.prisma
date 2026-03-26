@@ -28,6 +28,9 @@ model User {
   flows         UserFlow[]
   userPlan      UserPlan?
   weblets       Weblet[]       @relation("DeveloperWeblets")
+  userWeblets   UserWeblet[]
+  oauthStates   OAuthState[]
+  mcpTokens     UserMCPToken[]
 }
 
 model Account {
@@ -92,6 +95,7 @@ model Weblet {
   childCompositions    WebletComposition[] @relation("ChildWeblet")
   parentCompositions   WebletComposition[] @relation("ParentWeblet")
   mcpServers           WebletMCPServer[]
+  userWeblets          UserWeblet[]       @relation("UserWeblets")
   versions             WebletVersion[]
 
   @@index([developerId])
@@ -316,24 +320,74 @@ model UsageRecord {
 }
 
 model WebletMCPServer {
-  id               String      @id @default(cuid())
+  id               String        @id @default(cuid())
   webletId         String
   serverUrl        String
   label            String
   description      String?
   iconUrl          String?
-  authType         MCPAuthType @default(NONE)
+  authType         MCPAuthType   @default(NONE)
   authToken        String?
   tools            Json?
-  isActive         Boolean     @default(true)
+  isActive         Boolean       @default(true)
   catalogId        String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  requiresUserAuth Boolean     @default(false)
-  weblet           Weblet      @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  requiresUserAuth Boolean       @default(false)
+  weblet           Weblet        @relation(fields: [webletId], references: [id], onDelete: Cascade)
+  oauthStates      OAuthState[]
+  userTokens       UserMCPToken[]
 
   @@unique([webletId, serverUrl])
   @@index([webletId])
+}
+
+model UserWeblet {
+  id        String   @id @default(cuid())
+  userId    String
+  webletId  String
+  addedAt   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weblet    Weblet   @relation("UserWeblets", fields: [webletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, webletId], name: "userId_webletId")
+  @@index([userId])
+}
+
+model OAuthState {
+  id           String          @id @default(cuid())
+  state        String          @unique
+  codeVerifier String
+  userId       String
+  serverId     String
+  webletId     String
+  redirectUri  String
+  expiresAt    DateTime
+  createdAt    DateTime        @default(now())
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server       WebletMCPServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([state])
+}
+
+model UserMCPToken {
+  id              String          @id @default(cuid())
+  userId          String
+  serverId        String
+  tokenEnc        String
+  tokenIv         String
+  tokenType       String
+  expiresAt       DateTime?
+  scope           String?
+  refreshTokenEnc String?
+  refreshTokenIv  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server          WebletMCPServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverId], name: "userId_serverId")
+  @@index([userId])
 }
 
 enum UserRole {
