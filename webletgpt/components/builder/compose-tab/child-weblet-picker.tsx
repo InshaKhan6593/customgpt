@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Plus, Search, Puzzle } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ChevronsUpDown, Loader2, Plus, Puzzle, Search } from "lucide-react"
 import { toast } from "sonner"
 
 type SearchResult = {
@@ -24,42 +25,73 @@ type ChildWebletPickerProps = {
     onAdded: () => void
 }
 
+const normalizeIconUrl = (iconUrl: string | null) => {
+    if (!iconUrl) return undefined
+
+    const trimmed = iconUrl.trim()
+    if (!trimmed) return undefined
+
+    if (
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://") ||
+        trimmed.startsWith("data:") ||
+        trimmed.startsWith("blob:")
+    ) {
+        return trimmed
+    }
+
+    if (trimmed.startsWith("//")) {
+        return `https:${trimmed}`
+    }
+
+    if (trimmed.startsWith("/")) {
+        return trimmed
+    }
+
+    return `/${trimmed.replace(/^\.?\//, "")}`
+}
+
 export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: ChildWebletPickerProps) {
     const [query, setQuery] = useState("")
+    const [open, setOpen] = useState(false)
     const [results, setResults] = useState<SearchResult[]>([])
-    const [isSearching, setIsSearching] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
     const [addingId, setAddingId] = useState<string | null>(null)
-    const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+    const containerRef = useRef<HTMLDivElement | null>(null)
 
-    // Debounced search
     useEffect(() => {
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-
-        if (!query.trim()) {
-            setResults([])
-            return
-        }
-
-        debounceRef.current = setTimeout(async () => {
-            setIsSearching(true)
-            try {
-                const res = await fetch(
-                    `/api/weblets/search?q=${encodeURIComponent(query)}&exclude=${webletId}`
-                )
-                if (!res.ok) throw new Error("Search failed")
-                const data = await res.json()
-                setResults(data.weblets || [])
-            } catch {
-                console.error("Search failed")
-            } finally {
-                setIsSearching(false)
+        const handleOutside = (event: MouseEvent) => {
+            if (!containerRef.current?.contains(event.target as Node)) {
+                setOpen(false)
             }
-        }, 300)
-
-        return () => {
-            if (debounceRef.current) clearTimeout(debounceRef.current)
         }
-    }, [query, webletId])
+
+        document.addEventListener("mousedown", handleOutside)
+        return () => {
+            document.removeEventListener("mousedown", handleOutside)
+        }
+    }, [])
+
+    const fetchWeblets = async () => {
+        setIsLoading(true)
+        try {
+            const res = await fetch(`/api/weblets/search?exclude=${webletId}&limit=200`)
+            if (!res.ok) throw new Error("Search failed")
+            const data = await res.json()
+            setResults(data.weblets || [])
+        } catch {
+            toast.error("Failed to load weblets")
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleFocus = () => {
+        setOpen(true)
+        if (results.length === 0) {
+            void fetchWeblets()
+        }
+    }
 
     const handleAdd = async (childId: string, childName: string) => {
         setAddingId(childId)
@@ -76,17 +108,36 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
             }
 
             toast.success(`${childName} added as child weblet`)
-            setQuery("")
-            setResults([])
             onAdded()
-        } catch (err: any) {
-            toast.error(err.message || "Failed to add child weblet")
+            await fetchWeblets()
+            setOpen(false)
+            setQuery("")
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to add child weblet"
+            toast.error(message)
         } finally {
             setAddingId(null)
         }
     }
 
     const existingSet = new Set(existingChildIds)
+    const allAvailableResults = useMemo(
+        () => results.filter((result) => !existingSet.has(result.id)),
+        [results, existingChildIds]
+    )
+
+    const filteredResults = useMemo(() => {
+        const q = query.trim().toLowerCase()
+        if (!q) return allAvailableResults
+
+        return allAvailableResults.filter((result) => {
+            return (
+                result.name.toLowerCase().includes(q) ||
+                result.slug.toLowerCase().includes(q) ||
+                (result.description?.toLowerCase().includes(q) ?? false)
+            )
+        })
+    }, [allAvailableResults, query])
 
     return (
         <Card className="border-dashed">
@@ -97,88 +148,84 @@ export function ChildWebletPicker({ webletId, existingChildIds, onAdded }: Child
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-                <div className="relative">
+                <div className="relative" ref={containerRef}>
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
-                        placeholder="Search weblets by name..."
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="pl-8 text-sm"
+                        onChange={(e) => {
+                            setQuery(e.target.value)
+                            setOpen(true)
+                        }}
+                        onFocus={handleFocus}
+                        placeholder="Search weblets by name..."
+                        className="pl-8 pr-8 text-sm"
                     />
-                    {isSearching && (
-                        <Loader2 className="absolute right-2.5 top-2.5 size-3.5 text-muted-foreground animate-spin" />
+                    <ChevronsUpDown className="absolute right-2.5 top-2.5 size-4 text-muted-foreground opacity-50 pointer-events-none" />
+
+                    {open && (
+                        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+                            {isLoading ? (
+                                <div className="py-4 px-3 text-xs text-muted-foreground flex items-center justify-center gap-2">
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                    Loading weblets...
+                                </div>
+                            ) : filteredResults.length === 0 ? (
+                                <div className="py-4 px-3 text-xs text-muted-foreground text-center">
+                                    No available weblets found.
+                                </div>
+                            ) : (
+                                <div className="max-h-72 overflow-y-auto p-1 space-y-1">
+                                    {filteredResults.map((result) => {
+                                        const isAdding = addingId === result.id
+
+                                        return (
+                                            <Button
+                                                key={result.id}
+                                                variant="ghost"
+                                                onClick={() => {
+                                                    if (!isAdding) {
+                                                        void handleAdd(result.id, result.name)
+                                                    }
+                                                }}
+                                                disabled={isAdding}
+                                                className="w-full h-auto justify-start p-2 gap-3"
+                                            >
+                                                <Avatar className="size-8 rounded-md shrink-0">
+                                                    <AvatarImage src={normalizeIconUrl(result.iconUrl)} alt={result.name} className="rounded-md object-cover" />
+                                                    <AvatarFallback className="rounded-md bg-violet-500/10 text-violet-500">
+                                                        <Puzzle className="size-3.5" />
+                                                    </AvatarFallback>
+                                                </Avatar>
+
+                                                <div className="flex-1 min-w-0 text-left">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-sm font-medium truncate">{result.name}</span>
+                                                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                                                            {result.category.replace("_", " ")}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground truncate">
+                                                        {result.description || "No description"}
+                                                    </p>
+                                                </div>
+
+                                                {isAdding ? (
+                                                    <Loader2 className="size-3.5 animate-spin shrink-0 text-muted-foreground" />
+                                                ) : (
+                                                    <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                                                )}
+                                            </Button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
-                {/* Search Results */}
-                {results.length > 0 && (
-                    <div className="space-y-1 max-h-60 overflow-y-auto">
-                        {results.map((result) => {
-                            const isAlreadyAdded = existingSet.has(result.id)
-                            const isAdding = addingId === result.id
-
-                            return (
-                                <div
-                                    key={result.id}
-                                    className={`
-                    flex items-center gap-3 p-2.5 rounded-md border transition-colors
-                    ${isAlreadyAdded
-                                            ? "bg-muted/30 border-border/50 opacity-60"
-                                            : "bg-card hover:bg-accent/50 border-border"
-                                        }
-                  `}
-                                >
-                                    <div className="flex items-center justify-center size-8 rounded-md bg-violet-500/10 text-violet-500 shrink-0">
-                                        <Puzzle className="size-3.5" />
-                                    </div>
-
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-sm font-medium truncate">{result.name}</span>
-                                            <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                                                {result.category.replace("_", " ")}
-                                            </Badge>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground truncate">
-                                            {result.description || "No description"}
-                                        </p>
-                                    </div>
-
-                                    {isAlreadyAdded ? (
-                                        <span className="text-xs text-muted-foreground shrink-0">Added</span>
-                                    ) : (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={isAdding}
-                                            onClick={() => handleAdd(result.id, result.name)}
-                                            className="shrink-0 text-xs h-7 px-2.5"
-                                        >
-                                            {isAdding ? (
-                                                <Loader2 className="size-3 animate-spin" />
-                                            ) : (
-                                                <Plus className="size-3 mr-1" />
-                                            )}
-                                            {isAdding ? "" : "Add"}
-                                        </Button>
-                                    )}
-                                </div>
-                            )
-                        })}
-                    </div>
-                )}
-
-                {query && !isSearching && results.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-4">
-                        No weblets found matching &ldquo;{query}&rdquo;
-                    </p>
-                )}
-
-                {!query && (
-                    <p className="text-xs text-muted-foreground text-center py-2">
-                        Search for existing weblets to add as building blocks
-                    </p>
-                )}
+                <p className="text-xs text-muted-foreground text-center py-2">
+                    Pick from available marketplace weblets not already selected
+                </p>
             </CardContent>
         </Card>
     )

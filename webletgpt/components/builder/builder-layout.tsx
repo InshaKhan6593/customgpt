@@ -74,7 +74,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
           body: JSON.stringify({
             name: updatedState.name || undefined,
             description: updatedState.description || undefined,
-            iconUrl: updatedState.iconUrl || undefined,
+            iconUrl: updatedState.iconUrl || null,
             category: updatedState.category || undefined,
             accessType: updatedState.accessType,
             monthlyPrice: updatedState.monthlyPrice,
@@ -116,7 +116,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
         body: JSON.stringify({
           name: state.name || undefined,
           description: state.description || undefined,
-          iconUrl: state.iconUrl || undefined,
+          iconUrl: state.iconUrl || null,
           category: state.category || undefined,
           accessType: state.accessType,
           monthlyPrice: state.monthlyPrice,
@@ -162,7 +162,7 @@ export function BuilderLayout({ webletId, initialState }: BuilderLayoutProps) {
         body: JSON.stringify({
           name: state.name,
           description: state.description,
-          iconUrl: state.iconUrl || undefined,
+          iconUrl: state.iconUrl || null,
           category: state.category,
           accessType: state.accessType,
           monthlyPrice: state.monthlyPrice, // Added

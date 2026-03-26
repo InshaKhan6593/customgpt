@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       return errorResponse("Invalid input data", 400, result.error.errors);
     }
 
-    const { name, description, category, isPublic, prompt, model, privacyPolicy, conversationStarters } = result.data;
+    const { name, description, iconUrl, category, isPublic, prompt, model, privacyPolicy, conversationStarters } = result.data;
     
     // Generate unique slug
     let slug = sanitizeSlug(name);
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
         name,
         slug,
         description,
+        iconUrl: iconUrl || null,
         category,
         isActive: false,
         isPublic,

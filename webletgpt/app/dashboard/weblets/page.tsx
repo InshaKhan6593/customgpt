@@ -160,8 +160,8 @@ export default function MyWebletsPage() {
         method: "DELETE",
       })
       if (!res.ok) throw new Error("Failed to delete")
-      toast.success(`"${deleteTarget.name}" has been unpublished`)
-      setWeblets((prev) => prev.filter((w) => w.id !== deleteTarget.id))
+      toast.success(`"${deleteTarget.name}" has been deleted`)
+      await fetchWeblets()
     } catch {
       toast.error("Failed to delete weblet")
     } finally {
@@ -303,7 +303,7 @@ export default function MyWebletsPage() {
                             onClick={() => setDeleteTarget(weblet)}
                           >
                             <Trash2 className="size-4 mr-2" />
-                            Unpublish &amp; Remove
+                            Delete Weblet
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -363,6 +363,15 @@ export default function MyWebletsPage() {
                     Analytics
                   </Button>
                 </Link>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteTarget(weblet)}
+                  className="shrink-0"
+                  title="Delete weblet"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               </CardFooter>
             </Card>
           ))}
@@ -373,9 +382,9 @@ export default function MyWebletsPage() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unpublish &amp; Remove Weblet</AlertDialogTitle>
+            <AlertDialogTitle>Delete Weblet</AlertDialogTitle>
             <AlertDialogDescription>
-              This will unpublish <span className="font-semibold text-foreground">"{deleteTarget?.name}"</span> and remove it from the marketplace. All chat history and analytics data will be preserved. This action can be reversed by re-publishing from the Builder.
+              This will permanently delete <span className="font-semibold text-foreground">"{deleteTarget?.name}"</span>, including related chats, analytics, and builder history. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -388,7 +397,7 @@ export default function MyWebletsPage() {
               {deleting ? (
                 <><Loader2 className="size-4 mr-2 animate-spin" />Removing...</>
               ) : (
-                "Unpublish & Remove"
+                "Delete Weblet"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

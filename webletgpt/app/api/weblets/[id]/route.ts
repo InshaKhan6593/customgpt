@@ -10,7 +10,7 @@ import { WebletCategory, AccessType, Prisma } from "@prisma/client";
 const updateSchema = z.object({
   name: z.string().min(3).max(50).optional(),
   description: z.string().max(300).optional(),
-  iconUrl: z.string().url().optional().or(z.literal("")),
+  iconUrl: z.union([z.string().url(), z.literal(""), z.null()]).optional(),
   category: z.nativeEnum(WebletCategory).optional(),
   isPublic: z.boolean().optional(),
   accessType: z.nativeEnum(AccessType).optional(),
@@ -67,6 +67,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const data = result.data as any;
     const { instructions, model, openapiSchema, ...webletData } = data;
+
+    if (webletData.iconUrl === "") {
+      webletData.iconUrl = null;
+    }
 
     if (webletData.name && webletData.name !== weblet.name) {
       let slug = sanitizeSlug(webletData.name);
@@ -172,13 +176,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!weblet) return errorResponse("Weblet not found", 404);
     if (weblet.developerId !== user.id) return errorResponse("Forbidden", 403);
 
-    // Soft delete
-    await prisma.weblet.update({
-      where: { id },
-      data: { isActive: false, isPublic: false }
+    await prisma.weblet.delete({
+      where: { id }
     });
 
-    return successResponse({ success: true, message: "Weblet disabled" });
+    return successResponse({ success: true, message: "Weblet deleted" });
   } catch (err: any) {
     if (err.name === "AuthorizationError") return errorResponse(err.message, 403);
     return errorResponse("Internal server error", 500);

@@ -9,6 +9,7 @@ import {
     Loader2,
     Puzzle,
 } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -30,6 +31,7 @@ type CompositionCardProps = {
             name: string
             slug: string
             description: string | null
+            iconUrl: string | null
             category: string
             isActive: boolean
         }
@@ -66,9 +68,12 @@ export function CompositionCard({ composition, webletId, onUpdate }: Composition
             <CardContent className="p-3">
                 <div className="flex items-center gap-3">
                     {/* Icon */}
-                    <div className="flex items-center justify-center size-9 rounded-md bg-violet-500/10 text-violet-500 shrink-0">
-                        <Puzzle className="size-4" />
-                    </div>
+                    <Avatar className="size-9 rounded-md">
+                        <AvatarImage src={child.iconUrl || undefined} alt={child.name} className="rounded-md object-cover" />
+                        <AvatarFallback className="rounded-md bg-violet-500/10 text-violet-500">
+                            <Puzzle className="size-4" />
+                        </AvatarFallback>
+                    </Avatar>
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">

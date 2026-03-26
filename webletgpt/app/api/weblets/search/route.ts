@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url)
         const idsParam = searchParams.get("ids")
+        const limitParam = searchParams.get("limit")
+        const parsedLimit = limitParam ? Number(limitParam) : 20
+        const take = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 20
 
         // Bulk ID lookup mode — return {id, name} for given IDs
         if (idsParam) {
@@ -67,7 +70,7 @@ export async function GET(req: NextRequest) {
                     select: { name: true },
                 },
             },
-            take: 20,
+            take,
             orderBy: { name: "asc" },
         })
 
