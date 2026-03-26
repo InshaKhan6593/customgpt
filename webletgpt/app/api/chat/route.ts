@@ -526,8 +526,8 @@ function buildCapabilityPrompt(
     caps.push(
       '- **Code Interpreter (codeInterpreter)**: Execute Python code and produce real outputs. ' +
       'ALWAYS use this tool when the user asks to create files, build apps, analyze data, make charts, or compute anything. ' +
-      'DO NOT paste code in your reply — run it with this tool. Files written to /home/user/ appear as download cards. ' +
-      'Charts via matplotlib plt.show() render inline. If code fails, fix and retry.'
+      'DO NOT paste code in your reply — run it with this tool. After code runs, call **presentToUser** for each artifact (chart, file) to display it. ' +
+      'Artifacts are NOT visible until you call presentToUser. If code fails, fix and retry.'
     )
   }
   if (capabilities?.webSearch) {
@@ -576,20 +576,9 @@ function buildCapabilityPrompt(
 
 function buildChildSummary(raw: any): string {
   let text = raw.response || ""
-  const artifacts: string[] = []
-  for (const tc of raw._childExecution?.toolCalls || []) {
-    const r = tc?.result
-    if (!r || typeof r !== "object") continue
-    if (r.url) artifacts.push(`Image: ${r.url}`)
-    for (const img of r.data?.images || []) {
-      if (img.url) artifacts.push(`Chart: ${img.url}`)
-    }
-    for (const f of r.data?.files || []) {
-      if (f.url && f.name) artifacts.push(`File "${f.name}": ${f.url}`)
-    }
-  }
-  if (artifacts.length > 0) {
-    text += "\n\nArtifacts from sub-agent:\n" + artifacts.join("\n")
+  const presented = raw._childExecution?.presentedArtifacts || []
+  if (presented.length > 0) {
+    text += `\n\n${presented.length} artifact(s) were presented to the user by the sub-agent.`
   }
   return text
 }
